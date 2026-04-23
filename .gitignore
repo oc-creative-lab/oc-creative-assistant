@@ -207,3 +207,10 @@ marimo/_lsp/
 __marimo__/
 
 .idea/
+node_modules/
+electron/node_modules/
+frontend/dist/
+backend/build/
+backend/dist/
+electron/dist/
+electron/.bundle/

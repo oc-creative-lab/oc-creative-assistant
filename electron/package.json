@@ -1,0 +1,50 @@
+{
+  "name": "oc-creative-assistant-electron",
+  "private": true,
+  "version": "0.1.0",
+  "type": "module",
+  "main": "./main.cjs",
+  "scripts": {
+    "dev": "electron .",
+    "start": "electron .",
+    "build": "electron-builder --win nsis portable"
+  },
+  "devDependencies": {
+    "electron": "^30.0.0",
+    "electron-builder": "^26.0.12"
+  },
+  "build": {
+    "appId": "com.occreativeassistant.app",
+    "productName": "OC Creative Assistant",
+    "asar": true,
+    "npmRebuild": false,
+    "buildDependenciesFromSource": false,
+    "directories": {
+      "output": "dist"
+    },
+    "files": [
+      "main.cjs",
+      "preload.cjs"
+    ],
+    "extraResources": [
+      {
+        "from": ".bundle/frontend",
+        "to": "frontend"
+      },
+      {
+        "from": ".bundle/backend",
+        "to": "backend"
+      }
+    ],
+    "win": {
+      "target": [
+        "nsis",
+        "portable"
+      ]
+    },
+    "nsis": {
+      "oneClick": false,
+      "allowToChangeInstallationDirectory": true
+    }
+  }
+}

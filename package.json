@@ -1,0 +1,14 @@
+{
+  "name": "oc-creative-assistant",
+  "private": true,
+  "scripts": {
+    "frontend:dev": "npm --prefix frontend run dev",
+    "frontend:build": "npm --prefix frontend run build",
+    "backend:dev": "python -m uvicorn main:app --reload --host 127.0.0.1 --port 9000 --app-dir backend",
+    "backend:build": "node ./scripts/build-backend.mjs",
+    "electron:dev": "npm --prefix electron run dev",
+    "electron:build": "npm --prefix electron run build",
+    "dev:desktop": "node ./scripts/dev-desktop.mjs",
+    "build:desktop": "node ./scripts/build-desktop.mjs"
+  }
+}
