@@ -5,6 +5,7 @@ import { fileURLToPath } from 'node:url'
 
 const rootDir = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..')
 
+// 优先使用显式指定的 Python，其次使用当前 conda 环境。
 function resolvePythonCommand() {
   if (process.env.PYTHON_BIN) {
     return process.env.PYTHON_BIN
@@ -20,6 +21,7 @@ function resolvePythonCommand() {
   return process.platform === 'win32' ? 'python.exe' : 'python3'
 }
 
+// 执行子命令，并在构建异常退出时立即失败。
 function run(command, args, name) {
   return new Promise((resolve, reject) => {
     const child = spawn(command, args, {
@@ -44,8 +46,10 @@ function run(command, args, name) {
   })
 }
 
+// 在调用 PyInstaller 前先确定 Python 可执行文件。
 const pythonCommand = resolvePythonCommand()
 
+// 将 FastAPI 后端打包为可分发目录。
 await run(
   pythonCommand,
   [

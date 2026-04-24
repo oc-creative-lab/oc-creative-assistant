@@ -6,6 +6,7 @@ const { app, BrowserWindow, shell } = require('electron')
 
 let backendProcess = null
 
+// 规范化端口输入，不合法时回退到默认值。
 function resolvePort(rawPort, fallback) {
   const parsedPort = Number(rawPort)
 
@@ -16,6 +17,7 @@ function resolvePort(rawPort, fallback) {
   return fallback
 }
 
+// 解析开发模式下要加载的前端入口地址。
 function resolveRendererUrl() {
   const host = process.env.FRONTEND_DEV_HOST ?? '127.0.0.1'
   const port = process.env.FRONTEND_DEV_PORT ?? '5173'
@@ -23,14 +25,17 @@ function resolveRendererUrl() {
   return process.env.ELECTRON_RENDERER_URL ?? `http://${host}:${port}`
 }
 
+// 根据主机和端口拼出本地 HTTP 基础地址。
 function buildHttpUrl(host, port) {
   return `http://${host}:${port}`
 }
 
+// 根据后端基础地址拼出 health 接口地址。
 function buildHealthUrl(baseUrl) {
   return `${baseUrl.replace(/\/$/, '')}/health`
 }
 
+// 探测本机某个端口当前是否可用。
 async function isPortFree(host, port) {
   return new Promise((resolve) => {
     const server = net.createServer()
@@ -47,6 +52,7 @@ async function isPortFree(host, port) {
   })
 }
 
+// 从首选端口开始向后查找可用端口。
 async function findAvailablePort(host, preferredPort, maxAttempts = 20) {
   for (let offset = 0; offset < maxAttempts; offset += 1) {
     const candidatePort = preferredPort + offset
@@ -61,6 +67,7 @@ async function findAvailablePort(host, preferredPort, maxAttempts = 20) {
   )
 }
 
+// 轮询等待某个 HTTP 地址可访问。
 async function waitForUrl(url, timeoutMs = 30_000, intervalMs = 500) {
   const startedAt = Date.now()
 
@@ -81,10 +88,12 @@ async function waitForUrl(url, timeoutMs = 30_000, intervalMs = 500) {
   throw new Error(`Timed out waiting for ${url}`)
 }
 
+// 解析打包后前端入口文件在 resources 中的位置。
 function getBundledFrontendEntry() {
   return path.join(process.resourcesPath, 'frontend', 'index.html')
 }
 
+// 解析打包后后端可执行文件在 resources 中的位置。
 function getBundledBackendExecutable() {
   const executableName = process.platform === 'win32'
     ? 'oc-creative-backend.exe'
@@ -93,6 +102,7 @@ function getBundledBackendExecutable() {
   return path.join(process.resourcesPath, 'backend', executableName)
 }
 
+// 在应用退出时停止已启动的后端进程。
 function stopBundledBackend() {
   if (!backendProcess || backendProcess.killed) {
     return
@@ -105,6 +115,7 @@ function stopBundledBackend() {
   }
 }
 
+// 启动打包后的后端，并等待 health 检查通过。
 async function startBundledBackend() {
   const backendHost = process.env.BACKEND_HOST ?? '127.0.0.1'
   const preferredBackendPort = resolvePort(process.env.BACKEND_PORT, 9000)
@@ -142,6 +153,7 @@ async function startBundledBackend() {
   return backendUrl
 }
 
+// 根据开发态或打包态选择对应的运行配置。
 async function resolveRuntimeConfig() {
   if (!app.isPackaged) {
     return {
@@ -158,6 +170,7 @@ async function resolveRuntimeConfig() {
   }
 }
 
+// 加载开发态前端，失败时回退到内联错误页。
 async function loadRenderer(mainWindow, rendererUrl) {
   try {
     console.log(`[electron] Loading renderer from ${rendererUrl}`)
@@ -210,10 +223,12 @@ async function loadRenderer(mainWindow, rendererUrl) {
   }
 }
 
+// 判断一个地址是否为外部 HTTP(S) 链接。
 function isHttpUrl(url) {
   return /^https?:/i.test(url)
 }
 
+// 判断链接是否仍属于当前前端来源。
 function hasSameOrigin(url, rendererOrigin) {
   try {
     return new URL(url).origin === rendererOrigin
@@ -222,6 +237,7 @@ function hasSameOrigin(url, rendererOrigin) {
   }
 }
 
+// 将外部链接交给系统浏览器，限制应用内导航范围。
 function wireExternalNavigation(mainWindow, rendererUrl) {
   const rendererOrigin = rendererUrl ? new URL(rendererUrl).origin : null
 
@@ -255,6 +271,7 @@ function wireExternalNavigation(mainWindow, rendererUrl) {
   })
 }
 
+// 创建主窗口，并把后端地址注入到渲染进程。
 async function createWindow(runtimeConfig) {
   const mainWindow = new BrowserWindow({
     width: 1440,
@@ -286,11 +303,13 @@ async function createWindow(runtimeConfig) {
   await mainWindow.loadFile(bundledFrontendEntry)
 }
 
+// 进程退出前先清理后端子进程。
 app.on('before-quit', () => {
   app.isQuitting = true
   stopBundledBackend()
 })
 
+// 应用准备完成后初始化运行配置并打开首个窗口。
 app.whenReady().then(async () => {
   if (process.platform === 'win32') {
     app.setAppUserModelId('com.occreativeassistant.app')
@@ -306,6 +325,7 @@ app.whenReady().then(async () => {
   })
 })
 
+// 在非 macOS 平台上，窗口全部关闭后退出应用。
 app.on('window-all-closed', () => {
   stopBundledBackend()
 
