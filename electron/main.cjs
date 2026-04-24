@@ -20,7 +20,7 @@ function resolvePort(rawPort, fallback) {
 // 解析开发模式下要加载的前端入口地址。
 function resolveRendererUrl() {
   const host = process.env.FRONTEND_DEV_HOST ?? '127.0.0.1'
-  const port = process.env.FRONTEND_DEV_PORT ?? '5173'
+  const port = process.env.FRONTEND_DEV_PORT ?? '5174'
 
   return process.env.ELECTRON_RENDERER_URL ?? `http://${host}:${port}`
 }

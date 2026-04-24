@@ -212,5 +212,6 @@ electron/node_modules/
 frontend/dist/
 backend/build/
 backend/dist/
+backend/data/
 electron/dist/
 electron/.bundle/

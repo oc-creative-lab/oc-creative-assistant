@@ -12,7 +12,7 @@ function resolvePort(rawPort: string | undefined, fallback: number) {
 }
 
 const frontendHost = process.env.FRONTEND_DEV_HOST ?? '127.0.0.1'
-const frontendPort = resolvePort(process.env.FRONTEND_DEV_PORT ?? process.env.VITE_PORT, 5173)
+const frontendPort = resolvePort(process.env.FRONTEND_DEV_PORT ?? process.env.VITE_PORT, 5174)
 
 // https://vite.dev/config/
 export default defineConfig(({ command }) => ({
