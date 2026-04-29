@@ -20,10 +20,15 @@ const savingLabel = '\u4fdd\u5b58\u4e2d...'
 </script>
 
 <template>
+  <!-- 顶部栏：负责全局项目操作 -->
   <header class="top-toolbar">
     <div class="title-block">
-      <strong>OC Creative Assistant</strong>
-      <span>{{ projectName }}</span>
+      <div class="brand">
+        <span class="logo-icon">✨</span>
+        <strong>OC Creative Assistant</strong>
+      </div>
+      <span class="divider">/</span>
+      <span class="project-name">{{ projectName }}</span>
     </div>
 
     <nav class="toolbar-actions" aria-label="&#24037;&#20316;&#21306;&#25805;&#20316;">
@@ -53,18 +58,37 @@ const savingLabel = '\u4fdd\u5b58\u4e2d...'
 .title-block {
   min-width: 0;
   display: flex;
-  align-items: baseline;
+  align-items: center;
   gap: 12px;
 }
 
-.title-block strong {
-  font-size: 0.98rem;
-  line-height: 1;
+.brand {
+  display: flex;
+  align-items: center;
+  gap: 8px;
 }
 
-.title-block span {
+.logo-icon {
+  font-size: 1.1rem;
+}
+
+.brand strong {
+  font-size: 1.05rem;
+  font-weight: 700;
+  letter-spacing: -0.01em;
+  color: var(--text);
+}
+
+.divider {
+  color: var(--border);
+  font-size: 1.1rem;
+  font-weight: 300;
+}
+
+.project-name {
   color: var(--muted);
-  font-size: 0.9rem;
+  font-size: 0.95rem;
+  font-weight: 500;
 }
 
 .toolbar-actions {
@@ -75,13 +99,29 @@ const savingLabel = '\u4fdd\u5b58\u4e2d...'
 }
 
 .toolbar-actions button {
-  min-height: 32px;
-  padding: 0 12px;
+  min-height: 34px;
+  padding: 0 16px;
   border: 1px solid var(--border);
-  border-radius: 6px;
+  border-radius: 8px;
   background: var(--panel);
   color: var(--text);
+  font-size: 0.88rem;
+  font-weight: 500;
   cursor: pointer;
+  transition: all 0.2s ease;
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.04);
+}
+
+.toolbar-actions button:hover:not(:disabled) {
+  border-color: var(--accent-border);
+  background: var(--app-bg);
+  color: var(--accent);
+  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.06);
+}
+
+.toolbar-actions button:active:not(:disabled) {
+  transform: translateY(1px);
+  box-shadow: none;
 }
 
 .toolbar-actions button:disabled {

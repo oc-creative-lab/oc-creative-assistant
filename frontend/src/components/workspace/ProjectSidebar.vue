@@ -4,8 +4,6 @@ import type { CreativeFlowNode, CreativeNodeType } from '../../types/node'
 import { nodeTypeOptions } from '../../utils/nodeFactory'
 
 const props = defineProps<{
-  projectName: string
-  saveState: string
   nodes: CreativeFlowNode[]
 }>()
 
@@ -26,25 +24,8 @@ function handleCreateNode(nodeType: CreativeNodeType) {
 </script>
 
 <template>
+  <!-- 左侧栏：负责节点类型和创作资源 -->
   <aside class="project-sidebar">
-    <header class="sidebar-header">
-      <strong>OC Creative Assistant</strong>
-    </header>
-
-    <section class="sidebar-section">
-      <h2>当前项目</h2>
-      <dl class="project-meta">
-        <div>
-          <dt>项目名称</dt>
-          <dd>{{ projectName }}</dd>
-        </div>
-        <div>
-          <dt>保存状态</dt>
-          <dd>{{ saveState }}</dd>
-        </div>
-      </dl>
-    </section>
-
     <section class="sidebar-section">
       <h2>节点类型</h2>
       <div class="node-type-list">
@@ -67,18 +48,41 @@ function handleCreateNode(nodeType: CreativeNodeType) {
     <section class="sidebar-section">
       <h2>Lore Memory 占位</h2>
       <ul class="memory-list">
-        <li>Worldbuilding: {{ loreCounts.worldbuilding }} items</li>
-        <li>Characters: {{ loreCounts.characters }} items</li>
-        <li>Plot: {{ loreCounts.plot }} items</li>
-        <li>Status: 未接入 RAG</li>
+        <li>
+          <span class="memory-label">Worldbuilding</span>
+          <span class="memory-value">{{ loreCounts.worldbuilding }}</span>
+        </li>
+        <li>
+          <span class="memory-label">Characters</span>
+          <span class="memory-value">{{ loreCounts.characters }}</span>
+        </li>
+        <li>
+          <span class="memory-label">Plot</span>
+          <span class="memory-value">{{ loreCounts.plot }}</span>
+        </li>
+        <li class="status-item">
+          <span class="status-dot"></span>
+          未接入 RAG
+        </li>
       </ul>
     </section>
 
     <section class="sidebar-section">
-      <h2>筛选占位</h2>
-      <label><input type="checkbox" disabled /> 只看角色</label>
-      <label><input type="checkbox" disabled /> 只看剧情</label>
-      <label><input type="checkbox" disabled /> 只看世界观</label>
+      <h2>视图筛选</h2>
+      <div class="filter-list">
+        <label class="filter-item">
+          <input type="checkbox" disabled />
+          只看角色
+        </label>
+        <label class="filter-item">
+          <input type="checkbox" disabled />
+          只看剧情
+        </label>
+        <label class="filter-item">
+          <input type="checkbox" disabled />
+          只看世界观
+        </label>
+      </div>
     </section>
   </aside>
 </template>
@@ -93,42 +97,17 @@ function handleCreateNode(nodeType: CreativeNodeType) {
   background: var(--panel);
 }
 
-.sidebar-header,
 .sidebar-section {
-  padding: 16px;
+  padding: 20px;
   border-bottom: 1px solid var(--border);
 }
 
-.sidebar-header strong {
-  font-size: 1rem;
-}
-
 h2 {
-  margin: 0 0 10px;
+  margin: 0 0 14px;
   color: var(--text);
-  font-size: 0.9rem;
-}
-
-.project-meta {
-  display: grid;
-  gap: 10px;
-  margin: 0;
-}
-
-.project-meta div {
-  display: grid;
-  gap: 4px;
-}
-
-dt {
-  color: var(--muted);
-  font-size: 0.76rem;
-}
-
-dd {
-  margin: 0;
-  color: var(--text);
-  font-size: 0.88rem;
+  font-size: 0.95rem;
+  font-weight: 600;
+  letter-spacing: 0.02em;
 }
 
 .node-type-list {
@@ -139,30 +118,36 @@ dd {
 .node-type-button {
   width: 100%;
   display: grid;
-  grid-template-columns: 28px minmax(0, 1fr);
-  gap: 10px;
+  grid-template-columns: 32px minmax(0, 1fr);
+  gap: 12px;
   align-items: center;
-  padding: 10px;
+  padding: 12px;
   border: 1px solid var(--border);
-  border-radius: 6px;
+  border-radius: 8px;
   background: var(--panel-strong);
   color: var(--text);
   text-align: left;
   cursor: pointer;
+  transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.02);
 }
 
 .node-type-button:hover {
   border-color: var(--accent-border);
-  background: var(--accent-soft);
+  background: var(--app-bg);
+  transform: translateY(-1px);
+  box-shadow: 0 4px 6px rgba(0, 0, 0, 0.04);
 }
 
 .node-icon {
   display: grid;
   place-items: center;
-  width: 28px;
-  height: 28px;
-  border-radius: 6px;
+  width: 32px;
+  height: 32px;
+  border-radius: 8px;
   background: var(--panel);
+  font-size: 1.1rem;
+  box-shadow: inset 0 1px 1px rgba(255, 255, 255, 0.1);
 }
 
 .node-type-button strong,
@@ -178,23 +163,83 @@ dd {
 }
 
 .memory-list {
-  display: grid;
-  gap: 6px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
   margin: 0;
   padding: 0;
-  color: var(--muted);
-  font-size: 0.84rem;
   list-style: none;
 }
 
-label {
-  display: block;
-  color: var(--muted);
-  font-size: 0.84rem;
+.memory-list li {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 8px 12px;
+  border-radius: 8px;
+  background: var(--panel-strong);
+  font-size: 0.85rem;
+  transition: background-color 0.2s ease;
 }
 
-label + label {
-  margin-top: 8px;
+.memory-list li:hover:not(.status-item) {
+  background: var(--app-bg);
+}
+
+.memory-label {
+  color: var(--text);
+  font-weight: 500;
+}
+
+.memory-value {
+  background: var(--panel);
+  padding: 2px 8px;
+  border-radius: 12px;
+  font-size: 0.75rem;
+  color: var(--muted);
+  font-weight: 600;
+  box-shadow: inset 0 1px 2px rgba(0, 0, 0, 0.04);
+}
+
+.status-item {
+  justify-content: flex-start !important;
+  gap: 8px;
+  color: var(--muted);
+  background: transparent !important;
+  padding-left: 4px !important;
+  margin-top: 4px;
+}
+
+.status-dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--muted);
+  opacity: 0.5;
+}
+
+.filter-list {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.filter-item {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  color: var(--text);
+  font-size: 0.85rem;
+  cursor: not-allowed;
+  opacity: 0.7;
+}
+
+.filter-item input {
+  margin: 0;
+  width: 16px;
+  height: 16px;
+  accent-color: var(--accent);
+  cursor: not-allowed;
 }
 
 @media (max-width: 920px) {

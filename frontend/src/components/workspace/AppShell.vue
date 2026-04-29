@@ -192,8 +192,6 @@ onMounted(() => {
 
     <main class="workspace-grid">
       <ProjectSidebar
-        :project-name="projectName"
-        :save-state="saveState"
         :nodes="graphNodes"
         @create-node="requestCreateNode"
       />

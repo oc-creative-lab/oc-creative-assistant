@@ -133,6 +133,7 @@ watch(
 </script>
 
 <template>
+  <!-- 右侧属性面板：编辑当前选中节点 -->
   <aside class="detail-sidebar">
     <template v-if="selectedNode">
       <section class="detail-header">
@@ -159,7 +160,7 @@ watch(
         <label>
           节点内容
           <textarea
-            rows="8"
+            rows="4"
             :value="selectedNode.data.content"
             @input="updateNodeData({ content: ($event.target as HTMLTextAreaElement).value })"
           />
@@ -266,7 +267,7 @@ watch(
 .detail-header,
 .detail-panel,
 .empty-state {
-  padding: 16px;
+  padding: 20px;
 }
 
 .detail-header {
@@ -282,25 +283,31 @@ h3 {
 
 .detail-header p {
   color: var(--muted);
-  font-size: 0.78rem;
-  font-weight: 700;
+  font-size: 0.85rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
 }
 
 .detail-header h2 {
-  margin-top: 8px;
-  font-size: 1.1rem;
-  line-height: 1.3;
+  margin-top: 10px;
+  font-size: 1.25rem;
+  font-weight: 700;
+  line-height: 1.4;
+  color: var(--text);
 }
 
 .status-badge {
   display: inline-flex;
-  margin-top: 8px;
-  padding: 3px 8px;
+  margin-top: 12px;
+  padding: 4px 10px;
   border-radius: 999px;
   background: var(--accent-soft);
   color: var(--accent);
-  font-size: 0.72rem;
-  font-weight: 800;
+  font-size: 0.75rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.02em;
 }
 
 .status-badge.outdated {
@@ -315,7 +322,7 @@ h3 {
 
 .detail-panel {
   display: grid;
-  gap: 12px;
+  gap: 16px;
 }
 
 .detail-panel + .detail-panel {
@@ -324,66 +331,103 @@ h3 {
 
 label {
   display: grid;
-  gap: 6px;
-  color: var(--muted);
-  font-size: 0.78rem;
-  font-weight: 700;
+  gap: 8px;
+  color: var(--text);
+  font-size: 0.85rem;
+  font-weight: 600;
 }
 
 input,
 textarea,
 select {
   width: 100%;
-  min-height: 34px;
-  padding: 8px 10px;
+  min-height: 38px;
+  padding: 10px 12px;
   border: 1px solid var(--border);
-  border-radius: 6px;
-  background: var(--panel-strong);
+  border-radius: 8px;
+  background-color: var(--app-bg);
   color: var(--text);
   font: inherit;
+  font-size: 0.9rem;
+  transition: all 0.2s ease;
+  box-shadow: inset 0 1px 2px rgba(0, 0, 0, 0.02);
+}
+
+select option {
+  background-color: var(--panel);
+  color: var(--text);
+  padding: 8px;
+  font-size: 0.9rem;
+}
+
+input:focus,
+textarea:focus,
+select:focus {
+  outline: none;
+  border-color: var(--accent);
+  box-shadow: 0 0 0 3px var(--accent-soft);
+  background-color: #ffffff;
 }
 
 textarea {
   resize: vertical;
-  line-height: 1.45;
+  line-height: 1.5;
 }
 
 .agent-actions {
   display: grid;
   grid-template-columns: 1fr;
-  gap: 8px;
+  gap: 10px;
 }
 
 button {
-  min-height: 34px;
+  min-height: 38px;
   border: 1px solid var(--border);
-  border-radius: 6px;
-  background: var(--panel-strong);
+  border-radius: 8px;
+  background: var(--panel);
   color: var(--text);
+  font-weight: 500;
   cursor: pointer;
+  transition: all 0.2s ease;
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.04);
 }
 
 button:hover {
   border-color: var(--accent-border);
-  background: var(--accent-soft);
+  background: var(--app-bg);
   color: var(--accent);
+  transform: translateY(-1px);
+  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.06);
+}
+
+button:active {
+  transform: translateY(1px);
+  box-shadow: none;
 }
 
 button.danger {
   color: #b42318;
+  border-color: rgba(180, 35, 24, 0.2);
+  background: rgba(180, 35, 24, 0.05);
+}
+
+button.danger:hover {
+  background: rgba(180, 35, 24, 0.1);
+  border-color: rgba(180, 35, 24, 0.3);
 }
 
 .agent-result {
   margin: 0;
   overflow: auto;
-  padding: 12px;
+  padding: 16px;
   border: 1px solid var(--border);
-  border-radius: 6px;
-  background: #f7f8fa;
+  border-radius: 8px;
+  background: #f8fafc;
   color: var(--text);
-  font-size: 0.78rem;
-  line-height: 1.45;
+  font-size: 0.85rem;
+  line-height: 1.5;
   white-space: pre-wrap;
+  box-shadow: inset 0 1px 3px rgba(0, 0, 0, 0.04);
 }
 
 .edge-meta {

@@ -274,6 +274,7 @@ watch(
 
 <template>
   <section class="canvas-workspace">
+    <!-- 画布工具栏：只处理画布相关操作 -->
     <header class="canvas-toolbar">
       <div class="mode-actions" aria-label="画布模式">
         <button
