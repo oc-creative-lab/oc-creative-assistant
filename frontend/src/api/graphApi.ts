@@ -1,4 +1,4 @@
-import type { CreativeNodeType } from '../types/node'
+import type { CreativeNodeStatus, CreativeNodeType, CreativeRelationType } from '../types/node'
 
 // 后端项目 DTO：用于确定当前 graph 属于哪个项目。
 export interface GraphProjectDto {
@@ -16,11 +16,14 @@ export interface GraphPositionDto {
 export interface GraphNodeDto {
   id: string
   type: CreativeNodeType
+  nodeType?: CreativeNodeType | null
   title: string
   content: string
   position: GraphPositionDto
   meta: string
   typeLabel: string
+  tags?: string[]
+  status?: CreativeNodeStatus
 }
 
 // 后端边 DTO；handle 字段用于恢复从哪个连接点拉出的边。
@@ -29,6 +32,7 @@ export interface GraphEdgeDto {
   source: string
   target: string
   label: string
+  relationType?: CreativeRelationType
   sourceHandle?: string | null
   targetHandle?: string | null
   type: string

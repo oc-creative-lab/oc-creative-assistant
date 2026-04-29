@@ -17,6 +17,8 @@ class PositionPayload(BaseModel):
 class NodePayload(BaseModel):
     id: str
     type: str
+    # nodeType 与 type 保持同义，前端 data 中保留一份，便于详情面板编辑和持久化恢复。
+    nodeType: str | None = None
     title: str
     content: str
     position: PositionPayload
@@ -24,6 +26,9 @@ class NodePayload(BaseModel):
     meta: str = ""
     # 展示用类型标签，例如“角色”“世界观”“剧情”，不参与节点类型判断。
     typeLabel: str = ""
+    # tags/status 先存入节点 meta JSON，PoC 阶段不额外扩表。
+    tags: list[str] = Field(default_factory=list)
+    status: str = "draft"
 
 
 # Vue Flow 边 DTO，保留 handle 和边样式信息，保证保存后连线能按原样恢复。
@@ -32,6 +37,7 @@ class EdgePayload(BaseModel):
     source: str
     target: str
     label: str = ""
+    relationType: str = "relates_to"
     sourceHandle: str | None = None
     targetHandle: str | None = None
     type: str = "smoothstep"
@@ -56,5 +62,8 @@ class UpdateNodeRequest(BaseModel):
     title: str | None = None
     content: str | None = None
     position: PositionPayload | None = None
+    nodeType: str | None = None
     meta: str | None = None
     typeLabel: str | None = None
+    tags: list[str] | None = None
+    status: str | None = None

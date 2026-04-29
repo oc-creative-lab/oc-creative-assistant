@@ -1,70 +1,11 @@
 import { mockGraphNodes } from './graph'
 import type { AgentMode, AgentSuggestion, ProjectGroup, WorkspaceStatus } from '../types/workspace'
-import type { CreativeNodeType } from '../types/node'
+import { buildProjectGroupsFromNodes } from '../utils/nodeFactory'
 
 export const mockProjectName = '\u300a\u661f\u5ead\u6863\u6848\u300b'
 
 // mock 数据仍用于右侧 Agent 和部分状态占位；真实 graph 已从后端加载。
-const groupLabels: Record<CreativeNodeType, string> = {
-  character: '\u89d2\u8272',
-  worldbuilding: '\u4e16\u754c\u89c2',
-  plot: '\u5267\u60c5',
-}
-
-export const mockProjectGroups: ProjectGroup[] = [
-  {
-    id: 'characters',
-    title: groupLabels.character,
-    items: mockGraphNodes
-      .filter((node) => node.type === 'character')
-      .map((node) => ({
-        id: node.id,
-        title: node.data.title,
-        kind: node.data.typeLabel,
-        summary: node.data.summary,
-        meta: node.data.meta,
-      })),
-  },
-  {
-    id: 'worldbuilding',
-    title: groupLabels.worldbuilding,
-    items: mockGraphNodes
-      .filter((node) => node.type === 'worldbuilding')
-      .map((node) => ({
-        id: node.id,
-        title: node.data.title,
-        kind: node.data.typeLabel,
-        summary: node.data.summary,
-        meta: node.data.meta,
-      })),
-  },
-  {
-    id: 'plot',
-    title: groupLabels.plot,
-    items: mockGraphNodes
-      .filter((node) => node.type === 'plot')
-      .map((node) => ({
-        id: node.id,
-        title: node.data.title,
-        kind: node.data.typeLabel,
-        summary: node.data.summary,
-        meta: node.data.meta,
-      })),
-  },
-  {
-    id: 'materials',
-    title: '\u8d44\u6599',
-    items: [
-      {
-        id: 'mat-royal-archive',
-        title: '\u738b\u5ba4\u6863\u6848\u6458\u8981',
-        kind: '\u8d44\u6599',
-        summary: '\u5173\u4e8e\u738b\u90fd\u65e7\u5951\u7ea6\u548c\u5730\u4e0b\u9057\u5740\u7684\u7814\u7a76\u6458\u8981\u3002',
-        meta: '\u53c2\u8003 / \u6863\u6848',
-      },
-    ],
-  },
-]
+export const mockProjectGroups: ProjectGroup[] = buildProjectGroupsFromNodes(mockGraphNodes)
 
 export const mockAgentSuggestions: Record<AgentMode, AgentSuggestion[]> = {
   inspiration: [

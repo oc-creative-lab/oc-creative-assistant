@@ -22,6 +22,9 @@ from schemas import (
 DEFAULT_PROJECT_ID = "default-project"
 DEFAULT_PROJECT_NAME = "星庭档案"
 META_TEXT_KEY = "text"
+META_TAGS_KEY = "tags"
+META_STATUS_KEY = "status"
+DEFAULT_NODE_STATUS = "draft"
 
 
 # 首次启动时写入的示例节点，保证前端在没有用户数据时也能展示完整画布流程。
@@ -33,6 +36,8 @@ DEFAULT_NODES = [
         content="年轻的见习记录官，对王都隐藏的魔法痕迹异常敏感。",
         meta="主角 / 视角节点",
         typeLabel="角色",
+        tags=["角色", "主角"],
+        status="synced",
         position=PositionPayload(x=40, y=80),
     ),
     NodePayload(
@@ -42,6 +47,8 @@ DEFAULT_NODES = [
         content="曾经服务于王室档案馆，保留着关于古老契约的秘密。",
         meta="引导者 / 信息源",
         typeLabel="角色",
+        tags=["角色", "导师"],
+        status="draft",
         position=PositionPayload(x=40, y=290),
     ),
     NodePayload(
@@ -51,6 +58,8 @@ DEFAULT_NODES = [
         content="建在三层古城遗址上的都城，地下仍有未注销的旧魔法阵。",
         meta="核心场景 / 城市",
         typeLabel="世界观",
+        tags=["世界观", "城市"],
+        status="synced",
         position=PositionPayload(x=360, y=40),
     ),
     NodePayload(
@@ -60,6 +69,8 @@ DEFAULT_NODES = [
         content="所有术式都需要以真名或记忆作为锚点，代价会追溯到施术者。",
         meta="规则 / 约束",
         typeLabel="设定",
+        tags=["世界观", "规则"],
+        status="outdated",
         position=PositionPayload(x=360, y=250),
     ),
     NodePayload(
@@ -69,6 +80,8 @@ DEFAULT_NODES = [
         content="艾琳在王都集市追查失窃档案，意外遇到伪装身份的导师。",
         meta="第一幕 / 开端",
         typeLabel="剧情",
+        tags=["剧情", "第一幕"],
+        status="draft",
         position=PositionPayload(x=700, y=120),
     ),
     NodePayload(
@@ -78,22 +91,97 @@ DEFAULT_NODES = [
         content="魔法阵被意外启动，王都地下遗址开始影响地表秩序。",
         meta="第二幕 / 压力",
         typeLabel="剧情",
+        tags=["剧情", "冲突"],
+        status="draft",
         position=PositionPayload(x=1020, y=210),
+    ),
+    NodePayload(
+        id="idea-memory-cost",
+        type="idea",
+        title="记忆代价灵感",
+        content="如果真名魔法会改写记忆，角色每次施术都可能遗失一个重要关系。",
+        meta="灵感 / 代价",
+        typeLabel="灵感",
+        tags=["灵感", "魔法"],
+        status="draft",
+        position=PositionPayload(x=700, y=340),
+    ),
+    NodePayload(
+        id="research-archive-source",
+        type="research",
+        title="档案馆资料来源",
+        content="记录王室档案馆公开职责、隐藏职责和旧契约材料的参考摘要。",
+        meta="资料 / 档案",
+        typeLabel="资料",
+        tags=["资料", "档案"],
+        status="draft",
+        position=PositionPayload(x=1020, y=20),
+    ),
+    NodePayload(
+        id="structure-act-one",
+        type="structure",
+        title="第一幕结构整理",
+        content="把失窃档案、初遇导师、魔法阵异动串成第一幕的因果链。",
+        meta="结构 / 第一幕",
+        typeLabel="结构整理",
+        tags=["结构", "剧情"],
+        status="draft",
+        position=PositionPayload(x=1320, y=180),
     ),
 ]
 
 
 # 示例边刻意覆盖角色、世界观、剧情之间的连接，用来验证保存/恢复连线信息。
 DEFAULT_EDGES = [
-    EdgePayload(id="edge-airin-first-meet", source="char-airin", target="plot-first-meet"),
-    EdgePayload(id="edge-mentor-first-meet", source="char-mentor", target="plot-first-meet"),
-    EdgePayload(id="edge-capital-first-meet", source="world-capital", target="plot-first-meet"),
-    EdgePayload(id="edge-magic-conflict", source="world-magic-rule", target="plot-conflict-rise"),
+    EdgePayload(
+        id="edge-airin-first-meet",
+        source="char-airin",
+        target="plot-first-meet",
+        label="参与",
+        relationType="belongs_to",
+    ),
+    EdgePayload(
+        id="edge-mentor-first-meet",
+        source="char-mentor",
+        target="plot-first-meet",
+        label="推动",
+        relationType="causes",
+    ),
+    EdgePayload(
+        id="edge-capital-first-meet",
+        source="world-capital",
+        target="plot-first-meet",
+        label="发生于",
+        relationType="belongs_to",
+    ),
+    EdgePayload(
+        id="edge-magic-conflict",
+        source="world-magic-rule",
+        target="plot-conflict-rise",
+        label="导致",
+        relationType="causes",
+    ),
     EdgePayload(
         id="edge-first-meet-conflict",
         source="plot-first-meet",
         target="plot-conflict-rise",
+        label="发展为",
+        relationType="develops_into",
         animated=True,
+    ),
+    EdgePayload(
+        id="edge-idea-magic-rule",
+        source="idea-memory-cost",
+        target="world-magic-rule",
+        label="补充",
+        relationType="references",
+    ),
+    EdgePayload(
+        id="edge-conflict-structure",
+        source="plot-conflict-rise",
+        target="structure-act-one",
+        label="整理为",
+        relationType="develops_into",
     ),
 ]
 
@@ -197,9 +285,28 @@ def update_node(project_id: str, node_id: str, payload: UpdateNodeRequest) -> No
         if payload.content is not None:
             node.content = payload.content
         if payload.meta is not None:
-            node.meta = _api_meta_to_db(payload.meta)
+            node.meta = _api_meta_to_db(
+                payload.meta,
+                payload.tags,
+                payload.status,
+                existing_meta=node.meta,
+            )
         if payload.typeLabel is not None:
             node.type_label = payload.typeLabel
+        if payload.nodeType is not None:
+            node.node_type = payload.nodeType
+        if payload.tags is not None:
+            node.meta = _api_meta_to_db(
+                _db_meta_to_api(node.meta),
+                payload.tags,
+                _db_status_to_api(node.meta),
+            )
+        if payload.status is not None:
+            node.meta = _api_meta_to_db(
+                _db_meta_to_api(node.meta),
+                _db_tags_to_api(node.meta),
+                payload.status,
+            )
         if payload.position is not None:
             node.position_x = payload.position.x
             node.position_y = payload.position.y
@@ -296,10 +403,13 @@ def _node_to_payload(node: NodeORM) -> NodePayload:
     return NodePayload(
         id=node.id,
         type=node.node_type,
+        nodeType=node.node_type,
         title=node.title,
         content=node.content,
         meta=_db_meta_to_api(node.meta),
         typeLabel=node.type_label,
+        tags=_db_tags_to_api(node.meta),
+        status=_db_status_to_api(node.meta),
         position=PositionPayload(x=node.position_x, y=node.position_y),
     )
 
@@ -310,7 +420,8 @@ def _edge_to_payload(edge: EdgeORM) -> EdgePayload:
         id=edge.id,
         source=edge.source,
         target=edge.target,
-        label=edge.label,
+        label=edge.label or "关联",
+        relationType=edge.relation_type or "relates_to",
         sourceHandle=edge.source_handle,
         targetHandle=edge.target_handle,
         type=edge.edge_type,
@@ -323,10 +434,10 @@ def _node_to_orm(project_id: str, node: NodePayload, sort_order: int) -> NodeORM
     return NodeORM(
         id=node.id,
         project_id=project_id,
-        node_type=node.type,
+        node_type=node.nodeType or node.type,
         title=node.title,
         content=node.content,
-        meta=_api_meta_to_db(node.meta),
+        meta=_api_meta_to_db(node.meta, node.tags, node.status),
         type_label=node.typeLabel,
         position_x=node.position.x,
         position_y=node.position.y,
@@ -341,19 +452,42 @@ def _edge_to_orm(project_id: str, edge: EdgePayload, sort_order: int) -> EdgeORM
         project_id=project_id,
         source=edge.source,
         target=edge.target,
-        label=edge.label,
+        label=edge.label or "关联",
         source_handle=edge.sourceHandle,
         target_handle=edge.targetHandle,
         edge_type=edge.type,
+        relation_type=edge.relationType,
         animated=edge.animated,
         sort_order=sort_order,
     )
 
 
-def _api_meta_to_db(meta: str) -> dict[str, str]:
-    """当前 API 仍接收字符串 meta，数据库层用 JSON 包装，后续可扩展更多字段。"""
-    # 空 meta 存成空对象，读取时再回落为空字符串，避免 JSON 字段里出现无意义 text。
-    return {META_TEXT_KEY: meta} if meta else {}
+def _api_meta_to_db(
+    meta: str,
+    tags: list[str] | None = None,
+    status: str | None = None,
+    existing_meta: Any | None = None,
+) -> dict[str, Any]:
+    """API 仍兼容字符串 meta，同时把 tags/status 放进 JSON，避免 PoC 阶段扩表。"""
+    stored_meta: dict[str, Any] = existing_meta if isinstance(existing_meta, dict) else {}
+    next_meta = dict(stored_meta)
+
+    if meta:
+        next_meta[META_TEXT_KEY] = meta
+    else:
+        next_meta.pop(META_TEXT_KEY, None)
+
+    if tags is not None:
+        next_meta[META_TAGS_KEY] = [tag for tag in tags if isinstance(tag, str)]
+    elif META_TAGS_KEY not in next_meta:
+        next_meta[META_TAGS_KEY] = []
+
+    if status is not None:
+        next_meta[META_STATUS_KEY] = status
+    elif META_STATUS_KEY not in next_meta:
+        next_meta[META_STATUS_KEY] = DEFAULT_NODE_STATUS
+
+    return next_meta
 
 
 def _db_meta_to_api(meta: Any) -> str:
@@ -366,3 +500,21 @@ def _db_meta_to_api(meta: Any) -> str:
         return meta
 
     return ""
+
+
+def _db_tags_to_api(meta: Any) -> list[str]:
+    """从 JSON meta 中读取 tags；旧数据没有 tags 时返回空列表。"""
+    if isinstance(meta, dict):
+        tags = meta.get(META_TAGS_KEY, [])
+        return [tag for tag in tags if isinstance(tag, str)] if isinstance(tags, list) else []
+
+    return []
+
+
+def _db_status_to_api(meta: Any) -> str:
+    """从 JSON meta 中读取 status；旧数据默认视为 draft。"""
+    if isinstance(meta, dict):
+        status = meta.get(META_STATUS_KEY, DEFAULT_NODE_STATUS)
+        return status if isinstance(status, str) else DEFAULT_NODE_STATUS
+
+    return DEFAULT_NODE_STATUS

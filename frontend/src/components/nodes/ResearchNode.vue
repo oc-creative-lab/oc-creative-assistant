@@ -3,12 +3,12 @@ import { Handle, Position } from '@vue-flow/core'
 import type { NodeProps } from '@vue-flow/core'
 import type { CreativeNodeData } from '../../types/node'
 
-// Vue Flow 注入 selected/connectable/data，这里只负责世界观节点的展示和连接点。
+// 资料节点是 RAG 的前端入口占位，当前只保存摘要和来源说明。
 defineProps<NodeProps<CreativeNodeData>>()
 </script>
 
 <template>
-  <article class="creative-node world" :class="{ selected: selected || data.isActive }">
+  <article class="creative-node research" :class="{ selected: selected || data.isActive }">
     <Handle type="target" :position="Position.Left" :connectable="connectable" />
     <p class="node-type"><span>{{ data.icon }}</span>{{ data.typeLabel }}</p>
     <h3>{{ data.title }}</h3>
@@ -22,15 +22,15 @@ defineProps<NodeProps<CreativeNodeData>>()
   width: 240px;
   padding: 12px;
   border: 1px solid #d4dae5;
-  border-left: 4px solid #0f766e;
+  border-left: 4px solid #2563eb;
   border-radius: 8px;
   background: #ffffff;
   box-shadow: 0 10px 24px rgba(31, 41, 51, 0.1);
 }
 
 .creative-node.selected {
-  border-color: #0f766e;
-  box-shadow: 0 0 0 2px rgba(15, 118, 110, 0.18), 0 14px 28px rgba(31, 41, 51, 0.14);
+  border-color: #2563eb;
+  box-shadow: 0 0 0 2px rgba(37, 99, 235, 0.18), 0 14px 28px rgba(31, 41, 51, 0.14);
 }
 
 .node-type,
@@ -43,7 +43,7 @@ h3,
   display: flex;
   align-items: center;
   gap: 6px;
-  color: #0f766e;
+  color: #2563eb;
   font-size: 0.74rem;
   font-weight: 800;
 }

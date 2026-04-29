@@ -1,5 +1,5 @@
-// 左侧项目面板分组 id；materials 暂时是资料占位，不直接对应画布节点类型。
-export type ProjectGroupId = 'characters' | 'worldbuilding' | 'plot' | 'materials'
+// 旧项目列表分组 id，保留给 mock/兼容代码；左侧主入口已改为节点工具栏。
+export type ProjectGroupId = 'ideas' | 'characters' | 'worldbuilding' | 'plot' | 'research' | 'structure'
 
 // 右侧 Agent 面板的工作模式。
 export type AgentMode = 'inspiration' | 'research' | 'structure'

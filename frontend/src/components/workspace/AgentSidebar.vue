@@ -1,118 +1,361 @@
 <script setup lang="ts">
-import { computed, ref } from 'vue'
-import { mockAgentSuggestions } from '../../mocks/workspaceMock'
-import type { AgentMode, ProjectItem } from '../../types/workspace'
+import { computed, ref, watch } from 'vue'
+import {
+  RELATION_TYPE_OPTIONS,
+  type CreativeFlowEdge,
+  type CreativeFlowNode,
+  type CreativeNodeData,
+  type CreativeRelationType,
+} from '../../types/node'
 
-defineProps<{
-  currentNode: ProjectItem
+const props = defineProps<{
+  selectedNode: CreativeFlowNode | null
+  selectedEdge: CreativeFlowEdge | null
+  nodes: CreativeFlowNode[]
 }>()
 
-// 当前是 mock Agent 面板，模式 id 与 mockAgentSuggestions 的 key 一一对应。
-const modes: Array<{ id: AgentMode; label: string }> = [
-  { id: 'inspiration', label: '\u7075\u611f\u5f15\u5bfc' },
-  { id: 'research', label: '\u8d44\u6599\u67e5\u8be2' },
-  { id: 'structure', label: '\u7ed3\u6784\u7f16\u6392' },
-]
+const emit = defineEmits<{
+  nodeUpdated: [node: CreativeFlowNode]
+  edgeUpdated: [edge: CreativeFlowEdge]
+  edgeDeleted: [edgeId: string]
+}>()
 
-const activeMode = ref<AgentMode>('inspiration')
-// 切换模式只影响建议列表，不会修改当前节点或画布数据。
-const suggestions = computed(() => mockAgentSuggestions[activeMode.value])
+const agentResult = ref('')
+
+const selectedNodeTags = computed(() => props.selectedNode?.data.tags.join(', ') ?? '')
+
+const sourceNodeTitle = computed(() => {
+  if (!props.selectedEdge) {
+    return ''
+  }
+
+  return props.nodes.find((node) => node.id === props.selectedEdge?.source)?.data.title ?? props.selectedEdge.source
+})
+
+const targetNodeTitle = computed(() => {
+  if (!props.selectedEdge) {
+    return ''
+  }
+
+  return props.nodes.find((node) => node.id === props.selectedEdge?.target)?.data.title ?? props.selectedEdge.target
+})
+
+function updateNodeData(partial: Partial<CreativeNodeData>) {
+  if (!props.selectedNode) {
+    return
+  }
+
+  // 右侧面板是节点完整内容的编辑入口，画布卡片只负责展示摘要。
+  emit('nodeUpdated', {
+    ...props.selectedNode,
+    data: {
+      ...props.selectedNode.data,
+      ...partial,
+    },
+  })
+}
+
+function updateNodeTags(rawValue: string) {
+  const tags = rawValue
+    .split(',')
+    .map((tag) => tag.trim())
+    .filter(Boolean)
+
+  updateNodeData({ tags })
+}
+
+function updateEdge(partial: Partial<CreativeFlowEdge['data']>) {
+  if (!props.selectedEdge) {
+    return
+  }
+
+  const data = {
+    ...props.selectedEdge.data,
+    ...partial,
+  }
+
+  // 修改关系标签后立即抛给 AppShell，随后由统一保存流程同步到后端。
+  emit('edgeUpdated', {
+    ...props.selectedEdge,
+    label: data.label,
+    data,
+  })
+}
+
+function runAgentMock(type: 'inspiration' | 'research' | 'structure') {
+  // Agent mock 只展示结构化占位结果，不自动写入节点正文，保留用户手动采纳边界。
+  if (type === 'inspiration') {
+    agentResult.value = JSON.stringify(
+      {
+        type: 'inspiration',
+        suggestions: [
+          '这个角色的核心欲望是什么？',
+          '这个设定会和哪个已有世界观节点发生冲突？',
+          '是否需要补充一个事件节点解释其背景？',
+        ],
+      },
+      null,
+      2,
+    )
+    return
+  }
+
+  if (type === 'research') {
+    agentResult.value = JSON.stringify(
+      {
+        type: 'research',
+        summary: '这里将来会展示 RAG 或资料查询结果。',
+        status: 'RAG 尚未接入',
+      },
+      null,
+      2,
+    )
+    return
+  }
+
+  agentResult.value = JSON.stringify(
+    {
+      type: 'structure',
+      summary: '这里将来会把多个节点整理成角色卡、关系图或剧情框架。',
+      status: 'Structure Agent 尚未接入',
+    },
+    null,
+    2,
+  )
+}
+
+watch(
+  () => [props.selectedNode?.id, props.selectedEdge?.id],
+  () => {
+    agentResult.value = ''
+  },
+)
 </script>
 
 <template>
-  <aside class="agent-sidebar">
-    <section class="current-node-card">
-      <p>&#24403;&#21069;&#33410;&#28857;</p>
-      <h2>{{ currentNode.title }}</h2>
-      <span>{{ currentNode.kind }} / {{ currentNode.meta }}</span>
+  <aside class="detail-sidebar">
+    <template v-if="selectedNode">
+      <section class="detail-header">
+        <p>当前节点</p>
+        <h2>{{ selectedNode.data.icon }} {{ selectedNode.data.title }}</h2>
+        <span class="status-badge" :class="selectedNode.data.status">{{ selectedNode.data.status }}</span>
+      </section>
+
+      <section class="detail-panel">
+        <label>
+          节点类型
+          <input type="text" :value="selectedNode.data.typeLabel" disabled />
+        </label>
+
+        <label>
+          节点标题
+          <input
+            type="text"
+            :value="selectedNode.data.title"
+            @input="updateNodeData({ title: ($event.target as HTMLInputElement).value })"
+          />
+        </label>
+
+        <label>
+          节点内容
+          <textarea
+            rows="8"
+            :value="selectedNode.data.content"
+            @input="updateNodeData({ content: ($event.target as HTMLTextAreaElement).value })"
+          />
+        </label>
+
+        <label>
+          标签
+          <input
+            type="text"
+            :value="selectedNodeTags"
+            placeholder="用逗号分隔，例如：主角, 第一幕"
+            @input="updateNodeTags(($event.target as HTMLInputElement).value)"
+          />
+        </label>
+
+        <label>
+          状态
+          <select
+            :value="selectedNode.data.status"
+            @change="updateNodeData({ status: ($event.target as HTMLSelectElement).value as CreativeNodeData['status'] })"
+          >
+            <option value="draft">draft</option>
+            <option value="synced">synced</option>
+            <option value="outdated">outdated</option>
+          </select>
+        </label>
+      </section>
+
+      <section class="detail-panel">
+        <h3>Agent Actions 占位</h3>
+        <div class="agent-actions">
+          <button type="button" @click="runAgentMock('inspiration')">灵感引导</button>
+          <button type="button" @click="runAgentMock('research')">资料查询</button>
+          <button type="button" @click="runAgentMock('structure')">结构整理</button>
+        </div>
+        <pre v-if="agentResult" class="agent-result">{{ agentResult }}</pre>
+      </section>
+    </template>
+
+    <template v-else-if="selectedEdge">
+      <section class="detail-header">
+        <p>当前连线</p>
+        <h2>{{ selectedEdge.data.label }}</h2>
+      </section>
+
+      <section class="detail-panel">
+        <dl class="edge-meta">
+          <div>
+            <dt>起点节点</dt>
+            <dd>{{ sourceNodeTitle }}</dd>
+          </div>
+          <div>
+            <dt>终点节点</dt>
+            <dd>{{ targetNodeTitle }}</dd>
+          </div>
+        </dl>
+
+        <label>
+          连线关系类型
+          <select
+            :value="selectedEdge.data.relationType"
+            @change="updateEdge({ relationType: ($event.target as HTMLSelectElement).value as CreativeRelationType })"
+          >
+            <option
+              v-for="option in RELATION_TYPE_OPTIONS"
+              :key="option.value"
+              :value="option.value"
+            >
+              {{ option.label }}
+            </option>
+          </select>
+        </label>
+
+        <label>
+          连线标签
+          <input
+            type="text"
+            :value="selectedEdge.data.label"
+            @input="updateEdge({ label: ($event.target as HTMLInputElement).value })"
+          />
+        </label>
+
+        <button type="button" class="danger" @click="$emit('edgeDeleted', selectedEdge.id)">删除连线</button>
+      </section>
+    </template>
+
+    <section v-else class="empty-state">
+      <p>未选择对象</p>
+      <span>选择一个节点编辑内容，或选择一条连线编辑关系标签。</span>
     </section>
-
-    <section class="agent-panel">
-      <div class="agent-tabs" aria-label="AI Agent &#27169;&#24335;">
-        <button
-          v-for="mode in modes"
-          :key="mode.id"
-          type="button"
-          :class="{ active: mode.id === activeMode }"
-          @click="activeMode = mode.id"
-        >
-          {{ mode.label }}
-        </button>
-      </div>
-
-      <div class="suggestion-list">
-        <article v-for="suggestion in suggestions" :key="suggestion.id" class="suggestion-card">
-          <h3>{{ suggestion.title }}</h3>
-          <p>{{ suggestion.body }}</p>
-        </article>
-      </div>
-    </section>
-
-    <footer class="agent-actions">
-      <button type="button">&#37319;&#32435;&#20026;&#26032;&#33410;&#28857;</button>
-      <button type="button">&#20889;&#20837;&#24403;&#21069;&#33410;&#28857;</button>
-      <button type="button">&#24573;&#30053;</button>
-    </footer>
   </aside>
 </template>
 
 <style scoped>
-.agent-sidebar {
+.detail-sidebar {
   min-height: 0;
   display: grid;
-  grid-template-rows: auto minmax(0, 1fr) auto;
+  grid-template-rows: auto minmax(0, 1fr);
+  overflow: auto;
   border-left: 1px solid var(--border);
   background: var(--panel);
 }
 
-.current-node-card,
-.agent-panel,
-.agent-actions {
+.detail-header,
+.detail-panel,
+.empty-state {
   padding: 16px;
 }
 
-.current-node-card {
+.detail-header {
   border-bottom: 1px solid var(--border);
   background: var(--panel-strong);
 }
 
-.current-node-card p,
-.current-node-card h2 {
+.detail-header p,
+.detail-header h2,
+h3 {
   margin: 0;
 }
 
-.current-node-card p {
+.detail-header p {
   color: var(--muted);
   font-size: 0.78rem;
   font-weight: 700;
 }
 
-.current-node-card h2 {
+.detail-header h2 {
   margin-top: 8px;
-  font-size: 1.2rem;
+  font-size: 1.1rem;
+  line-height: 1.3;
 }
 
-.current-node-card span {
-  display: block;
-  margin-top: 6px;
-  color: var(--muted);
-  font-size: 0.86rem;
+.status-badge {
+  display: inline-flex;
+  margin-top: 8px;
+  padding: 3px 8px;
+  border-radius: 999px;
+  background: var(--accent-soft);
+  color: var(--accent);
+  font-size: 0.72rem;
+  font-weight: 800;
 }
 
-.agent-panel {
-  min-height: 0;
-  overflow: auto;
+.status-badge.outdated {
+  background: rgba(180, 83, 9, 0.12);
+  color: #b45309;
 }
 
-.agent-tabs {
+.status-badge.synced {
+  background: rgba(15, 118, 110, 0.12);
+  color: #0f766e;
+}
+
+.detail-panel {
   display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
-  gap: 6px;
+  gap: 12px;
 }
 
-.agent-tabs button,
-.agent-actions button {
-  min-height: 32px;
+.detail-panel + .detail-panel {
+  border-top: 1px solid var(--border);
+}
+
+label {
+  display: grid;
+  gap: 6px;
+  color: var(--muted);
+  font-size: 0.78rem;
+  font-weight: 700;
+}
+
+input,
+textarea,
+select {
+  width: 100%;
+  min-height: 34px;
+  padding: 8px 10px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--panel-strong);
+  color: var(--text);
+  font: inherit;
+}
+
+textarea {
+  resize: vertical;
+  line-height: 1.45;
+}
+
+.agent-actions {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 8px;
+}
+
+button {
+  min-height: 34px;
   border: 1px solid var(--border);
   border-radius: 6px;
   background: var(--panel-strong);
@@ -120,57 +363,62 @@ const suggestions = computed(() => mockAgentSuggestions[activeMode.value])
   cursor: pointer;
 }
 
-.agent-tabs button {
-  padding: 0 6px;
-  color: var(--muted);
-  font-size: 0.82rem;
-}
-
-.agent-tabs button.active {
+button:hover {
   border-color: var(--accent-border);
   background: var(--accent-soft);
   color: var(--accent);
-  font-weight: 700;
 }
 
-.suggestion-list {
-  display: grid;
-  gap: 10px;
-  margin-top: 14px;
+button.danger {
+  color: #b42318;
 }
 
-.suggestion-card {
+.agent-result {
+  margin: 0;
+  overflow: auto;
   padding: 12px;
   border: 1px solid var(--border);
-  border-radius: 8px;
-  background: var(--panel-strong);
+  border-radius: 6px;
+  background: #f7f8fa;
+  color: var(--text);
+  font-size: 0.78rem;
+  line-height: 1.45;
+  white-space: pre-wrap;
 }
 
-.suggestion-card h3,
-.suggestion-card p {
+.edge-meta {
+  display: grid;
+  gap: 10px;
   margin: 0;
 }
 
-.suggestion-card h3 {
-  font-size: 0.96rem;
-}
-
-.suggestion-card p {
-  margin-top: 6px;
-  color: var(--muted);
-  font-size: 0.88rem;
-}
-
-.agent-actions {
+.edge-meta div {
   display: grid;
-  grid-template-columns: 1fr;
-  gap: 8px;
-  border-top: 1px solid var(--border);
-  background: var(--panel-strong);
+  gap: 4px;
+}
+
+dt {
+  color: var(--muted);
+  font-size: 0.76rem;
+}
+
+dd {
+  margin: 0;
+}
+
+.empty-state {
+  align-self: start;
+  color: var(--muted);
+}
+
+.empty-state p {
+  margin: 0 0 6px;
+  color: var(--text);
+  font-weight: 700;
 }
 
 @media (max-width: 920px) {
-  .agent-sidebar {
+  .detail-sidebar {
     border-left: 0;
     border-top: 1px solid var(--border);
   }

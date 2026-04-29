@@ -10,9 +10,9 @@ defineProps<NodeProps<CreativeNodeData>>()
 <template>
   <article class="creative-node plot" :class="{ selected: selected || data.isActive }">
     <Handle type="target" :position="Position.Left" :connectable="connectable" />
-    <p class="node-type">{{ data.typeLabel }}</p>
+    <p class="node-type"><span>{{ data.icon }}</span>{{ data.typeLabel }}</p>
     <h3>{{ data.title }}</h3>
-    <p class="node-summary">{{ data.summary }}</p>
+    <p class="node-summary">{{ data.content }}</p>
     <Handle type="source" :position="Position.Right" :connectable="connectable" />
   </article>
 </template>
@@ -40,6 +40,9 @@ h3,
 }
 
 .node-type {
+  display: flex;
+  align-items: center;
+  gap: 6px;
   color: #b45309;
   font-size: 0.74rem;
   font-weight: 800;
@@ -52,9 +55,13 @@ h3 {
 }
 
 .node-summary {
+  display: -webkit-box;
   margin-top: 8px;
+  overflow: hidden;
   color: #667085;
   font-size: 0.82rem;
   line-height: 1.45;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 3;
 }
 </style>

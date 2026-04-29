@@ -145,6 +145,13 @@ class EdgeORM(Base):
         default="smoothstep",
         server_default="smoothstep",
     )
+    # 创作关系类型，例如 relates_to、causes、conflicts_with。
+    relation_type: Mapped[str] = mapped_column(
+        String,
+        nullable=False,
+        default="relates_to",
+        server_default="relates_to",
+    )
     # 是否启用 Vue Flow 边动画效果。
     animated: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False, server_default=false())
     # 边保存顺序，用于读取时稳定排序。

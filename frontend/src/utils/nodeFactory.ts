@@ -1,48 +1,104 @@
 import { Position } from '@vue-flow/core'
-import type { CreativeFlowNode, CreativeNodeType } from '../types/node'
+import type { CreativeFlowNode, CreativeNodeData, CreativeNodeType } from '../types/node'
 import type { ProjectGroup, ProjectGroupId, ProjectItem } from '../types/workspace'
 
-export const nodeTypeOptions: Array<{ type: CreativeNodeType; label: string }> = [
-  { type: 'character', label: '\u89d2\u8272\u8282\u70b9' },
-  { type: 'worldbuilding', label: '\u4e16\u754c\u89c2\u8282\u70b9' },
-  { type: 'plot', label: '\u5267\u60c5\u8282\u70b9' },
+export interface NodeTypeOption {
+  type: CreativeNodeType
+  label: string
+  icon: string
+  description: string
+}
+
+export const nodeTypeOptions: NodeTypeOption[] = [
+  { type: 'idea', icon: '💡', label: '灵感节点', description: '记录脑洞、初始想法、待扩展灵感' },
+  { type: 'character', icon: '👤', label: '角色节点', description: '记录角色设定、动机和关系' },
+  { type: 'worldbuilding', icon: '🌍', label: '世界观节点', description: '记录世界规则、场景和组织' },
+  { type: 'plot', icon: '🧩', label: '剧情节点', description: '记录事件、冲突、转折和结果' },
+  { type: 'research', icon: '📚', label: '资料节点', description: '记录资料摘要、来源和参考' },
+  { type: 'structure', icon: '🗂', label: '结构整理节点', description: '整理角色卡、关系图和剧情框架' },
 ]
 
-// 新建节点的默认文案集中在这里，避免组件里按类型散落创建规则。
+// 默认数据集中维护，新增节点类型时只需要补齐这里和 Vue Flow 节点插槽。
 const nodeDefaults: Record<
   CreativeNodeType,
   {
     idPrefix: string
     title: string
+    content: string
     typeLabel: string
-    summary: string
-    meta: string
+    icon: string
+    tags: string[]
   }
 > = {
+  idea: {
+    idPrefix: 'idea-draft',
+    title: '未命名灵感',
+    content: '在这里记录一个新的创作灵感……',
+    typeLabel: '灵感',
+    icon: '💡',
+    tags: ['灵感'],
+  },
   character: {
     idPrefix: 'char-draft',
-    title: '\u65b0\u89d2\u8272',
-    typeLabel: '\u89d2\u8272',
-    summary: '\u8fd9\u662f\u4e00\u4e2a\u65b0\u7684\u89d2\u8272\u8282\u70b9\uff0c\u53ef\u540e\u7eed\u8865\u5145\u52a8\u673a\u3001\u5173\u7cfb\u548c\u80cc\u666f\u3002',
-    meta: '\u8349\u7a3f / \u89d2\u8272',
+    title: '未命名角色',
+    content: '在这里记录角色动机、关系和背景……',
+    typeLabel: '角色',
+    icon: '👤',
+    tags: ['角色'],
   },
   worldbuilding: {
     idPrefix: 'world-draft',
-    title: '\u65b0\u4e16\u754c\u89c2\u8bbe\u5b9a',
-    typeLabel: '\u4e16\u754c\u89c2',
-    summary: '\u8fd9\u662f\u4e00\u4e2a\u65b0\u7684\u4e16\u754c\u89c2\u8282\u70b9\uff0c\u53ef\u7528\u6765\u8bb0\u5f55\u573a\u666f\u3001\u89c4\u5219\u6216\u7ec4\u7ec7\u3002',
-    meta: '\u8349\u7a3f / \u8bbe\u5b9a',
+    title: '未命名世界观',
+    content: '在这里记录世界规则、场景或组织设定……',
+    typeLabel: '世界观',
+    icon: '🌍',
+    tags: ['世界观'],
   },
   plot: {
     idPrefix: 'plot-draft',
-    title: '\u65b0\u5267\u60c5\u8282\u70b9',
-    typeLabel: '\u5267\u60c5',
-    summary: '\u8fd9\u662f\u4e00\u4e2a\u65b0\u7684\u5267\u60c5\u8282\u70b9\uff0c\u53ef\u540e\u7eed\u8865\u5145\u51b2\u7a81\u3001\u8f6c\u6298\u548c\u7ed3\u679c\u3002',
-    meta: '\u8349\u7a3f / \u5267\u60c5',
+    title: '未命名剧情',
+    content: '在这里记录事件、冲突、转折和结果……',
+    typeLabel: '剧情',
+    icon: '🧩',
+    tags: ['剧情'],
+  },
+  research: {
+    idPrefix: 'research-draft',
+    title: '未命名资料',
+    content: '在这里记录资料摘要或参考来源……',
+    typeLabel: '资料',
+    icon: '📚',
+    tags: ['资料'],
+  },
+  structure: {
+    idPrefix: 'structure-draft',
+    title: '未命名结构',
+    content: '在这里整理角色卡、关系图或剧情框架……',
+    typeLabel: '结构整理',
+    icon: '🗂',
+    tags: ['结构'],
   },
 }
 
-// 根据节点类型创建带默认内容的画布节点，后续接后端时可以把这里替换为真实创建 DTO。
+export function getNodeTypeOption(type: CreativeNodeType): NodeTypeOption {
+  return nodeTypeOptions.find((option) => option.type === type) ?? nodeTypeOptions[0]
+}
+
+export function createNodeData(type: CreativeNodeType): CreativeNodeData {
+  const defaults = nodeDefaults[type]
+
+  return {
+    title: defaults.title,
+    content: defaults.content,
+    nodeType: type,
+    tags: [...defaults.tags],
+    status: 'draft',
+    icon: defaults.icon,
+    typeLabel: defaults.typeLabel,
+  }
+}
+
+// PoC 阶段点击节点工具栏会直接生成本地画布节点，不触发 Agent 或 RAG。
 export function createCreativeNode(
   type: CreativeNodeType,
   index: number,
@@ -56,56 +112,42 @@ export function createCreativeNode(
     position,
     sourcePosition: Position.Right,
     targetPosition: Position.Left,
-    data: {
-      title: `${defaults.title} ${index}`,
-      typeLabel: defaults.typeLabel,
-      summary: defaults.summary,
-      meta: defaults.meta,
-    },
+    data: createNodeData(type),
   }
 }
 
-// 将画布节点映射为左侧项目面板条目，保持 sidebar 与画布使用同一份节点语义。
+// 旧的项目列表工具仍保留给 mock/兼容代码使用，内容来源改成新的 content/tags 字段。
 export function toProjectItem(node: CreativeFlowNode): ProjectItem {
   return {
     id: node.id,
     title: node.data.title,
     kind: node.data.typeLabel,
-    summary: node.data.summary,
-    meta: node.data.meta,
+    summary: node.data.content,
+    meta: node.data.tags.join(' / '),
   }
 }
 
-// 目前三类可编辑节点分别落入左侧对应分组，资料分组暂不参与画布创建。
 export function getProjectGroupIdForNodeType(type: CreativeNodeType): ProjectGroupId {
   const groupMap: Record<CreativeNodeType, ProjectGroupId> = {
+    idea: 'ideas',
     character: 'characters',
     worldbuilding: 'worldbuilding',
     plot: 'plot',
+    research: 'research',
+    structure: 'structure',
   }
 
   return groupMap[type]
 }
 
-// 根据当前 graph nodes 重新生成左侧项目分组，让加载、创建、保存后的数据都保持一致。
 export function buildProjectGroupsFromNodes(nodes: CreativeFlowNode[]): ProjectGroup[] {
   const groups: ProjectGroup[] = [
-    { id: 'characters', title: '\u89d2\u8272', items: [] },
-    { id: 'worldbuilding', title: '\u4e16\u754c\u89c2', items: [] },
-    { id: 'plot', title: '\u5267\u60c5', items: [] },
-    {
-      id: 'materials',
-      title: '\u8d44\u6599',
-      items: [
-        {
-          id: 'mat-royal-archive',
-          title: '\u738b\u5ba4\u6863\u6848\u6458\u8981',
-          kind: '\u8d44\u6599',
-          summary: '\u5173\u4e8e\u738b\u90fd\u65e7\u5951\u7ea6\u548c\u5730\u4e0b\u9057\u5740\u7684\u7814\u7a76\u6458\u8981\u3002',
-          meta: '\u53c2\u8003 / \u6863\u6848',
-        },
-      ],
-    },
+    { id: 'ideas', title: '灵感', items: [] },
+    { id: 'characters', title: '角色', items: [] },
+    { id: 'worldbuilding', title: '世界观', items: [] },
+    { id: 'plot', title: '剧情', items: [] },
+    { id: 'research', title: '资料', items: [] },
+    { id: 'structure', title: '结构整理', items: [] },
   ]
 
   for (const node of nodes) {

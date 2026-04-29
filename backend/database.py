@@ -58,3 +58,18 @@ def init_db() -> None:
     from models import EdgeORM, NodeORM, ProjectORM  # noqa: F401
 
     Base.metadata.create_all(bind=engine)
+    _ensure_sqlite_schema_compatibility()
+
+
+def _ensure_sqlite_schema_compatibility() -> None:
+    """为旧 PoC 数据库补齐新增列，避免引入完整迁移系统。"""
+    with engine.begin() as connection:
+        edge_columns = {
+            row[1]
+            for row in connection.exec_driver_sql("PRAGMA table_info(edges)").fetchall()
+        }
+
+        if "relation_type" not in edge_columns:
+            connection.exec_driver_sql(
+                "ALTER TABLE edges ADD COLUMN relation_type VARCHAR NOT NULL DEFAULT 'relates_to'"
+            )

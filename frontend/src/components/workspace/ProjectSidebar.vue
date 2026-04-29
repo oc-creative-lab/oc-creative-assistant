@@ -1,44 +1,84 @@
 <script setup lang="ts">
-import type { ProjectGroup } from '../../types/workspace'
+import { computed } from 'vue'
+import type { CreativeFlowNode, CreativeNodeType } from '../../types/node'
+import { nodeTypeOptions } from '../../utils/nodeFactory'
 
-defineProps<{
-  // groups 由 AppShell 从当前 graph nodes 派生，左侧不维护独立副本。
-  groups: ProjectGroup[]
-  selectedNodeId: string
+const props = defineProps<{
+  projectName: string
+  saveState: string
+  nodes: CreativeFlowNode[]
 }>()
 
-defineEmits<{
-  // 点击条目只上抛 id，选中态统一交给 AppShell 更新。
-  selectNode: [nodeId: string]
+const emit = defineEmits<{
+  createNode: [nodeType: CreativeNodeType]
 }>()
+
+const loreCounts = computed(() => ({
+  worldbuilding: props.nodes.filter((node) => node.data.nodeType === 'worldbuilding').length,
+  characters: props.nodes.filter((node) => node.data.nodeType === 'character').length,
+  plot: props.nodes.filter((node) => node.data.nodeType === 'plot').length,
+}))
+
+function handleCreateNode(nodeType: CreativeNodeType) {
+  // PoC 阶段左侧只负责创建本地节点入口，不触发 Agent、RAG 或后端 LLM 调用。
+  emit('createNode', nodeType)
+}
 </script>
 
 <template>
   <aside class="project-sidebar">
     <header class="sidebar-header">
-      <h2>&#39033;&#30446;&#38754;&#26495;</h2>
-      <input
-        type="search"
-        placeholder="&#25628;&#32034;&#35282;&#33394;&#12289;&#21095;&#24773;&#12289;&#36164;&#26009;..."
-        aria-label="&#25628;&#32034;&#39033;&#30446;&#20869;&#23481;"
-      />
+      <strong>OC Creative Assistant</strong>
     </header>
 
-    <section class="group-list" aria-label="&#39033;&#30446;&#20998;&#32452;">
-      <article v-for="group in groups" :key="group.id" class="project-group">
-        <h3>{{ group.title }}</h3>
+    <section class="sidebar-section">
+      <h2>当前项目</h2>
+      <dl class="project-meta">
+        <div>
+          <dt>项目名称</dt>
+          <dd>{{ projectName }}</dd>
+        </div>
+        <div>
+          <dt>保存状态</dt>
+          <dd>{{ saveState }}</dd>
+        </div>
+      </dl>
+    </section>
+
+    <section class="sidebar-section">
+      <h2>节点类型</h2>
+      <div class="node-type-list">
         <button
-          v-for="item in group.items"
-          :key="item.id"
-          class="project-item"
-          :class="{ active: item.id === selectedNodeId }"
+          v-for="option in nodeTypeOptions"
+          :key="option.type"
           type="button"
-          @click="$emit('selectNode', item.id)"
+          class="node-type-button"
+          @click="handleCreateNode(option.type)"
         >
-          <span>{{ item.title }}</span>
-          <small>{{ item.meta }}</small>
+          <span class="node-icon">{{ option.icon }}</span>
+          <span>
+            <strong>{{ option.label }}</strong>
+            <small>{{ option.description }}</small>
+          </span>
         </button>
-      </article>
+      </div>
+    </section>
+
+    <section class="sidebar-section">
+      <h2>Lore Memory 占位</h2>
+      <ul class="memory-list">
+        <li>Worldbuilding: {{ loreCounts.worldbuilding }} items</li>
+        <li>Characters: {{ loreCounts.characters }} items</li>
+        <li>Plot: {{ loreCounts.plot }} items</li>
+        <li>Status: 未接入 RAG</li>
+      </ul>
+    </section>
+
+    <section class="sidebar-section">
+      <h2>筛选占位</h2>
+      <label><input type="checkbox" disabled /> 只看角色</label>
+      <label><input type="checkbox" disabled /> 只看剧情</label>
+      <label><input type="checkbox" disabled /> 只看世界观</label>
     </section>
   </aside>
 </template>
@@ -48,83 +88,118 @@ defineEmits<{
   min-height: 0;
   display: flex;
   flex-direction: column;
+  overflow: auto;
   border-right: 1px solid var(--border);
   background: var(--panel);
 }
 
-.sidebar-header {
+.sidebar-header,
+.sidebar-section {
   padding: 16px;
   border-bottom: 1px solid var(--border);
 }
 
-h2,
-h3 {
-  margin: 0;
-}
-
-h2 {
+.sidebar-header strong {
   font-size: 1rem;
 }
 
-input {
+h2 {
+  margin: 0 0 10px;
+  color: var(--text);
+  font-size: 0.9rem;
+}
+
+.project-meta {
+  display: grid;
+  gap: 10px;
+  margin: 0;
+}
+
+.project-meta div {
+  display: grid;
+  gap: 4px;
+}
+
+dt {
+  color: var(--muted);
+  font-size: 0.76rem;
+}
+
+dd {
+  margin: 0;
+  color: var(--text);
+  font-size: 0.88rem;
+}
+
+.node-type-list {
+  display: grid;
+  gap: 8px;
+}
+
+.node-type-button {
   width: 100%;
-  min-height: 34px;
-  margin-top: 12px;
-  padding: 0 10px;
+  display: grid;
+  grid-template-columns: 28px minmax(0, 1fr);
+  gap: 10px;
+  align-items: center;
+  padding: 10px;
   border: 1px solid var(--border);
   border-radius: 6px;
   background: var(--panel-strong);
-  color: var(--text);
-}
-
-.group-list {
-  min-height: 0;
-  overflow: auto;
-  padding: 12px;
-}
-
-.project-group + .project-group {
-  margin-top: 16px;
-}
-
-h3 {
-  padding: 0 4px 8px;
-  color: var(--muted);
-  font-size: 0.78rem;
-  font-weight: 700;
-}
-
-.project-item {
-  width: 100%;
-  display: grid;
-  gap: 4px;
-  padding: 10px;
-  border: 1px solid transparent;
-  border-radius: 6px;
-  background: transparent;
   color: var(--text);
   text-align: left;
   cursor: pointer;
 }
 
-.project-item:hover,
-.project-item.active {
+.node-type-button:hover {
   border-color: var(--accent-border);
   background: var(--accent-soft);
 }
 
-.project-item span {
-  font-weight: 650;
+.node-icon {
+  display: grid;
+  place-items: center;
+  width: 28px;
+  height: 28px;
+  border-radius: 6px;
+  background: var(--panel);
 }
 
-.project-item small {
+.node-type-button strong,
+.node-type-button small {
+  display: block;
+}
+
+.node-type-button small {
+  margin-top: 2px;
   color: var(--muted);
-  font-size: 0.76rem;
+  font-size: 0.75rem;
+  line-height: 1.35;
+}
+
+.memory-list {
+  display: grid;
+  gap: 6px;
+  margin: 0;
+  padding: 0;
+  color: var(--muted);
+  font-size: 0.84rem;
+  list-style: none;
+}
+
+label {
+  display: block;
+  color: var(--muted);
+  font-size: 0.84rem;
+}
+
+label + label {
+  margin-top: 8px;
 }
 
 @media (max-width: 920px) {
   .project-sidebar {
-    max-height: 300px;
+    max-height: 420px;
     border-right: 0;
     border-bottom: 1px solid var(--border);
   }
