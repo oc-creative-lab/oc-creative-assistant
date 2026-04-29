@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, ref, watch } from 'vue'
+import { computed, ref, watch, onMounted, onUnmounted } from 'vue'
 import {
   RELATION_TYPE_OPTIONS,
   type CreativeFlowEdge,
@@ -22,6 +22,27 @@ const emit = defineEmits<{
 }>()
 
 const agentResult = ref('')
+
+// 自定义下拉框的状态
+const isNodeStatusSelectOpen = ref(false)
+const isEdgeRelationSelectOpen = ref(false)
+
+// 点击外部关闭下拉框
+function closeAllSelects(e: MouseEvent) {
+  const target = e.target as HTMLElement
+  if (!target.closest('.custom-select-container')) {
+    isNodeStatusSelectOpen.value = false
+    isEdgeRelationSelectOpen.value = false
+  }
+}
+
+onMounted(() => {
+  document.addEventListener('click', closeAllSelects)
+})
+
+onUnmounted(() => {
+  document.removeEventListener('click', closeAllSelects)
+})
 
 const selectedNodeTags = computed(() => props.selectedNode?.data.tags.join(', ') ?? '')
 
@@ -153,50 +174,64 @@ watch(
       </section>
 
       <section class="detail-panel">
-        <label>
-          节点类型
-          <input type="text" :value="selectedNode.data.typeLabel" disabled />
-        </label>
+        <label for="node-type">节点类型</label>
+        <div class="input-wrapper">
+          <input id="node-type" type="text" :value="selectedNode.data.typeLabel" disabled />
+        </div>
 
-        <label>
-          节点标题
+        <label for="node-title">节点标题</label>
+        <div class="input-wrapper">
           <input
+            id="node-title"
             type="text"
             :value="selectedNode.data.title"
             @input="updateNodeData({ title: ($event.target as HTMLInputElement).value })"
           />
-        </label>
+        </div>
 
-        <label>
-          节点内容
+        <label for="node-content">节点内容</label>
+        <div class="input-wrapper">
           <textarea
+            id="node-content"
             rows="4"
             :value="selectedNode.data.content"
             @input="updateNodeData({ content: ($event.target as HTMLTextAreaElement).value })"
           />
-        </label>
+        </div>
 
-        <label>
-          标签
+        <label for="node-tags">标签</label>
+        <div class="input-wrapper">
           <input
+            id="node-tags"
             type="text"
             :value="selectedNodeTags"
             placeholder="用逗号分隔，例如：主角, 第一幕"
             @input="updateNodeTags(($event.target as HTMLInputElement).value)"
           />
-        </label>
+        </div>
 
-        <label>
-          状态
-          <select
-            :value="selectedNode.data.status"
-            @change="updateNodeData({ status: ($event.target as HTMLSelectElement).value as CreativeNodeData['status'] })"
+        <label for="node-status">状态</label>
+        <div class="custom-select-container">
+          <div
+            class="custom-select-trigger"
+            :class="{ 'is-open': isNodeStatusSelectOpen }"
+            @click="isNodeStatusSelectOpen = !isNodeStatusSelectOpen; isEdgeRelationSelectOpen = false"
           >
-            <option value="draft">draft</option>
-            <option value="synced">synced</option>
-            <option value="outdated">outdated</option>
-          </select>
-        </label>
+            <span>{{ selectedNode.data.status }}</span>
+            <div class="custom-select-arrow"></div>
+          </div>
+          <ul class="custom-select-options" v-show="isNodeStatusSelectOpen">
+            <li
+              v-for="status in ['draft', 'synced', 'outdated']"
+              :key="status"
+              class="custom-select-option"
+              :class="{ 'is-selected': selectedNode.data.status === status }"
+              @click="updateNodeData({ status: status as CreativeNodeData['status'] }); isNodeStatusSelectOpen = false"
+            >
+              {{ status }}
+            </li>
+          </ul>
+        </div>
 
         <button type="button" class="danger" @click="handleDeleteNode">删除节点</button>
       </section>
@@ -230,30 +265,38 @@ watch(
           </div>
         </dl>
 
-        <label>
-          连线关系类型
-          <select
-            :value="selectedEdge.data.relationType"
-            @change="updateEdge({ relationType: ($event.target as HTMLSelectElement).value as CreativeRelationType })"
+        <label for="edge-relation">连线关系类型</label>
+        <div class="custom-select-container">
+          <div
+            class="custom-select-trigger"
+            :class="{ 'is-open': isEdgeRelationSelectOpen }"
+            @click="isEdgeRelationSelectOpen = !isEdgeRelationSelectOpen; isNodeStatusSelectOpen = false"
           >
-            <option
+            <span>{{ RELATION_TYPE_OPTIONS.find(opt => opt.value === selectedEdge?.data.relationType)?.label || selectedEdge.data.relationType }}</span>
+            <div class="custom-select-arrow"></div>
+          </div>
+          <ul class="custom-select-options" v-show="isEdgeRelationSelectOpen">
+            <li
               v-for="option in RELATION_TYPE_OPTIONS"
               :key="option.value"
-              :value="option.value"
+              class="custom-select-option"
+              :class="{ 'is-selected': selectedEdge.data.relationType === option.value }"
+              @click="updateEdge({ relationType: option.value as CreativeRelationType }); isEdgeRelationSelectOpen = false"
             >
               {{ option.label }}
-            </option>
-          </select>
-        </label>
+            </li>
+          </ul>
+        </div>
 
-        <label>
-          连线标签
+        <label for="edge-label">连线标签</label>
+        <div class="input-wrapper">
           <input
+            id="edge-label"
             type="text"
             :value="selectedEdge.data.label"
             @input="updateEdge({ label: ($event.target as HTMLInputElement).value })"
           />
-        </label>
+        </div>
 
         <button type="button" class="danger" @click="$emit('edgeDeleted', selectedEdge.id)">删除连线</button>
       </section>
@@ -269,213 +312,368 @@ watch(
 <style scoped>
 .detail-sidebar {
   min-height: 0;
-  display: grid;
-  grid-template-rows: auto minmax(0, 1fr);
-  overflow: auto;
+  display: flex;
+  flex-direction: column;
+  overflow-y: auto;
   border-left: 1px solid var(--border);
   background: var(--panel);
-}
-
-.detail-header,
-.detail-panel,
-.empty-state {
-  padding: 20px;
-}
-
-.detail-header {
-  border-bottom: 1px solid var(--border);
-  background: var(--panel-strong);
-}
-
-.detail-header p,
-.detail-header h2,
-h3 {
-  margin: 0;
-}
-
-.detail-header p {
-  color: var(--muted);
-  font-size: 0.85rem;
-  font-weight: 600;
-  text-transform: uppercase;
-  letter-spacing: 0.05em;
-}
-
-.detail-header h2 {
-  margin-top: 10px;
-  font-size: 1.25rem;
-  font-weight: 700;
-  line-height: 1.4;
   color: var(--text);
 }
 
+/* 头部区域 */
+.detail-header {
+  padding: 24px 20px 20px;
+  border-bottom: 1px solid var(--border);
+  background: var(--panel-strong);
+  position: sticky;
+  top: 0;
+  z-index: 10;
+}
+
+.detail-header p {
+  margin: 0 0 8px;
+  color: var(--muted);
+  font-size: 0.8rem;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+.detail-header h2 {
+  margin: 0;
+  font-size: 1.35rem;
+  font-weight: 700;
+  line-height: 1.3;
+  color: var(--text);
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+/* 状态徽章 */
 .status-badge {
   display: inline-flex;
-  margin-top: 12px;
-  padding: 4px 10px;
-  border-radius: 999px;
+  align-items: center;
+  margin-top: 14px;
+  padding: 4px 12px;
+  border-radius: 6px;
+  font-size: 0.75rem;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+  text-transform: uppercase;
   background: var(--accent-soft);
   color: var(--accent);
-  font-size: 0.75rem;
-  font-weight: 700;
-  text-transform: uppercase;
-  letter-spacing: 0.02em;
+  border: 1px solid rgba(0, 0, 0, 0.05);
 }
 
 .status-badge.outdated {
-  background: rgba(180, 83, 9, 0.12);
+  background: #fffbeb;
   color: #b45309;
+  border-color: #fef3c7;
 }
 
 .status-badge.synced {
-  background: rgba(15, 118, 110, 0.12);
+  background: #f0fdfa;
   color: #0f766e;
+  border-color: #ccfbf1;
 }
 
+/* 面板区块 */
 .detail-panel {
-  display: grid;
-  gap: 16px;
+  padding: 24px 20px;
+  display: flex;
+  flex-direction: column;
 }
 
 .detail-panel + .detail-panel {
   border-top: 1px solid var(--border);
 }
 
+.detail-panel h3 {
+  margin: 0 0 4px;
+  font-size: 0.95rem;
+  font-weight: 600;
+  color: var(--text);
+}
+
+/* 表单元素 */
 label {
-  display: grid;
-  gap: 8px;
+  display: block;
+  margin-bottom: 8px;
   color: var(--text);
   font-size: 0.85rem;
-  font-weight: 600;
+  font-weight: 500;
+}
+
+.input-wrapper {
+  position: relative;
+  display: flex;
+  align-items: center;
+  margin-bottom: 16px;
 }
 
 input,
-textarea,
-select {
+textarea {
   width: 100%;
-  min-height: 38px;
-  padding: 10px 12px;
+  padding: 10px 14px;
   border: 1px solid var(--border);
   border-radius: 8px;
   background-color: var(--app-bg);
   color: var(--text);
-  font: inherit;
+  font-family: inherit;
   font-size: 0.9rem;
-  transition: all 0.2s ease;
-  box-shadow: inset 0 1px 2px rgba(0, 0, 0, 0.02);
+  line-height: 1.5;
+  transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.02);
 }
 
-select option {
-  background-color: var(--panel);
-  color: var(--text);
-  padding: 8px;
-  font-size: 0.9rem;
+input:disabled {
+  background-color: var(--panel-strong);
+  color: var(--muted);
+  cursor: not-allowed;
 }
 
-input:focus,
-textarea:focus,
-select:focus {
+input:focus:not(:disabled),
+textarea:focus:not(:disabled) {
   outline: none;
   border-color: var(--accent);
-  box-shadow: 0 0 0 3px var(--accent-soft);
   background-color: #ffffff;
+  box-shadow: 0 0 0 3px var(--accent-soft), 0 1px 2px rgba(0, 0, 0, 0.02);
+}
+
+input::placeholder,
+textarea::placeholder {
+  color: #9ca3af;
 }
 
 textarea {
   resize: vertical;
-  line-height: 1.5;
+  min-height: 80px;
 }
 
-.agent-actions {
-  display: grid;
-  grid-template-columns: 1fr;
-  gap: 10px;
+/* 自定义下拉框组件样式 */
+.custom-select-container {
+  position: relative;
+  width: 100%;
+  margin-bottom: 16px;
+  user-select: none;
 }
 
-button {
+.custom-select-trigger {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  width: 100%;
   min-height: 38px;
+  padding: 10px 14px;
   border: 1px solid var(--border);
   border-radius: 8px;
-  background: var(--panel);
+  background-color: var(--app-bg);
   color: var(--text);
+  font-size: 0.9rem;
+  line-height: 1.5;
+  cursor: pointer;
+  transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.02);
+}
+
+.custom-select-trigger:hover {
+  border-color: var(--accent-border);
+}
+
+.custom-select-trigger.is-open {
+  border-color: var(--accent);
+  background-color: #ffffff;
+  box-shadow: 0 0 0 3px var(--accent-soft), 0 1px 2px rgba(0, 0, 0, 0.02);
+}
+
+.custom-select-arrow {
+  width: 10px;
+  height: 6px;
+  background-color: var(--muted);
+  clip-path: polygon(100% 0%, 0 0%, 50% 100%);
+  transition: transform 0.2s ease;
+}
+
+.custom-select-trigger.is-open .custom-select-arrow {
+  transform: rotate(180deg);
+}
+
+.custom-select-options {
+  position: absolute;
+  top: calc(100% + 4px);
+  left: 0;
+  right: 0;
+  z-index: 100;
+  max-height: 240px;
+  overflow-y: auto;
+  margin: 0;
+  padding: 6px;
+  list-style: none;
+  background-color: #ffffff;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.08), 0 2px 4px rgba(0, 0, 0, 0.04);
+  animation: dropdownFadeIn 0.15s ease-out forwards;
+}
+
+@keyframes dropdownFadeIn {
+  from {
+    opacity: 0;
+    transform: translateY(-4px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.custom-select-option {
+  padding: 8px 12px;
+  border-radius: 6px;
+  color: var(--text);
+  font-size: 0.9rem;
+  cursor: pointer;
+  transition: background-color 0.15s ease;
+}
+
+.custom-select-option:hover {
+  background-color: var(--app-bg);
+}
+
+.custom-select-option.is-selected {
+  background-color: var(--accent-soft);
+  color: var(--accent);
+  font-weight: 600;
+}
+
+/* 按钮样式 */
+button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  min-height: 40px;
+  padding: 0 16px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: #ffffff;
+  color: var(--text);
+  font-size: 0.9rem;
   font-weight: 500;
   cursor: pointer;
-  transition: all 0.2s ease;
-  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.04);
+  transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.05);
 }
 
 button:hover {
-  border-color: var(--accent-border);
   background: var(--app-bg);
-  color: var(--accent);
+  border-color: #d1d5db;
   transform: translateY(-1px);
-  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.06);
+  box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.05), 0 2px 4px -1px rgba(0, 0, 0, 0.03);
 }
 
 button:active {
-  transform: translateY(1px);
-  box-shadow: none;
+  transform: translateY(0);
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.05);
 }
 
 button.danger {
-  color: #b42318;
-  border-color: rgba(180, 35, 24, 0.2);
-  background: rgba(180, 35, 24, 0.05);
+  color: #dc2626;
+  border-color: #fecaca;
+  background: #fef2f2;
+  box-shadow: none;
 }
 
 button.danger:hover {
-  background: rgba(180, 35, 24, 0.1);
-  border-color: rgba(180, 35, 24, 0.3);
+  background: #fee2e2;
+  border-color: #fca5a5;
+}
+
+/* Agent Actions 区块 */
+.agent-actions {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(100px, 1fr));
+  gap: 10px;
+  margin-top: 8px;
 }
 
 .agent-result {
-  margin: 0;
-  overflow: auto;
+  margin: 8px 0 0;
   padding: 16px;
-  border: 1px solid var(--border);
+  border: 1px solid #e5e7eb;
   border-radius: 8px;
-  background: #f8fafc;
-  color: var(--text);
-  font-size: 0.85rem;
-  line-height: 1.5;
+  background: #f9fafb;
+  color: #374151;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+  font-size: 0.8rem;
+  line-height: 1.6;
   white-space: pre-wrap;
-  box-shadow: inset 0 1px 3px rgba(0, 0, 0, 0.04);
+  overflow-x: auto;
 }
 
+/* 连线元数据 */
 .edge-meta {
   display: grid;
-  gap: 10px;
+  grid-template-columns: 1fr 1fr;
+  gap: 16px;
   margin: 0;
+  padding: 16px;
+  background: var(--app-bg);
+  border-radius: 8px;
+  border: 1px solid var(--border);
 }
 
 .edge-meta div {
-  display: grid;
-  gap: 4px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
 }
 
-dt {
+.edge-meta dt {
   color: var(--muted);
-  font-size: 0.76rem;
+  font-size: 0.75rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.02em;
 }
 
-dd {
+.edge-meta dd {
   margin: 0;
+  color: var(--text);
+  font-size: 0.95rem;
+  font-weight: 500;
+  word-break: break-word;
 }
 
+/* 空状态 */
 .empty-state {
-  align-self: start;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  height: 100%;
+  padding: 40px 20px;
+  text-align: center;
   color: var(--muted);
 }
 
 .empty-state p {
-  margin: 0 0 6px;
+  margin: 0 0 12px;
   color: var(--text);
-  font-weight: 700;
+  font-size: 1.1rem;
+  font-weight: 600;
+}
+
+.empty-state span {
+  font-size: 0.9rem;
+  line-height: 1.5;
+  max-width: 240px;
 }
 
 @media (max-width: 920px) {
   .detail-sidebar {
-    border-left: 0;
+    border-left: none;
     border-top: 1px solid var(--border);
   }
 }
