@@ -13,6 +13,7 @@ function readAdditionalArgument(name) {
 }
 
 // 只向渲染进程暴露最小必要的运行时信息。
+// 注意：不要在这里暴露任意 Node/Electron API，避免扩大前端攻击面。
 contextBridge.exposeInMainWorld('ocDesktop', {
   config: {
     backendUrl: readAdditionalArgument('backend-url') ?? process.env.BACKEND_BASE_URL ?? null,

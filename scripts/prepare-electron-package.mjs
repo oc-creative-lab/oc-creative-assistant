@@ -19,6 +19,7 @@ ensureExists(frontendDistDir, 'frontend build output')
 ensureExists(backendDistDir, 'backend build output')
 
 // 重新创建临时 Electron 打包目录。
+// 该目录是构建产物，可安全清空；不要把用户数据放在 electron/.bundle 下。
 fs.rmSync(bundleDir, { recursive: true, force: true })
 fs.mkdirSync(bundleDir, { recursive: true })
 

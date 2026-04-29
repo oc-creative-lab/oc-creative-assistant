@@ -2,11 +2,13 @@
 import type { ProjectGroup } from '../../types/workspace'
 
 defineProps<{
+  // groups 由 AppShell 从当前 graph nodes 派生，左侧不维护独立副本。
   groups: ProjectGroup[]
   selectedNodeId: string
 }>()
 
 defineEmits<{
+  // 点击条目只上抛 id，选中态统一交给 AppShell 更新。
   selectNode: [nodeId: string]
 }>()
 </script>

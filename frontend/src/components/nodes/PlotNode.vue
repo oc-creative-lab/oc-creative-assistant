@@ -3,6 +3,7 @@ import { Handle, Position } from '@vue-flow/core'
 import type { NodeProps } from '@vue-flow/core'
 import type { CreativeNodeData } from '../../types/node'
 
+// Vue Flow 注入 selected/connectable/data，这里只负责剧情节点的展示和连接点。
 defineProps<NodeProps<CreativeNodeData>>()
 </script>
 

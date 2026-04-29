@@ -66,6 +66,7 @@ await run(
     'backend/build',
     '--specpath',
     'backend',
+    // PyInstaller 需要显式包含 uvicorn 的动态导入模块，否则可执行文件启动后会缺依赖。
     '--hidden-import',
     'uvicorn.logging',
     '--hidden-import',

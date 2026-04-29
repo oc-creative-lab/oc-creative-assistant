@@ -19,6 +19,7 @@ export function snapshotToSaveDto(snapshot: CreativeGraphSnapshot): SaveGraphDto
 }
 
 function graphNodeDtoToFlowNode(node: GraphNodeDto): CreativeFlowNode {
+  // 后端 content 字段进入前端后命名为 summary，更贴近节点卡片语义。
   return {
     id: node.id,
     type: node.type,
@@ -35,6 +36,7 @@ function graphNodeDtoToFlowNode(node: GraphNodeDto): CreativeFlowNode {
 }
 
 function graphEdgeDtoToFlowEdge(edge: GraphEdgeDto): CreativeFlowEdge {
+  // markerEnd 只影响 Vue Flow 渲染，后端不需要持久化该对象结构。
   return {
     id: edge.id,
     source: edge.source,
@@ -48,6 +50,7 @@ function graphEdgeDtoToFlowEdge(edge: GraphEdgeDto): CreativeFlowEdge {
 }
 
 function flowNodeToGraphNodeDto(node: CreativeFlowNode): GraphNodeDto {
+  // 保存时去掉 isActive 等前端状态，只保留业务内容和画布坐标。
   return {
     id: node.id,
     type: node.type,
@@ -63,6 +66,7 @@ function flowNodeToGraphNodeDto(node: CreativeFlowNode): GraphNodeDto {
 }
 
 function flowEdgeToGraphEdgeDto(edge: CreativeFlowEdge): GraphEdgeDto {
+  // label 当前未在 UI 中编辑，保存为空字符串以满足后端 DTO。
   return {
     id: edge.id,
     source: edge.source,

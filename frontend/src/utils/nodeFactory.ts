@@ -8,6 +8,7 @@ export const nodeTypeOptions: Array<{ type: CreativeNodeType; label: string }> =
   { type: 'plot', label: '\u5267\u60c5\u8282\u70b9' },
 ]
 
+// 新建节点的默认文案集中在这里，避免组件里按类型散落创建规则。
 const nodeDefaults: Record<
   CreativeNodeType,
   {

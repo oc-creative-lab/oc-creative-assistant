@@ -4,6 +4,7 @@ import type { CreativeNodeType } from '../types/node'
 
 export const mockProjectName = '\u300a\u661f\u5ead\u6863\u6848\u300b'
 
+// mock 数据仍用于右侧 Agent 和部分状态占位；真实 graph 已从后端加载。
 const groupLabels: Record<CreativeNodeType, string> = {
   character: '\u89d2\u8272',
   worldbuilding: '\u4e16\u754c\u89c2',

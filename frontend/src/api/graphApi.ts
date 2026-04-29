@@ -1,15 +1,18 @@
 import type { CreativeNodeType } from '../types/node'
 
+// 后端项目 DTO：用于确定当前 graph 属于哪个项目。
 export interface GraphProjectDto {
   id: string
   name: string
 }
 
+// 后端只关心画布坐标，不保存 Vue Flow 的 viewport 或 computedPosition。
 export interface GraphPositionDto {
   x: number
   y: number
 }
 
+// 后端节点 DTO，content 对应前端节点卡片里的 summary。
 export interface GraphNodeDto {
   id: string
   type: CreativeNodeType
@@ -20,6 +23,7 @@ export interface GraphNodeDto {
   typeLabel: string
 }
 
+// 后端边 DTO；handle 字段用于恢复从哪个连接点拉出的边。
 export interface GraphEdgeDto {
   id: string
   source: string
@@ -31,17 +35,20 @@ export interface GraphEdgeDto {
   animated: boolean
 }
 
+// 读取接口返回的完整 graph 快照。
 export interface GraphDto {
   project: GraphProjectDto
   nodes: GraphNodeDto[]
   edges: GraphEdgeDto[]
 }
 
+// 保存接口只需要节点和边；projectId 由 URL 参数提供。
 export interface SaveGraphDto {
   nodes: GraphNodeDto[]
   edges: GraphEdgeDto[]
 }
 
+// 桌面态优先使用 preload 注入的后端地址，浏览器开发态回退到 Vite 环境变量。
 const backendBaseUrl = (
   window.ocDesktop?.config.backendUrl ||
   import.meta.env.VITE_BACKEND_URL ||

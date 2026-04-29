@@ -4,6 +4,7 @@ const path = require('node:path')
 const { spawn } = require('node:child_process')
 const { app, BrowserWindow, shell } = require('electron')
 
+// 打包态由 Electron 主进程托管后端进程；开发态通常复用外部 uvicorn。
 let backendProcess = null
 
 // 规范化端口输入，不合法时回退到默认值。
@@ -128,6 +129,7 @@ async function startBundledBackend() {
     throw new Error(`Bundled backend executable not found at ${executablePath}`)
   }
 
+  // 后端实际端口可能因占用而后移，最终地址会通过 preload 注入给前端。
   backendProcess = spawn(
     executablePath,
     ['--host', backendHost, '--port', String(selectedBackendPort)],
@@ -156,6 +158,7 @@ async function startBundledBackend() {
 // 根据开发态或打包态选择对应的运行配置。
 async function resolveRuntimeConfig() {
   if (!app.isPackaged) {
+    // 开发态不自动拉起后端，由 scripts/dev-desktop.mjs 或外部服务提供地址。
     return {
       backendUrl: process.env.BACKEND_BASE_URL ?? null,
       rendererUrl: resolveRendererUrl(),
@@ -282,6 +285,7 @@ async function createWindow(runtimeConfig) {
     autoHideMenuBar: true,
     webPreferences: {
       preload: path.join(__dirname, 'preload.cjs'),
+      // 渲染进程保持浏览器隔离模型，只通过 preload 暴露必要配置。
       contextIsolation: true,
       nodeIntegration: false,
       sandbox: true,

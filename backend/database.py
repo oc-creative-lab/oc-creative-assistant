@@ -11,10 +11,12 @@ DATABASE_PATH = Path(__file__).resolve().parent / "data" / "oc_creative.sqlite3"
 DATABASE_URL = f"sqlite:///{DATABASE_PATH.as_posix()}"
 
 
+# 所有 ORM 模型共用的 declarative base。
 class Base(DeclarativeBase):
     pass
 
 
+# 本地 SQLite 文件放在 backend/data 下，启动时自动创建目录。
 DATABASE_PATH.parent.mkdir(parents=True, exist_ok=True)
 
 
@@ -52,6 +54,7 @@ SessionLocal = sessionmaker(bind=engine, autoflush=False, expire_on_commit=False
 
 def init_db() -> None:
     """用 ORM metadata 建表；PoC 阶段不引入复杂迁移系统。"""
+    # 延迟导入模型，确保 Base.metadata 已注册所有表后再 create_all。
     from models import EdgeORM, NodeORM, ProjectORM  # noqa: F401
 
     Base.metadata.create_all(bind=engine)

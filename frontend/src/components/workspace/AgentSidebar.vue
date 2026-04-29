@@ -7,6 +7,7 @@ defineProps<{
   currentNode: ProjectItem
 }>()
 
+// 当前是 mock Agent 面板，模式 id 与 mockAgentSuggestions 的 key 一一对应。
 const modes: Array<{ id: AgentMode; label: string }> = [
   { id: 'inspiration', label: '\u7075\u611f\u5f15\u5bfc' },
   { id: 'research', label: '\u8d44\u6599\u67e5\u8be2' },
@@ -14,6 +15,7 @@ const modes: Array<{ id: AgentMode; label: string }> = [
 ]
 
 const activeMode = ref<AgentMode>('inspiration')
+// 切换模式只影响建议列表，不会修改当前节点或画布数据。
 const suggestions = computed(() => mockAgentSuggestions[activeMode.value])
 </script>
 

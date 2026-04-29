@@ -11,6 +11,7 @@ from graph_store import (
 from schemas import EdgePayload, GraphPayload, NodePayload, ProjectPayload, SaveGraphRequest, UpdateNodeRequest
 
 
+# Graph API 统一挂在 /api 下，路由层只做 HTTP 映射，业务和持久化规则放在 graph_store。
 router = APIRouter(prefix="/api", tags=["graph"])
 
 

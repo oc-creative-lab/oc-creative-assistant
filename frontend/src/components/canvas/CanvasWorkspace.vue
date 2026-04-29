@@ -16,9 +16,11 @@ import WorldNode from '../nodes/WorldNode.vue'
 const FLOW_ID = 'oc-main-flow'
 
 const props = defineProps<{
+  // selectedNodeId 由 AppShell 统一维护，画布只负责映射到节点高亮。
   selectedNodeId: string
   initialNodes: CreativeFlowNode[]
   initialEdges: CreativeFlowEdge[]
+  // graphVersion 变化表示父组件已从后端拿到新的权威快照。
   graphVersion: number
 }>()
 
@@ -30,6 +32,7 @@ const emit = defineEmits<{
 
 const flowShell = ref<HTMLElement | null>(null)
 
+// 克隆节点时顺手写入选中态，避免直接修改父组件传入的 props。
 function cloneNode(node: CreativeFlowNode, selectedNodeId = props.selectedNodeId): CreativeFlowNode {
   return {
     ...node,
@@ -43,6 +46,7 @@ const addNodeCount = ref(0)
 const addEdgeCount = ref(0)
 const isNodeMenuOpen = ref(false)
 
+// useVueFlow 绑定固定 id，确保工具栏操作的是当前这一个画布实例。
 const { fitView, getViewport, setCenter, zoomIn, zoomOut } = useVueFlow({ id: FLOW_ID })
 
 // 把 Vue Flow 内部状态整理成可保存快照，避免 computedPosition 等运行时字段泄漏到后端。
@@ -102,6 +106,7 @@ function selectNode(nodeId: string, shouldFocus = false) {
     const centerX = target.position.x + 120
     const centerY = target.position.y + 70
 
+    // 等节点选中态写入 DOM 后再移动视口，避免刚加载时定位到旧布局。
     void nextTick(() => {
       void setCenter(centerX, centerY, {
         zoom: 1,
@@ -203,6 +208,7 @@ function handleNodeDragStop() {
 watch(
   () => props.selectedNodeId,
   (nodeId, oldNodeId) => {
+    // 首次 immediate 只同步高亮；后续外部选择才自动聚焦到节点。
     selectNode(nodeId, Boolean(oldNodeId))
   },
   { immediate: true },
@@ -211,6 +217,7 @@ watch(
 watch(
   () => props.graphVersion,
   () => {
+    // 父组件确认后端快照后，画布用新的初始数据替换本地编辑态。
     nodes.value = props.initialNodes.map((node) => cloneNode(node))
     edges.value = props.initialEdges.map((edge) => ({ ...edge }))
 
@@ -254,7 +261,7 @@ watch(
     </header>
 
     <div ref="flowShell" class="flow-shell">
-      <!-- Later, replace these local refs with graph data loaded from SQLite/backend. -->
+      <!-- v-model 绑定本地 refs；拖拽/连线后由事件把可保存快照抛给 AppShell。 -->
       <VueFlow
         :id="FLOW_ID"
         v-model:nodes="nodes"

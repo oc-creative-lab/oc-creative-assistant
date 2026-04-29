@@ -12,12 +12,15 @@ import ProjectSidebar from './ProjectSidebar.vue'
 import StatusBar from './StatusBar.vue'
 import TopToolbar from './TopToolbar.vue'
 
+// AppShell 是工作区状态中枢：负责后端加载/保存，以及三栏组件之间的选中态同步。
 const projectId = ref('')
 const projectName = ref('\u6b63\u5728\u52a0\u8f7d\u9879\u76ee...')
 const projectGroups = ref<ProjectGroup[]>([])
 const graphNodes = ref<CreativeFlowNode[]>([])
 const graphEdges = ref<CreativeFlowEdge[]>([])
+// graphSnapshot 始终保存“当前画布可提交版本”，保存按钮只读取这份数据。
 const graphSnapshot = ref<CreativeGraphSnapshot>({ nodes: [], edges: [] })
+// graphVersion 用作重载信号：后端数据保存/加载后通知 CanvasWorkspace 重新接受初始数据。
 const graphVersion = ref(0)
 const selectedNodeId = ref('')
 const isGraphReady = ref(false)
@@ -103,6 +106,7 @@ async function handleSaveGraph() {
     graphEdges.value = snapshot.edges
     graphSnapshot.value = snapshot
     projectGroups.value = buildProjectGroupsFromNodes(snapshot.nodes)
+    // 保存后重置画布来源数据，避免 CanvasWorkspace 继续持有旧初始 props。
     graphVersion.value += 1
     saveState.value = `\u5df2\u4fdd\u5b58\uff1a${new Date().toLocaleTimeString()}`
   } catch (error) {

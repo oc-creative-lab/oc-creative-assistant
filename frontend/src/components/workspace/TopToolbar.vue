@@ -8,6 +8,7 @@ defineEmits<{
   save: []
 }>()
 
+// 目前只有 save 接入实际逻辑，其余按钮先保留为后续桌面能力入口。
 const toolbarActions = [
   { id: 'save', label: '\u4fdd\u5b58' },
   { id: 'import', label: '\u5bfc\u5165\u8d44\u6599' },

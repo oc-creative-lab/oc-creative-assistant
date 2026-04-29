@@ -24,6 +24,7 @@ DEFAULT_PROJECT_NAME = "星庭档案"
 META_TEXT_KEY = "text"
 
 
+# 首次启动时写入的示例节点，保证前端在没有用户数据时也能展示完整画布流程。
 DEFAULT_NODES = [
     NodePayload(
         id="char-airin",
@@ -82,6 +83,7 @@ DEFAULT_NODES = [
 ]
 
 
+# 示例边刻意覆盖角色、世界观、剧情之间的连接，用来验证保存/恢复连线信息。
 DEFAULT_EDGES = [
     EdgePayload(id="edge-airin-first-meet", source="char-airin", target="plot-first-meet"),
     EdgePayload(id="edge-mentor-first-meet", source="char-mentor", target="plot-first-meet"),
@@ -102,6 +104,7 @@ def ensure_default_project() -> ProjectPayload:
         project = session.get(ProjectORM, DEFAULT_PROJECT_ID)
 
         if project is None:
+            # 新建项目后先 flush，确保后续节点/边的外键能在同一事务中引用项目。
             project = ProjectORM(id=DEFAULT_PROJECT_ID, name=DEFAULT_PROJECT_NAME)
             session.add(project)
             session.flush()
@@ -113,6 +116,7 @@ def ensure_default_project() -> ProjectPayload:
         )
 
         if has_nodes is None:
+            # 兼容只有项目记录、没有 graph 数据的半初始化状态。
             _replace_graph(session, DEFAULT_PROJECT_ID, DEFAULT_NODES, DEFAULT_EDGES)
 
         return _project_to_payload(project)
@@ -165,6 +169,7 @@ def save_project_graph(project_id: str, payload: SaveGraphRequest) -> GraphPaylo
 
         _replace_graph(session, project_id, payload.nodes, payload.edges)
 
+    # 重新读取一次，确保响应使用数据库最终排序和 ORM -> DTO 转换结果。
     return get_project_graph(project_id)
 
 
@@ -186,6 +191,7 @@ def update_node(project_id: str, node_id: str, payload: UpdateNodeRequest) -> No
         if node is None or node.project_id != project_id:
             raise HTTPException(status_code=404, detail="Node not found")
 
+        # PATCH 语义：只有显式传入的字段才覆盖数据库，空字符串仍是合法更新值。
         if payload.title is not None:
             node.title = payload.title
         if payload.content is not None:
@@ -221,10 +227,12 @@ def _replace_graph(
 ) -> None:
     """在一个事务里替换 graph，避免节点和边只保存一半。"""
     _validate_edges_against_payload_nodes(nodes, edges)
+    # 先删边再删节点，避免 SQLite 外键约束在替换过程中阻止删除节点。
     session.query(EdgeORM).filter(EdgeORM.project_id == project_id).delete(synchronize_session=False)
     session.query(NodeORM).filter(NodeORM.project_id == project_id).delete(synchronize_session=False)
 
     for index, node in enumerate(nodes):
+        # sort_order 记录前端快照顺序，供后续读取时稳定还原。
         session.add(_node_to_orm(project_id, node, index))
 
     for index, edge in enumerate(edges):
@@ -244,6 +252,7 @@ def _require_project(session: Session, project_id: str) -> ProjectORM:
 def _validate_edges_against_payload_nodes(nodes: list[NodePayload], edges: list[EdgePayload]) -> None:
     """保存整张图时，业务层保证 edge 两端都在同一批项目节点里。"""
     node_ids = {node.id for node in nodes}
+    # 这里仅校验端点存在性；重复边/自环当前主要由前端交互层避免。
     invalid_edge = next(
         (edge for edge in edges if edge.source not in node_ids or edge.target not in node_ids),
         None,
@@ -263,6 +272,7 @@ def _validate_edge_endpoints_in_project(
     target: str,
 ) -> None:
     """单独创建 edge 时，业务层保证 source/target 都属于当前 project。"""
+    # 使用 count 而不是逐个 get，减少分支并避免接受跨项目节点。
     endpoint_count = session.scalar(
         select(func.count())
         .select_from(NodeORM)
@@ -342,6 +352,7 @@ def _edge_to_orm(project_id: str, edge: EdgePayload, sort_order: int) -> EdgeORM
 
 def _api_meta_to_db(meta: str) -> dict[str, str]:
     """当前 API 仍接收字符串 meta，数据库层用 JSON 包装，后续可扩展更多字段。"""
+    # 空 meta 存成空对象，读取时再回落为空字符串，避免 JSON 字段里出现无意义 text。
     return {META_TEXT_KEY: meta} if meta else {}
 
 

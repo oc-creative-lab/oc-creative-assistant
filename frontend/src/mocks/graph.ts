@@ -1,6 +1,7 @@
 import { MarkerType, Position } from '@vue-flow/core'
 import type { CreativeFlowEdge, CreativeFlowNode } from '../types/node'
 
+// 早期前端独立演示用 graph；当前主要作为 mock sidebar/status 的数据来源。
 export const mockGraphNodes: CreativeFlowNode[] = [
   {
     id: 'char-airin',

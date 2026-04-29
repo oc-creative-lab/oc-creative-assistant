@@ -48,6 +48,7 @@ function buildHealthUrl(baseUrl) {
 // 启动子进程，并统一注册生命周期处理逻辑。
 function spawnProcess(name, command, args, extraEnv = {}) {
   log(`Starting ${name}...`)
+  // Windows 下 npm.cmd 需要 shell 才能正常解析，其他命令保持直接 spawn。
   const useShell = process.platform === 'win32' && command.toLowerCase().endsWith('.cmd')
 
   const child = spawn(command, args, {
@@ -226,6 +227,7 @@ async function main() {
   const backendRunning = await isBackendReady(selectedBackendHealthUrl)
 
   if (backendRunning) {
+    // 已有后端可用时直接复用，避免重复启动导致端口冲突或数据文件争用。
     log(`Reusing existing backend at ${selectedBackendHealthUrl}.`)
   } else if (backendUrlOverride) {
     throw new Error(
@@ -249,6 +251,7 @@ async function main() {
   const frontendRunning = await isFrontendReady(selectedRendererUrl)
 
   if (frontendRunning) {
+    // 复用正在运行的 Vite，能保留开发者当前页面状态和 HMR 会话。
     log(`Reusing existing frontend at ${selectedRendererUrl}.`)
   } else if (rendererUrlOverride) {
     throw new Error(
