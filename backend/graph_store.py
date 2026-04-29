@@ -188,6 +188,7 @@ DEFAULT_EDGES = [
 
 def ensure_default_project() -> ProjectPayload:
     """确保默认项目存在；首次启动时写入项目和示例 graph。"""
+    # 入参：无。返回：默认项目 DTO。状态影响：可能创建项目、节点和边。
     with SessionLocal.begin() as session:
         project = session.get(ProjectORM, DEFAULT_PROJECT_ID)
 
@@ -212,6 +213,7 @@ def ensure_default_project() -> ProjectPayload:
 
 def get_project(project_id: str) -> ProjectPayload:
     """读取项目基本信息；不存在时返回 404。"""
+    # 入参 project_id 是路径中的项目 id；该函数只读数据库，不修改状态。
     with SessionLocal() as session:
         project = session.get(ProjectORM, project_id)
 
@@ -223,6 +225,8 @@ def get_project(project_id: str) -> ProjectPayload:
 
 def get_project_graph(project_id: str) -> GraphPayload:
     """读取项目 graph，并转换为前端 DTO。"""
+    # 入参 project_id 定位项目；返回项目、节点和边的完整快照。
+    # 只读数据库；排序使用 sort_order + created_at 保证前端每次恢复顺序稳定。
     with SessionLocal() as session:
         project = session.get(ProjectORM, project_id)
 
@@ -249,6 +253,8 @@ def get_project_graph(project_id: str) -> GraphPayload:
 
 def save_project_graph(project_id: str, payload: SaveGraphRequest) -> GraphPayload:
     """手动保存策略：用前端当前 graph 快照整体替换项目 nodes / edges。"""
+    # 入参 payload.nodes/payload.edges 来自 Vue Flow 当前画布状态。
+    # 状态影响：会删除该项目原有节点和边，再写入新的完整快照。
     with SessionLocal.begin() as session:
         project = session.get(ProjectORM, project_id)
 
@@ -263,6 +269,7 @@ def save_project_graph(project_id: str, payload: SaveGraphRequest) -> GraphPaylo
 
 def create_node(project_id: str, node: NodePayload) -> NodePayload:
     """创建或覆盖单个节点，供后续细粒度保存复用。"""
+    # 入参 node 是单个前端节点 DTO；状态影响：merge 会插入或覆盖同 id 节点。
     with SessionLocal.begin() as session:
         _require_project(session, project_id)
         session.merge(_node_to_orm(project_id, node, sort_order=0))
@@ -272,6 +279,8 @@ def create_node(project_id: str, node: NodePayload) -> NodePayload:
 
 def update_node(project_id: str, node_id: str, payload: UpdateNodeRequest) -> NodePayload:
     """更新节点基础内容和位置；当前前端主要使用整体保存接口。"""
+    # 入参 payload 是 PATCH 语义：字段为 None 表示保留数据库原值。
+    # 状态影响：只修改当前项目内指定节点，返回转换后的最新 DTO。
     with SessionLocal.begin() as session:
         _require_project(session, project_id)
         node = session.get(NodeORM, node_id)
@@ -285,6 +294,7 @@ def update_node(project_id: str, node_id: str, payload: UpdateNodeRequest) -> No
         if payload.content is not None:
             node.content = payload.content
         if payload.meta is not None:
+            # meta 更新时同时接收 tags/status，避免前端一次提交拆成多次数据库写入。
             node.meta = _api_meta_to_db(
                 payload.meta,
                 payload.tags,
@@ -296,12 +306,14 @@ def update_node(project_id: str, node_id: str, payload: UpdateNodeRequest) -> No
         if payload.nodeType is not None:
             node.node_type = payload.nodeType
         if payload.tags is not None:
+            # 单独更新 tags 时保留已有 meta 文本和 status，防止局部 PATCH 丢失其它 meta 信息。
             node.meta = _api_meta_to_db(
                 _db_meta_to_api(node.meta),
                 payload.tags,
                 _db_status_to_api(node.meta),
             )
         if payload.status is not None:
+            # 单独更新 status 时保留已有 meta 文本和 tags。
             node.meta = _api_meta_to_db(
                 _db_meta_to_api(node.meta),
                 _db_tags_to_api(node.meta),
@@ -318,6 +330,8 @@ def update_node(project_id: str, node_id: str, payload: UpdateNodeRequest) -> No
 
 def create_edge(project_id: str, edge: EdgePayload) -> EdgePayload:
     """创建或覆盖单条边，并校验两端节点属于同一项目。"""
+    # 入参 edge 是 Vue Flow 边 DTO；source/target 必须指向当前项目内节点。
+    # 状态影响：merge 会插入或覆盖同 id 边，包含 handle 和关系类型。
     with SessionLocal.begin() as session:
         _require_project(session, project_id)
         _validate_edge_endpoints_in_project(session, project_id, edge.source, edge.target)
@@ -333,6 +347,8 @@ def _replace_graph(
     edges: list[EdgePayload],
 ) -> None:
     """在一个事务里替换 graph，避免节点和边只保存一半。"""
+    # 入参 nodes/edges 是同一次前端保存的完整快照；函数不返回值。
+    # 状态影响：该项目 graph 被整体替换，因此必须先校验边端点都在本批 nodes 中。
     _validate_edges_against_payload_nodes(nodes, edges)
     # 先删边再删节点，避免 SQLite 外键约束在替换过程中阻止删除节点。
     session.query(EdgeORM).filter(EdgeORM.project_id == project_id).delete(synchronize_session=False)
@@ -343,11 +359,13 @@ def _replace_graph(
         session.add(_node_to_orm(project_id, node, index))
 
     for index, edge in enumerate(edges):
+        # 边必须在节点之后写入，否则外键约束无法确认 source/target 已存在。
         session.add(_edge_to_orm(project_id, edge, index))
 
 
 def _require_project(session: Session, project_id: str) -> ProjectORM:
     """复用项目存在性校验，避免各 API 分支重复写 404 逻辑。"""
+    # 返回 ORM 项目对象；只读数据库，不修改状态。
     project = session.get(ProjectORM, project_id)
 
     if project is None:
@@ -358,6 +376,7 @@ def _require_project(session: Session, project_id: str) -> ProjectORM:
 
 def _validate_edges_against_payload_nodes(nodes: list[NodePayload], edges: list[EdgePayload]) -> None:
     """保存整张图时，业务层保证 edge 两端都在同一批项目节点里。"""
+    # 用集合做 O(1) 端点查找，避免大画布保存时反复扫描节点列表。
     node_ids = {node.id for node in nodes}
     # 这里仅校验端点存在性；重复边/自环当前主要由前端交互层避免。
     invalid_edge = next(
@@ -379,6 +398,7 @@ def _validate_edge_endpoints_in_project(
     target: str,
 ) -> None:
     """单独创建 edge 时，业务层保证 source/target 都属于当前 project。"""
+    # 这里校验“同项目”而不只校验“节点存在”，防止跨项目连线污染 graph。
     # 使用 count 而不是逐个 get，减少分支并避免接受跨项目节点。
     endpoint_count = session.scalar(
         select(func.count())
@@ -395,11 +415,14 @@ def _validate_edge_endpoints_in_project(
 
 def _project_to_payload(project: ProjectORM) -> ProjectPayload:
     """ORM project -> API payload。"""
+    # Project DTO 只暴露前端当前需要的标识和展示名。
     return ProjectPayload(id=project.id, name=project.name)
 
 
 def _node_to_payload(node: NodeORM) -> NodePayload:
     """ORM node -> API payload，meta JSON 兼容当前前端的字符串 meta。"""
+    # position_x/position_y 在响应中重新合并为 Vue Flow 使用的 position 对象。
+    # node_type 同时填充 type 和 nodeType，兼容画布渲染与详情编辑两处读取方式。
     return NodePayload(
         id=node.id,
         type=node.node_type,
@@ -416,6 +439,7 @@ def _node_to_payload(node: NodeORM) -> NodePayload:
 
 def _edge_to_payload(edge: EdgeORM) -> EdgePayload:
     """ORM edge -> API payload，保留 Vue Flow handle 信息。"""
+    # source/target/sourceHandle/targetHandle 原样返回，确保前端能恢复连线端点和连接桩。
     return EdgePayload(
         id=edge.id,
         source=edge.source,
@@ -431,6 +455,7 @@ def _edge_to_payload(edge: EdgeORM) -> EdgePayload:
 
 def _node_to_orm(project_id: str, node: NodePayload, sort_order: int) -> NodeORM:
     """API payload -> ORM node，用于新增、覆盖和批量保存。"""
+    # 前端 position 对象拆成两列，便于后续按坐标查询或迁移到其它 graph 存储。
     return NodeORM(
         id=node.id,
         project_id=project_id,
@@ -447,6 +472,7 @@ def _node_to_orm(project_id: str, node: NodePayload, sort_order: int) -> NodeORM
 
 def _edge_to_orm(project_id: str, edge: EdgePayload, sort_order: int) -> EdgeORM:
     """API payload -> ORM edge，用于新增、覆盖和批量保存。"""
+    # source_handle/target_handle 允许为空，因为 Vue Flow 并不要求所有边都绑定具体 handle。
     return EdgeORM(
         id=edge.id,
         project_id=project_id,
@@ -469,6 +495,7 @@ def _api_meta_to_db(
     existing_meta: Any | None = None,
 ) -> dict[str, Any]:
     """API 仍兼容字符串 meta，同时把 tags/status 放进 JSON，避免 PoC 阶段扩表。"""
+    # existing_meta 用于 PATCH 局部更新：先复制已有 JSON，再覆盖本次明确传入的字段。
     stored_meta: dict[str, Any] = existing_meta if isinstance(existing_meta, dict) else {}
     next_meta = dict(stored_meta)
 
@@ -478,6 +505,7 @@ def _api_meta_to_db(
         next_meta.pop(META_TEXT_KEY, None)
 
     if tags is not None:
+        # 过滤非字符串值，避免脏数据进入 JSON 后影响前端标签渲染。
         next_meta[META_TAGS_KEY] = [tag for tag in tags if isinstance(tag, str)]
     elif META_TAGS_KEY not in next_meta:
         next_meta[META_TAGS_KEY] = []
@@ -506,6 +534,7 @@ def _db_tags_to_api(meta: Any) -> list[str]:
     """从 JSON meta 中读取 tags；旧数据没有 tags 时返回空列表。"""
     if isinstance(meta, dict):
         tags = meta.get(META_TAGS_KEY, [])
+        # 读取时再次过滤，兼容旧库或手工编辑数据库产生的异常 JSON。
         return [tag for tag in tags if isinstance(tag, str)] if isinstance(tags, list) else []
 
     return []

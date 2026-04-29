@@ -404,6 +404,7 @@ watch(
 
 <style scoped>
 .detail-sidebar {
+  height: 100%;
   min-height: 0;
   display: flex;
   flex-direction: column;
@@ -411,6 +412,24 @@ watch(
   border-left: 1px solid var(--border);
   background: var(--panel);
   color: var(--text);
+}
+
+/* 自定义滚动条样式 */
+.detail-sidebar::-webkit-scrollbar {
+  width: 6px;
+}
+
+.detail-sidebar::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.detail-sidebar::-webkit-scrollbar-thumb {
+  background-color: rgba(156, 163, 175, 0.4);
+  border-radius: 4px;
+}
+
+.detail-sidebar::-webkit-scrollbar-thumb:hover {
+  background-color: rgba(156, 163, 175, 0.7);
 }
 
 /* 头部区域 */

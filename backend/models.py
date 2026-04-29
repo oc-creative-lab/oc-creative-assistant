@@ -32,11 +32,13 @@ class ProjectORM(Base):
     # ORM 关系：当前项目下的所有节点，不是独立数据库列。
     nodes: Mapped[list["NodeORM"]] = relationship(
         back_populates="project",
+        # 删除项目时，ORM 层同步删除孤立节点，避免画布残留无归属数据。
         cascade="all, delete-orphan",
     )
     # ORM 关系：当前项目下的所有边，不是独立数据库列。
     edges: Mapped[list["EdgeORM"]] = relationship(
         back_populates="project",
+        # 与 nodes 保持一致：项目是 graph 的生命周期边界，边不应脱离项目存在。
         cascade="all, delete-orphan",
     )
 
@@ -54,6 +56,7 @@ class NodeORM(Base):
     # 所属项目 id，删除项目时级联删除节点。
     project_id: Mapped[str] = mapped_column(
         String,
+        # 数据库真实外键；ondelete 依赖 SQLite PRAGMA foreign_keys=ON 生效。
         ForeignKey("projects.id", ondelete="CASCADE"),
         nullable=False,
         index=True,
@@ -71,6 +74,7 @@ class NodeORM(Base):
         JSON,
         nullable=False,
         default=dict,
+        # server_default 保障旧代码或手工 SQL 插入时也有合法 JSON 对象。
         server_default=text("'{}'"),
     )
     # 节点类型展示标签，例如“角色”“世界观”。
@@ -114,6 +118,7 @@ class EdgeORM(Base):
     # 所属项目 id，删除项目时级联删除边。
     project_id: Mapped[str] = mapped_column(
         String,
+        # 边属于项目；删除项目时数据库层级联删除边记录。
         ForeignKey("projects.id", ondelete="CASCADE"),
         nullable=False,
         index=True,
@@ -121,12 +126,14 @@ class EdgeORM(Base):
     # 起点节点 id，删除节点时级联删除相关边。
     source: Mapped[str] = mapped_column(
         String,
+        # source 是数据库真实字段，指向起点节点；业务层额外校验它与 edge.project_id 同项目。
         ForeignKey("nodes.id", ondelete="CASCADE"),
         nullable=False,
     )
     # 终点节点 id，删除节点时级联删除相关边。
     target: Mapped[str] = mapped_column(
         String,
+        # target 是数据库真实字段，指向终点节点；删除节点时相关边也会被清理。
         ForeignKey("nodes.id", ondelete="CASCADE"),
         nullable=False,
     )
@@ -176,12 +183,14 @@ class EdgeORM(Base):
     source_node: Mapped[NodeORM] = relationship(
         "NodeORM",
         foreign_keys=[source],
+        # 删除行为交给数据库外键处理，ORM 不主动加载相关节点。
         passive_deletes=True,
     )
     # ORM 关系：终点节点对象，不是独立数据库列。
     target_node: Mapped[NodeORM] = relationship(
         "NodeORM",
         foreign_keys=[target],
+        # 与 source_node 一样是 ORM 关系字段，不会额外生成数据库列。
         passive_deletes=True,
     )
 

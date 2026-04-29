@@ -89,12 +89,31 @@ function handleCreateNode(nodeType: CreativeNodeType) {
 
 <style scoped>
 .project-sidebar {
+  height: 100%;
   min-height: 0;
   display: flex;
   flex-direction: column;
-  overflow: auto;
+  overflow-y: auto;
   border-right: 1px solid var(--border);
   background: var(--panel);
+}
+
+/* 自定义滚动条样式 */
+.project-sidebar::-webkit-scrollbar {
+  width: 6px;
+}
+
+.project-sidebar::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.project-sidebar::-webkit-scrollbar-thumb {
+  background-color: rgba(156, 163, 175, 0.4);
+  border-radius: 4px;
+}
+
+.project-sidebar::-webkit-scrollbar-thumb:hover {
+  background-color: rgba(156, 163, 175, 0.7);
 }
 
 .sidebar-section {

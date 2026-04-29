@@ -22,6 +22,7 @@ DATABASE_PATH.parent.mkdir(parents=True, exist_ok=True)
 
 def _deserialize_json(value: str | None) -> Any:
     """兼容旧 SQLite 中的纯字符串 meta；新数据仍按 JSON 正常读取。"""
+    # 入参是 SQLAlchemy JSON 反序列化前的原始文本；不读写数据库，只做类型兼容。
     if value is None:
         return {}
 
@@ -43,6 +44,7 @@ engine = create_engine(
 @event.listens_for(engine, "connect")
 def enable_sqlite_foreign_keys(dbapi_connection, _connection_record) -> None:
     """SQLite 默认不强制外键，这里在每个连接上显式开启。"""
+    # 状态影响：只修改当前 SQLite 连接的 PRAGMA，保证 ondelete="CASCADE" 真正生效。
     if isinstance(dbapi_connection, SQLiteConnection):
         cursor = dbapi_connection.cursor()
         cursor.execute("PRAGMA foreign_keys=ON")
@@ -54,6 +56,7 @@ SessionLocal = sessionmaker(bind=engine, autoflush=False, expire_on_commit=False
 
 def init_db() -> None:
     """用 ORM metadata 建表；PoC 阶段不引入复杂迁移系统。"""
+    # 启动时调用；可能创建缺失表，也可能为旧库补齐兼容字段。
     # 延迟导入模型，确保 Base.metadata 已注册所有表后再 create_all。
     from models import EdgeORM, NodeORM, ProjectORM  # noqa: F401
 
@@ -63,6 +66,7 @@ def init_db() -> None:
 
 def _ensure_sqlite_schema_compatibility() -> None:
     """为旧 PoC 数据库补齐新增列，避免引入完整迁移系统。"""
+    # 状态影响：仅在旧 edges 表缺少 relation_type 时执行一次 ALTER TABLE。
     with engine.begin() as connection:
         edge_columns = {
             row[1]

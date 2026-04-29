@@ -289,19 +289,22 @@ onBeforeUnmount(() => {
 
 <style scoped>
 .app-shell {
-  min-height: 100vh;
+  height: 100vh;
   display: grid;
   grid-template-rows: 56px minmax(0, 1fr) 30px;
   background: var(--app-bg);
   color: var(--text);
+  overflow: hidden;
 }
 
 .workspace-grid {
+  height: 100%;
   min-height: 0;
   display: grid;
   grid-template-columns: 300px minmax(420px, 1fr) 360px;
   border-top: 1px solid var(--border);
   border-bottom: 1px solid var(--border);
+  overflow: hidden;
 }
 
 @media (max-width: 1120px) {

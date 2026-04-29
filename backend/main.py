@@ -30,17 +30,20 @@ app.include_router(rag_router)
 
 @app.get("/")
 async def root():
+    """根路由健康提示；不访问数据库，不影响状态。"""
     # 轻量根路由，便于手动确认服务已启动。
     return {"message": "OC Creative Assistant backend is running"}
 
 
 @app.get("/health")
 async def health():
+    """进程可用性检查；返回固定结构供 Electron/脚本轮询。"""
     # Electron 主进程和开发脚本会轮询该接口判断后端是否可用。
     return {"status": "ok", "service": "backend"}
 
 
 @app.get("/hello/{name}")
 async def say_hello(name: str):
+    """本地连通性示例接口；name 来自路径参数，不访问业务数据。"""
     # 示例接口保留给本地连通性测试，不参与当前 graph 业务。
     return {"message": f"Hello {name}"}
