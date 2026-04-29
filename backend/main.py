@@ -3,6 +3,7 @@ from fastapi.middleware.cors import CORSMiddleware
 
 from database import init_db
 from graph_routes import router as graph_router
+from rag_routes import router as rag_router
 
 app = FastAPI(title="OC Creative Assistant Backend")
 
@@ -24,6 +25,7 @@ async def startup() -> None:
 
 
 app.include_router(graph_router)
+app.include_router(rag_router)
 
 
 @app.get("/")

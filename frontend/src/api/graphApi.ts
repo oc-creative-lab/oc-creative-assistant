@@ -52,6 +52,62 @@ export interface SaveGraphDto {
   edges: GraphEdgeDto[]
 }
 
+export interface RagContextRequestDto {
+  node_id: string
+  query: string
+  agent_type: 'inspiration'
+  top_k: number
+}
+
+export interface RagCurrentNodeDto {
+  id: string
+  type: string
+  title: string
+  content: string
+  tags: string[]
+}
+
+export interface RagGraphContextItemDto {
+  id: string
+  type: string
+  title: string
+  content: string
+  relation_label: string
+  relation_type: string
+  direction: string
+}
+
+export interface RagVectorContextItemDto {
+  id: string
+  type: string
+  title: string
+  content: string
+  score: number
+}
+
+export interface RagMergedContextItemDto {
+  id: string
+  source: string
+  type: string
+  title: string
+  content: string
+}
+
+export interface RagContextResponseDto {
+  current_node: RagCurrentNodeDto
+  graph_context: RagGraphContextItemDto[]
+  vector_context: RagVectorContextItemDto[]
+  merged_context: RagMergedContextItemDto[]
+  prompt: string
+  debug: {
+    query_used: string
+    top_k: number
+    vector_store: string
+    llm_called: boolean
+    vector_error?: string | null
+  }
+}
+
 // 桌面态优先使用 preload 注入的后端地址，浏览器开发态回退到 Vite 环境变量。
 const backendBaseUrl = (
   window.ocDesktop?.config.backendUrl ||
@@ -88,5 +144,13 @@ export async function saveProjectGraph(projectId: string, graph: SaveGraphDto): 
   return requestJson<GraphDto>(`/api/projects/${projectId}/graph`, {
     method: 'PUT',
     body: JSON.stringify(graph),
+  })
+}
+
+// 当前功能只用于调试 RAG 上下文和 prompt，不是真正 Agent/LLM 调用。
+export async function loadRagContext(payload: RagContextRequestDto): Promise<RagContextResponseDto> {
+  return requestJson<RagContextResponseDto>('/api/rag/context', {
+    method: 'POST',
+    body: JSON.stringify(payload),
   })
 }

@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { computed, ref, watch, onMounted, onUnmounted } from 'vue'
+import { loadRagContext, type RagContextResponseDto } from '../../api/graphApi'
 import {
   RELATION_TYPE_OPTIONS,
   type CreativeFlowEdge,
@@ -22,6 +23,10 @@ const emit = defineEmits<{
 }>()
 
 const agentResult = ref('')
+const ragQuery = ref('')
+const ragResult = ref<RagContextResponseDto | null>(null)
+const ragError = ref('')
+const isRagLoading = ref(false)
 
 // 自定义下拉框的状态
 const isNodeStatusSelectOpen = ref(false)
@@ -155,10 +160,39 @@ function runAgentMock(type: 'inspiration' | 'research' | 'structure') {
   )
 }
 
+function summarizeContent(content: string) {
+  return content.length > 120 ? `${content.slice(0, 120)}...` : content
+}
+
+async function handleLoadRagContext() {
+  if (!props.selectedNode) {
+    return
+  }
+
+  try {
+    isRagLoading.value = true
+    ragError.value = ''
+    // PoC 阶段先实现可解释的上下文预览，再接入真正 LLM，避免用户看不到检索是否合理。
+    ragResult.value = await loadRagContext({
+      node_id: props.selectedNode.id,
+      query: ragQuery.value,
+      agent_type: 'inspiration',
+      top_k: 5,
+    })
+  } catch (error) {
+    ragResult.value = null
+    ragError.value = error instanceof Error ? error.message : 'RAG 上下文加载失败'
+  } finally {
+    isRagLoading.value = false
+  }
+}
+
 watch(
   () => [props.selectedNode?.id, props.selectedEdge?.id],
   () => {
     agentResult.value = ''
+    ragResult.value = null
+    ragError.value = ''
   },
 )
 </script>
@@ -244,6 +278,65 @@ watch(
           <button type="button" @click="runAgentMock('structure')">结构整理</button>
         </div>
         <pre v-if="agentResult" class="agent-result">{{ agentResult }}</pre>
+      </section>
+
+      <section class="detail-panel rag-panel">
+        <h3>RAG / Agent 调试</h3>
+        <label for="rag-query">用户请求</label>
+        <div class="input-wrapper">
+          <textarea
+            id="rag-query"
+            rows="3"
+            v-model="ragQuery"
+            placeholder="留空时使用当前节点标题和内容作为检索 query"
+          />
+        </div>
+        <!-- 当前按钮只查看上下文，不调用 LLM，也不会把结果写入节点正文。 -->
+        <button type="button" :disabled="isRagLoading" @click="handleLoadRagContext">
+          {{ isRagLoading ? '加载 RAG 上下文...' : '查看 RAG 上下文' }}
+        </button>
+        <p v-if="ragError" class="rag-error">{{ ragError }}</p>
+
+        <div v-if="ragResult" class="rag-result">
+          <details open>
+            <summary>当前节点 Current Node</summary>
+            <div class="rag-card">
+              <strong>{{ ragResult.current_node.title }}</strong>
+              <span>{{ ragResult.current_node.type }}</span>
+              <p>{{ ragResult.current_node.content }}</p>
+            </div>
+          </details>
+
+          <details open>
+            <summary>图关系上下文 Graph Context</summary>
+            <p v-if="ragResult.graph_context.length === 0" class="rag-empty">暂无直接连接的相关节点</p>
+            <article v-for="item in ragResult.graph_context" :key="item.id" class="rag-card">
+              <strong>{{ item.relation_label }} / {{ item.relation_type }}</strong>
+              <span>{{ item.direction }} · {{ item.type }} · {{ item.title }}</span>
+              <p>{{ summarizeContent(item.content) }}</p>
+            </article>
+          </details>
+
+          <details open>
+            <summary>向量检索上下文 Vector Context</summary>
+            <p v-if="ragResult.vector_context.length === 0" class="rag-empty">暂无向量检索结果</p>
+            <article v-for="item in ragResult.vector_context" :key="item.id" class="rag-card">
+              <strong>score {{ item.score.toFixed(2) }}</strong>
+              <span>{{ item.type }} · {{ item.title }}</span>
+              <p>{{ summarizeContent(item.content) }}</p>
+            </article>
+            <p class="rag-debug-line">
+              vector_store: {{ ragResult.debug.vector_store }}
+              <span v-if="ragResult.debug.vector_error"> / {{ ragResult.debug.vector_error }}</span>
+            </p>
+          </details>
+
+          <details>
+            <summary>最终 Prompt</summary>
+            <!-- 先让用户看到 AI 将接收的上下文，便于验证检索和拼接是否合理。 -->
+            <pre class="prompt-preview">{{ ragResult.prompt }}</pre>
+          </details>
+        </div>
       </section>
     </template>
 
@@ -610,6 +703,84 @@ button.danger:hover {
   line-height: 1.6;
   white-space: pre-wrap;
   overflow-x: auto;
+}
+
+.rag-panel {
+  gap: 12px;
+}
+
+.rag-error {
+  margin: 0;
+  padding: 10px 12px;
+  border: 1px solid #fecaca;
+  border-radius: 8px;
+  background: #fef2f2;
+  color: #b42318;
+  font-size: 0.84rem;
+}
+
+.rag-result {
+  display: grid;
+  gap: 10px;
+}
+
+.rag-result details {
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--panel-strong);
+}
+
+.rag-result summary {
+  padding: 10px 12px;
+  color: var(--text);
+  font-size: 0.86rem;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.rag-card {
+  display: grid;
+  gap: 5px;
+  margin: 0 10px 10px;
+  padding: 10px;
+  border-radius: 8px;
+  background: var(--app-bg);
+}
+
+.rag-card strong {
+  font-size: 0.88rem;
+}
+
+.rag-card span,
+.rag-debug-line,
+.rag-empty {
+  color: var(--muted);
+  font-size: 0.78rem;
+}
+
+.rag-card p,
+.rag-empty,
+.rag-debug-line {
+  margin: 0;
+  line-height: 1.45;
+}
+
+.rag-debug-line,
+.rag-empty {
+  padding: 0 12px 12px;
+}
+
+.prompt-preview {
+  max-height: 360px;
+  margin: 0 10px 10px;
+  overflow: auto;
+  padding: 12px;
+  border-radius: 8px;
+  background: #111827;
+  color: #f9fafb;
+  font-size: 0.76rem;
+  line-height: 1.55;
+  white-space: pre-wrap;
 }
 
 /* 连线元数据 */

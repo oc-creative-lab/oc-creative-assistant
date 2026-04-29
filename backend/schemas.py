@@ -67,3 +67,62 @@ class UpdateNodeRequest(BaseModel):
     typeLabel: str | None = None
     tags: list[str] | None = None
     status: str | None = None
+
+
+# RAG 上下文预览请求：当前只构造上下文和 prompt，不调用任何 LLM。
+class RagContextRequest(BaseModel):
+    node_id: str
+    query: str = ""
+    agent_type: str = "inspiration"
+    top_k: int = 5
+
+
+class RagCurrentNodePayload(BaseModel):
+    id: str
+    type: str
+    title: str
+    content: str
+    tags: list[str] = Field(default_factory=list)
+
+
+class RagGraphContextItem(BaseModel):
+    id: str
+    type: str
+    title: str
+    content: str
+    relation_label: str
+    relation_type: str
+    direction: str
+
+
+class RagVectorContextItem(BaseModel):
+    id: str
+    type: str
+    title: str
+    content: str
+    score: float
+
+
+class RagMergedContextItem(BaseModel):
+    id: str
+    source: str
+    type: str
+    title: str
+    content: str
+
+
+class RagDebugPayload(BaseModel):
+    query_used: str
+    top_k: int
+    vector_store: str
+    llm_called: bool = False
+    vector_error: str | None = None
+
+
+class RagContextResponse(BaseModel):
+    current_node: RagCurrentNodePayload
+    graph_context: list[RagGraphContextItem]
+    vector_context: list[RagVectorContextItem]
+    merged_context: list[RagMergedContextItem]
+    prompt: str
+    debug: RagDebugPayload
