@@ -16,6 +16,7 @@ const props = defineProps<{
 
 const emit = defineEmits<{
   nodeUpdated: [node: CreativeFlowNode]
+  nodeDeleted: [nodeId: string]
   edgeUpdated: [edge: CreativeFlowEdge]
   edgeDeleted: [edgeId: string]
 }>()
@@ -62,6 +63,15 @@ function updateNodeTags(rawValue: string) {
     .filter(Boolean)
 
   updateNodeData({ tags })
+}
+
+function handleDeleteNode() {
+  if (!props.selectedNode) {
+    return
+  }
+
+  // 删除节点属于危险操作，实际级联删除相关连线由 AppShell 统一处理，避免右侧面板直接改全局 graph。
+  emit('nodeDeleted', props.selectedNode.id)
 }
 
 function updateEdge(partial: Partial<CreativeFlowEdge['data']>) {
@@ -187,6 +197,8 @@ watch(
             <option value="outdated">outdated</option>
           </select>
         </label>
+
+        <button type="button" class="danger" @click="handleDeleteNode">删除节点</button>
       </section>
 
       <section class="detail-panel">

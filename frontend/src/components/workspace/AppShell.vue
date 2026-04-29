@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, onMounted, ref } from 'vue'
+import { computed, onBeforeUnmount, onMounted, ref } from 'vue'
 import { loadDefaultGraph, saveProjectGraph } from '../../api/graphApi'
 import { mockWorkspaceStatus } from '../../mocks/workspaceMock'
 import type { CreativeFlowEdge, CreativeFlowNode, CreativeGraphSnapshot, CreativeNodeType } from '../../types/node'
@@ -161,15 +161,72 @@ function handleEdgeUpdated(updatedEdge: CreativeFlowEdge) {
   scheduleAutoSave()
 }
 
+function handleNodeDeleted(nodeId: string) {
+  const node = graphSnapshot.value.nodes.find((item) => item.id === nodeId)
+
+  if (!node) {
+    return
+  }
+
+  const confirmed = window.confirm(`确定要删除节点「${node.data.title}」吗？相关连线也会一并删除。`)
+
+  if (!confirmed) {
+    return
+  }
+
+  // 删除节点时必须同步删除所有相关连线，否则后端保存会因为 edge 端点缺失而校验失败。
+  const nextSnapshot: CreativeGraphSnapshot = {
+    nodes: graphSnapshot.value.nodes.filter((item) => item.id !== nodeId),
+    edges: graphSnapshot.value.edges.filter((edge) => edge.source !== nodeId && edge.target !== nodeId),
+  }
+
+  selectedNodeId.value = ''
+  selectedEdgeId.value = ''
+  setGraphSnapshot(nextSnapshot, true)
+  scheduleAutoSave()
+}
+
 function handleEdgeDeleted(edgeId: string) {
   const nextSnapshot: CreativeGraphSnapshot = {
     nodes: graphSnapshot.value.nodes,
     edges: graphSnapshot.value.edges.filter((edge) => edge.id !== edgeId),
   }
 
+  // 删除连线只影响关系本身，不修改两端节点；随后复用统一持久化流程。
   selectedEdgeId.value = ''
   setGraphSnapshot(nextSnapshot, true)
   scheduleAutoSave()
+}
+
+function isTypingTarget(target: EventTarget | null) {
+  if (!(target instanceof HTMLElement)) {
+    return false
+  }
+
+  return ['INPUT', 'TEXTAREA', 'SELECT'].includes(target.tagName) || target.isContentEditable
+}
+
+function handleGlobalKeydown(event: KeyboardEvent) {
+  if (event.key !== 'Delete' && event.key !== 'Backspace') {
+    return
+  }
+
+  if (isTypingTarget(event.target)) {
+    return
+  }
+
+  if (selectedNodeId.value) {
+    event.preventDefault()
+    event.stopPropagation()
+    handleNodeDeleted(selectedNodeId.value)
+    return
+  }
+
+  if (selectedEdgeId.value) {
+    event.preventDefault()
+    event.stopPropagation()
+    handleEdgeDeleted(selectedEdgeId.value)
+  }
 }
 
 async function handleSaveGraph() {
@@ -182,7 +239,17 @@ async function handleSaveGraph() {
 }
 
 onMounted(() => {
+  // Delete/Backspace 作为画布快捷键时，只删除当前选中对象；输入框内按键仍保留文本编辑语义。
+  window.addEventListener('keydown', handleGlobalKeydown, true)
   void loadGraph()
+})
+
+onBeforeUnmount(() => {
+  window.removeEventListener('keydown', handleGlobalKeydown, true)
+
+  if (autoSaveTimer) {
+    clearTimeout(autoSaveTimer)
+  }
 })
 </script>
 
@@ -210,6 +277,7 @@ onMounted(() => {
         :selected-edge="selectedEdge"
         :nodes="graphNodes"
         @node-updated="handleNodeUpdated"
+        @node-deleted="handleNodeDeleted"
         @edge-updated="handleEdgeUpdated"
         @edge-deleted="handleEdgeDeleted"
       />
