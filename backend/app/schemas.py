@@ -57,12 +57,31 @@ class EdgePayload(BaseModel):
     animated: bool = False
 
 
+class IndexingStatusPayload(BaseModel):
+    """向量索引状态 DTO。
+
+    保存接口会先保证 SQLite 落库，再把 embedding/ChromaDB 同步结果带给前端，
+    这样用户能知道语义检索是否真的可用。
+    """
+
+    status: str = "not_checked"
+    message: str = ""
+    provider: str = ""
+    model: str = ""
+    dimension: int = 0
+    expected_nodes: int = 0
+    indexed_nodes: int = 0
+    missing_node_ids: list[str] = Field(default_factory=list)
+    error: str | None = None
+
+
 class GraphPayload(BaseModel):
     """读取 graph 时返回项目元信息与完整节点、边快照。"""
 
     project: ProjectPayload
     nodes: list[NodePayload]
     edges: list[EdgePayload]
+    indexing: IndexingStatusPayload = Field(default_factory=IndexingStatusPayload)
 
 
 class SaveGraphRequest(BaseModel):

@@ -1,72 +1,115 @@
-"""ChromaDB 向量库与 embedding 封装。
+"""ChromaDB 向量库与阿里 embedding 封装。
 
-本模块只负责 ChromaDB collection 初始化、项目隔离 id/metadata 规范、
-节点文档 upsert/delete/query，以及 PoC 阶段的本地 hash embedding。
+本模块只负责 ChromaDB collection 初始化、项目隔离 id/metadata 规范、节点文档
+upsert/delete/query，以及通过 DashScope OpenAI-compatible API 计算语义向量。
 索引同步时机由 `app.indexing.sync` 决定。
 """
 
 from __future__ import annotations
 
 import hashlib
-import math
-import re
 from typing import Any
 
 from app.db.models import NodeORM
-from app.indexing.config import CHROMA_COLLECTION_NAME, CHROMA_PATH, EMBEDDING_DIMENSION
+from app.indexing.config import (
+    CHROMA_COLLECTION_NAME,
+    CHROMA_PATH,
+    EMBEDDING_API_KEY,
+    EMBEDDING_BASE_URL,
+    EMBEDDING_DIMENSION,
+    EMBEDDING_MODEL,
+)
 from app.indexing.document_loader import node_to_document
 
 
-class HashEmbeddingProvider:
-    """PoC 占位 embedding 提供者。
+class DashScopeEmbeddingProvider:
+    """阿里 DashScope embedding 提供者。
 
-    当前实现只做本地 hash 向量化，后续可替换为 OpenAI、DeepSeek、BGE 等真实语义向量。
+    DashScope 提供 OpenAI-compatible 接口，因此这里复用 openai SDK，避免新增依赖。
+    该 provider 会在写入 ChromaDB 和查询 ChromaDB 时使用同一套向量模型，保证向量空间一致。
     """
 
-    dimension = EMBEDDING_DIMENSION
+    name = "dashscope"
+
+    def __init__(self, api_key: str, base_url: str, model: str, dimension: int) -> None:
+        """保存 embedding API 配置；真正创建 client 延迟到首次调用，避免无关 import 影响启动。"""
+        self.api_key = api_key
+        self.base_url = base_url
+        self.model = model
+        self.dimension = dimension
+        self._client: Any | None = None
 
     def embed(self, text: str) -> list[float]:
-        """将文本转换为固定维度向量。
+        """将单条文本转换为语义向量。"""
+        return self.embed_many([text])[0]
+
+    def embed_many(self, texts: list[str]) -> list[list[float]]:
+        """批量调用阿里 embedding API。
 
         Args:
-            text: 需要向量化的文本。
-
+            texts: 待向量化的检索文档列表。
         Returns:
-            归一化后的固定维度向量；空文本会返回全零向量。
+            与输入顺序一致的 float 向量列表。
         """
-        tokens = self._tokenize(text)
-        vector = [0.0] * self.dimension
+        if not texts:
+            return []
 
-        for token in tokens:
-            # hash 到固定维度可以保证同一 token 稳定落位，便于 PoC 做可复现检索。
-            digest = hashlib.sha256(token.encode("utf-8")).digest()
-            index = int.from_bytes(digest[:4], "big") % self.dimension
-            vector[index] += 1.0
+        response = self._get_client().embeddings.create(
+            model=self.model,
+            input=texts,
+            dimensions=self.dimension,
+            encoding_format="float",
+        )
+        vectors_by_index: dict[int, list[float]] = {}
 
-        norm = math.sqrt(sum(value * value for value in vector))
+        for offset, item in enumerate(response.data):
+            index = getattr(item, "index", offset)
+            vector = list(item.embedding)
 
-        if norm == 0:
-            return vector
+            if len(vector) != self.dimension:
+                raise RuntimeError(
+                    f"Embedding dimension mismatch: expected {self.dimension}, got {len(vector)}"
+                )
 
-        return [value / norm for value in vector]
+            vectors_by_index[int(index)] = vector
 
-    def _tokenize(self, text: str) -> list[str]:
-        """生成用于 hash embedding 的 token。
+        return [vectors_by_index[index] for index in range(len(texts))]
 
-        Args:
-            text: 原始文本。
+    def _get_client(self) -> Any:
+        """延迟初始化 OpenAI-compatible client，避免启动时暴露 API key 配置问题。"""
+        if not self.api_key:
+            raise RuntimeError("未设置 OC_EMBEDDING_API_KEY 或 DASHSCOPE_API_KEY，无法调用阿里 embedding API")
 
-        Returns:
-            英文/数字词、中文单字和字符 bigram 的组合 token 列表。
-        """
-        lowered = text.lower()
-        words = re.findall(r"[\w]+", lowered, flags=re.UNICODE)
-        chinese_chars = re.findall(r"[\u4e00-\u9fff]", text)
-        char_bigrams = [text[index : index + 2] for index in range(max(len(text) - 1, 0))]
-        return words + chinese_chars + char_bigrams
+        if self._client is None:
+            try:
+                from openai import OpenAI
+            except ImportError as error:
+                raise RuntimeError("openai 依赖未安装，无法调用阿里 embedding API") from error
+
+            self._client = OpenAI(api_key=self.api_key, base_url=self.base_url)
+
+        return self._client
 
 
-embedding_provider = HashEmbeddingProvider()
+embedding_provider = DashScopeEmbeddingProvider(
+    EMBEDDING_API_KEY,
+    EMBEDDING_BASE_URL,
+    EMBEDDING_MODEL,
+    EMBEDDING_DIMENSION,
+)
+
+
+def get_embedding_signature() -> str:
+    """返回当前 embedding 配置签名。
+
+    ChromaDB 中保存该签名，用于判断模型、base_url 或维度变化后是否需要重写向量。
+    """
+    return (
+        f"{embedding_provider.name}:"
+        f"{getattr(embedding_provider, 'base_url', '')}:"
+        f"{embedding_provider.model}:"
+        f"{embedding_provider.dimension}"
+    )
 
 
 def build_chroma_id(project_id: str, node_id: str) -> str:
@@ -89,12 +132,12 @@ def get_chroma_collection() -> Any:
         ChromaDB collection 对象。
 
     Raises:
-        RuntimeError: 当 ChromaDB 未安装时抛出，调用方可选择降级。
+        RuntimeError: 当 ChromaDB 未安装时抛出，调用方应把索引失败状态返回给前端。
     """
     try:
         import chromadb
     except ImportError as error:
-        raise RuntimeError("ChromaDB 未安装，已使用本地 hash embedding 降级检索。") from error
+        raise RuntimeError("ChromaDB 未安装，无法写入或查询向量索引。") from error
 
     CHROMA_PATH.mkdir(parents=True, exist_ok=True)
     client = chromadb.PersistentClient(path=str(CHROMA_PATH))
@@ -130,6 +173,7 @@ def upsert_node(collection: Any, node: NodeORM, fingerprint: str | None = None) 
                 "node_type": node.node_type,
                 "title": node.title,
                 "fingerprint": node_fingerprint,
+                "embedding_signature": get_embedding_signature(),
             }
         ],
     )

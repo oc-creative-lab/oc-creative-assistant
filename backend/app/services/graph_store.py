@@ -10,6 +10,7 @@ from fastapi import HTTPException
 from app.db.database import SessionLocal
 from app.db.models import NodeORM, ProjectORM
 from app.indexing.sync import (
+    IndexingSyncResult,
     build_node_fingerprint,
     safe_sync_node_index,
     safe_sync_project_index_incremental,
@@ -17,6 +18,7 @@ from app.indexing.sync import (
 from app.schemas import (
     EdgePayload,
     GraphPayload,
+    IndexingStatusPayload,
     NodePayload,
     ProjectPayload,
     SaveGraphRequest,
@@ -48,6 +50,27 @@ from app.services.graph_seed import (
     DEFAULT_PROJECT_NAME,
 )
 from app.services.graph_validation import validate_edge_endpoints_in_project
+
+
+def _indexing_result_to_payload(result: IndexingSyncResult | None) -> IndexingStatusPayload:
+    """将索引同步结果转换为 API DTO。
+
+    保存接口的主结果仍然是 graph；indexing 字段只负责告诉前端 embedding/ChromaDB 是否正常。
+    """
+    if result is None:
+        return IndexingStatusPayload()
+
+    return IndexingStatusPayload(
+        status=result.status,
+        message=result.message,
+        provider=result.provider,
+        model=result.model,
+        dimension=result.dimension,
+        expected_nodes=result.expected_nodes,
+        indexed_nodes=result.indexed_nodes,
+        missing_node_ids=result.missing_node_ids,
+        error=result.error,
+    )
 
 
 def ensure_default_project() -> ProjectPayload:
@@ -93,7 +116,7 @@ def get_project(project_id: str) -> ProjectPayload:
         return project_to_payload(require_project(session, project_id))
 
 
-def get_project_graph(project_id: str) -> GraphPayload:
+def get_project_graph(project_id: str, indexing: IndexingStatusPayload | None = None) -> GraphPayload:
     """读取项目 graph，并转换为前端 DTO。
 
     Args:
@@ -114,6 +137,7 @@ def get_project_graph(project_id: str) -> GraphPayload:
             project=project_to_payload(project),
             nodes=[node_to_payload(node) for node in nodes],
             edges=[edge_to_payload(edge) for edge in edges],
+            indexing=indexing or IndexingStatusPayload(),
         )
 
 
@@ -138,9 +162,9 @@ def save_project_graph(project_id: str, payload: SaveGraphRequest) -> GraphPaylo
 
     # ChromaDB 依赖已提交的 SQLite 状态，因此必须在事务完成后按 fingerprint 增量同步。
     new_nodes = read_project_nodes(project_id)
-    safe_sync_project_index_incremental(project_id, old_nodes, new_nodes)
+    indexing_result = safe_sync_project_index_incremental(project_id, old_nodes, new_nodes)
 
-    return get_project_graph(project_id)
+    return get_project_graph(project_id, _indexing_result_to_payload(indexing_result))
 
 
 def create_node(project_id: str, node: NodePayload) -> NodePayload:

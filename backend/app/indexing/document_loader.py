@@ -58,7 +58,7 @@ def node_to_document(node: NodeORM) -> str:
         node: 需要写入或查询对比的 ORM 节点。
 
     Returns:
-        用于 ChromaDB document 和 hash embedding 的文本。
+        用于 ChromaDB document 和阿里 embedding 的文本。
     """
     tags = ", ".join(db_tags_to_api(node.meta))
     return f"""Title: {node.title}

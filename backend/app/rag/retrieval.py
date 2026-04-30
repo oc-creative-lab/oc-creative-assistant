@@ -8,8 +8,8 @@ from __future__ import annotations
 
 from app.db.models import EdgeORM, NodeORM
 from app.indexing.config import DEFAULT_RELATION_LABEL, DEFAULT_RELATION_TYPE
-from app.indexing.document_loader import node_to_document, node_to_vector_item
-from app.indexing.vector_store import embedding_provider, get_chroma_collection, query_collection
+from app.indexing.document_loader import node_to_vector_item
+from app.indexing.vector_store import get_chroma_collection, query_collection
 from app.schemas import RagGraphContextItem, RagMergedContextItem, RagVectorContextItem
 
 
@@ -82,14 +82,13 @@ def _build_vector_context(
         相似节点列表、实际使用的向量库标识和可选错误信息。
     """
     if len(nodes) <= 1:
-        return [], "hash_placeholder", None
+        return [], "chroma", None
 
     try:
         return _query_chroma_context(project_id, current_node_id, nodes, query, top_k)
     except Exception as error:  # noqa: BLE001
-        # ChromaDB 不可用时降级到内存相似度，保证图关系上下文和 prompt 仍能调试。
-        fallback_context = _query_in_memory_context(current_node_id, nodes, query, top_k)
-        return fallback_context, "hash_memory_fallback", str(error)
+        # 向量检索失败时直接返回空列表，并把错误透出到 debug.vector_error，避免假装语义检索可用。
+        return [], "chroma_unavailable", str(error)
 
 
 def _query_chroma_context(
@@ -133,27 +132,6 @@ def _query_chroma_context(
     return context, "chroma", None
 
 
-def _query_in_memory_context(
-    current_node_id: str,
-    nodes: list[NodeORM],
-    query: str,
-    top_k: int,
-) -> list[RagVectorContextItem]:
-    """在 ChromaDB 不可用时执行内存相似度兜底检索。"""
-    query_embedding = embedding_provider.embed(query)
-    scored_nodes: list[tuple[float, NodeORM]] = []
-
-    for node in nodes:
-        if node.id == current_node_id:
-            continue
-
-        node_embedding = embedding_provider.embed(node_to_document(node))
-        scored_nodes.append((_cosine_similarity(query_embedding, node_embedding), node))
-
-    scored_nodes.sort(key=lambda item: item[0], reverse=True)
-    return [node_to_vector_item(node, score=score) for score, node in scored_nodes[:top_k]]
-
-
 def _merge_context(
     graph_context: list[RagGraphContextItem],
     vector_context: list[RagVectorContextItem],
@@ -194,11 +172,3 @@ def _merge_context(
         )
 
     return list(merged.values())
-
-
-def _cosine_similarity(left: list[float], right: list[float]) -> float:
-    """计算两个已归一化向量的余弦相似度。"""
-    if not left or not right:
-        return 0.0
-
-    return sum(left_value * right_value for left_value, right_value in zip(left, right, strict=False))

@@ -39,11 +39,25 @@ export interface GraphEdgeDto {
   animated: boolean
 }
 
+/** 后端向量索引状态；SQLite 保存成功不代表 embedding 一定成功，因此需要单独展示。 */
+export interface IndexingStatusDto {
+  status: 'not_checked' | 'synced' | 'partial' | 'failed'
+  message: string
+  provider: string
+  model: string
+  dimension: number
+  expected_nodes: number
+  indexed_nodes: number
+  missing_node_ids: string[]
+  error?: string | null
+}
+
 /** 读取接口返回的完整 graph 快照。 */
 export interface GraphDto {
   project: GraphProjectDto
   nodes: GraphNodeDto[]
   edges: GraphEdgeDto[]
+  indexing?: IndexingStatusDto
 }
 
 /** 保存接口请求体；projectId 由 URL 参数提供。 */

@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { computed, onBeforeUnmount, onMounted, ref } from 'vue'
-import { loadDefaultGraph, saveProjectGraph } from '../../api/graphApi'
+import { loadDefaultGraph, saveProjectGraph, type IndexingStatusDto } from '../../api/graphApi'
 import { mockWorkspaceStatus } from '../../mocks/workspaceMock'
 import type { CreativeFlowEdge, CreativeFlowNode, CreativeGraphSnapshot, CreativeNodeType } from '../../types/node'
 import type { WorkspaceStatus } from '../../types/workspace'
@@ -31,6 +31,23 @@ const isSaving = ref(false)
 const saveState = ref('正在从本地后端加载...')
 const createNodeRequest = ref<{ type: CreativeNodeType; nonce: number } | null>(null)
 let autoSaveTimer: ReturnType<typeof setTimeout> | null = null
+
+/**
+ * 将后端 indexing 状态转成状态栏文案。
+ * SQLite 保存和 embedding 写入是两个阶段：前者成功后仍可能因为 API key、网络或维度配置导致索引失败。
+ */
+function formatIndexingState(indexing?: IndexingStatusDto) {
+  if (!indexing || indexing.status === 'not_checked') {
+    return ''
+  }
+
+  if (indexing.status === 'synced') {
+    return `向量索引已同步 ${indexing.indexed_nodes}/${indexing.expected_nodes}`
+  }
+
+  const detail = indexing.error || indexing.message || '请检查 backend/.env 中的 embedding 配置'
+  return `SQLite 已保存，但向量索引${indexing.status === 'failed' ? '失败' : '未完整'}：${detail}`
+}
 
 const selectedNode = computed(() => {
   return graphSnapshot.value.nodes.find((node) => node.id === selectedNodeId.value) ?? null
@@ -92,7 +109,8 @@ async function persistGraph(refreshFromResponse = false) {
       setGraphSnapshot(graphDtoToSnapshot(savedGraph), true)
     }
 
-    saveState.value = `已保存：${new Date().toLocaleTimeString()}`
+    const indexingState = formatIndexingState(savedGraph.indexing)
+    saveState.value = indexingState || `已保存：${new Date().toLocaleTimeString()}`
   } catch (error) {
     saveState.value = error instanceof Error ? `保存失败：${error.message}` : '保存失败'
   } finally {
