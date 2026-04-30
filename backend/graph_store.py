@@ -8,6 +8,11 @@ from sqlalchemy.orm import Session
 
 from database import SessionLocal
 from models import EdgeORM, NodeORM, ProjectORM
+from rag.index_sync import (
+    build_node_fingerprint,
+    safe_sync_node_index,
+    safe_sync_project_index_incremental,
+)
 from schemas import (
     EdgePayload,
     GraphPayload,
@@ -251,10 +256,33 @@ def get_project_graph(project_id: str) -> GraphPayload:
         )
 
 
+def _read_project_nodes(project_id: str) -> list[NodeORM]:
+    """读取项目节点快照，供 Chroma 同步在 SQLite 事务外做 fingerprint 对比。"""
+    with SessionLocal() as session:
+        return session.scalars(
+            select(NodeORM)
+            .where(NodeORM.project_id == project_id)
+            .order_by(NodeORM.sort_order, NodeORM.created_at)
+        ).all()
+
+
+def _read_project_node(project_id: str, node_id: str) -> NodeORM | None:
+    """提交后重新读取单节点，确保同步 Chroma 使用的是 SQLite 已落库的最新数据。"""
+    with SessionLocal() as session:
+        node = session.get(NodeORM, node_id)
+
+        if node is None or node.project_id != project_id:
+            return None
+
+        return node
+
+
 def save_project_graph(project_id: str, payload: SaveGraphRequest) -> GraphPayload:
     """手动保存策略：用前端当前 graph 快照整体替换项目 nodes / edges。"""
     # 入参 payload.nodes/payload.edges 来自 Vue Flow 当前画布状态。
     # 状态影响：会删除该项目原有节点和边，再写入新的完整快照。
+    old_nodes = _read_project_nodes(project_id)
+
     with SessionLocal.begin() as session:
         project = session.get(ProjectORM, project_id)
 
@@ -262,6 +290,10 @@ def save_project_graph(project_id: str, payload: SaveGraphRequest) -> GraphPaylo
             raise HTTPException(status_code=404, detail="Project not found")
 
         _replace_graph(session, project_id, payload.nodes, payload.edges)
+
+    new_nodes = _read_project_nodes(project_id)
+    # 整图保存会重建 SQLite 行；这里只按检索文档 fingerprint 增量同步，避免拖动节点也重算 embedding。
+    safe_sync_project_index_incremental(project_id, old_nodes, new_nodes)
 
     # 重新读取一次，确保响应使用数据库最终排序和 ORM -> DTO 转换结果。
     return get_project_graph(project_id)
@@ -273,6 +305,11 @@ def create_node(project_id: str, node: NodePayload) -> NodePayload:
     with SessionLocal.begin() as session:
         _require_project(session, project_id)
         session.merge(_node_to_orm(project_id, node, sort_order=0))
+
+    latest_node = _read_project_node(project_id, node.id)
+
+    if latest_node is not None:
+        safe_sync_node_index(latest_node)
 
     return node
 
@@ -287,6 +324,8 @@ def update_node(project_id: str, node_id: str, payload: UpdateNodeRequest) -> No
 
         if node is None or node.project_id != project_id:
             raise HTTPException(status_code=404, detail="Node not found")
+
+        old_fingerprint = build_node_fingerprint(node)
 
         # PATCH 语义：只有显式传入的字段才覆盖数据库，空字符串仍是合法更新值。
         if payload.title is not None:
@@ -324,6 +363,11 @@ def update_node(project_id: str, node_id: str, payload: UpdateNodeRequest) -> No
             node.position_y = payload.position.y
 
         updated = _node_to_payload(node)
+
+    latest_node = _read_project_node(project_id, node_id)
+
+    if latest_node is not None:
+        safe_sync_node_index(latest_node, old_fingerprint)
 
     return updated
 
