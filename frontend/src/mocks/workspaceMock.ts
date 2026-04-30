@@ -2,8 +2,8 @@ import { mockGraphNodes } from './graph'
 import type { AgentMode, AgentSuggestion, ProjectGroup, WorkspaceStatus } from '../types/workspace'
 import { buildProjectGroupsFromNodes } from '../utils/nodeFactory'
 
-/** PoC 默认项目名称，主要供前端独立演示和旧入口显示。 */
-export const mockProjectName = '\u300a\u661f\u5ead\u6863\u6848\u300b'
+/** PoC 默认项目名称，与后端默认项目名对齐；供前端独立演示和旧入口显示。 */
+export const mockProjectName = '《咒术回战》涉谷站线'
 
 /** 旧左侧分组数据，真实 graph 已改为从后端加载。 */
 export const mockProjectGroups: ProjectGroup[] = buildProjectGroupsFromNodes(mockGraphNodes)
@@ -12,50 +12,50 @@ export const mockProjectGroups: ProjectGroup[] = buildProjectGroupsFromNodes(moc
 export const mockAgentSuggestions: Record<AgentMode, AgentSuggestion[]> = {
   inspiration: [
     {
-      id: 'idea-cost',
-      title: '\u7ed9\u80fd\u529b\u589e\u52a0\u4ee3\u4ef7',
-      body: '\u5f53\u524d\u8282\u70b9\u53ef\u4ee5\u8ffd\u95ee\u4e00\u4e2a\u4ee3\u4ef7\uff1a\u8bb0\u5fc6\u951a\u70b9\u88ab\u6539\u5199\u540e\uff0c\u89d2\u8272\u4f1a\u5931\u53bb\u4ec0\u4e48\uff1f',
+      id: 'idea-ticket-cost',
+      title: '给半价月票增加代价',
+      body: '当前可以追问一个古怪代价：使用半价月票的人虽然能无限乘车，但每换乘一次，就会忘记一个真实站名。',
     },
     {
-      id: 'idea-visual',
-      title: '\u5f3a\u5316\u89c6\u89c9\u951a\u70b9',
-      body: '\u53ef\u4ee5\u628a\u672f\u5f0f\u75d5\u8ff9\u7edf\u4e00\u6210\u661f\u7802\u3001\u94f6\u7ebf\u548c\u5012\u8f6c\u7684\u949f\u9762\u7b26\u53f7\u3002',
+      id: 'idea-station-visual',
+      title: '强化车站怪谈视觉',
+      body: '可以把咒力痕迹统一成发霉的站牌、反向滚动的电子屏、没有出口编号的换乘通道和自动流血的闸机灯。',
     },
     {
-      id: 'idea-choice',
-      title: '\u5236\u9020\u9009\u62e9\u538b\u529b',
-      body: '\u8ba9\u827e\u7433\u5728\u4fdd\u62a4\u5bfc\u5e08\u548c\u66dd\u5149\u738b\u90fd\u79d8\u5bc6\u4e4b\u95f4\u505a\u51fa\u53d6\u820d\u3002',
+      id: 'idea-announcement-choice',
+      title: '制造广播选择压力',
+      body: '让虎杖检票员在关闭午夜广播和救下被点名乘客之间做选择：广播一旦停止，第零站台也会永久移动到更深一层。',
     },
   ],
   research: [
     {
-      id: 'research-archive',
-      title: '\u8865\u9f50\u6863\u6848\u6765\u6e90',
-      body: '\u53ef\u4ee5\u4e3a\u738b\u5ba4\u6863\u6848\u9986\u8865\u4e00\u5c42\u516c\u5f00\u804c\u8d23\u3001\u9690\u79d8\u804c\u8d23\u548c\u5185\u90e8\u89c4\u5219\u3002',
+      id: 'research-zero-platform',
+      title: '补齐第零站台规则',
+      body: '可以为涉谷地下第零站台补充三层规则：普通乘客能看见什么、咒术师能看见什么、被车站吞掉的人会变成什么。',
     },
     {
-      id: 'research-city',
-      title: '\u67e5\u8be2\u7a7a\u95f4\u7ebf\u7d22',
-      body: '\u5f53\u524d\u8bbe\u5b9a\u9002\u5408\u8ffd\u52a0\u4e00\u4efd\u738b\u90fd\u533a\u57df\u6e05\u5355\uff0c\u4fbf\u4e8e\u540e\u7eed\u753b\u5e03\u7f16\u6392\u3002',
+      id: 'research-cursed-facilities',
+      title: '整理站内咒物设施',
+      body: '当前设定适合追加一份车站设施清单，例如闸机、售票机、失物招领处、换乘电梯、报站屏分别寄宿不同类型的咒灵。',
     },
   ],
   structure: [
     {
-      id: 'structure-act-one',
-      title: '\u6574\u7406\u7b2c\u4e00\u5e55\u94fe\u8def',
-      body: '\u5efa\u8bae\u5c06\u5931\u7a83\u6863\u6848\u3001\u521d\u9047\u4e8b\u4ef6\u3001\u5bfc\u5e08\u8bd5\u63a2\u3001\u738b\u90fd\u5f02\u53d8\u4e32\u6210\u8fde\u7eed\u8282\u70b9\u3002',
+      id: 'structure-last-train-chain',
+      title: '整理末班车链路',
+      body: '建议将异常末班车、第零站台显形、半价月票苏醒、午夜广播点名、终点站换乘仪式串成连续剧情节点。',
     },
     {
-      id: 'structure-relation',
-      title: '\u5efa\u7acb\u89d2\u8272\u5173\u7cfb',
-      body: '\u827e\u7433\u4e0e\u5bfc\u5e08\u7684\u5173\u7cfb\u53ef\u4ee5\u5148\u4ece\u4e92\u76f8\u8bd5\u63a2\uff0c\u9010\u6b65\u8f6c\u4e3a\u5171\u4eab\u98ce\u9669\u3002',
+      id: 'structure-character-relation',
+      title: '建立站员关系网',
+      body: '虎杖检票员、五条站长和钉崎失物招领员的关系可以从“车站同事”展开，逐步变成共同对抗第零站台的临时咒术班组。',
     },
   ],
 }
 
 /** 工作区状态占位；保存状态会在 AppShell 中被真实后端状态覆盖。 */
 export const mockWorkspaceStatus: WorkspaceStatus = {
-  saveState: '\u672c\u5730\u8349\u7a3f\u5df2\u4fdd\u5b58',
-  indexState: '\u8d44\u6599\u7d22\u5f15\u5f85\u6784\u5efa',
-  modelState: '\u6a21\u578b\uff1a\u672c\u5730\u5360\u4f4d',
+  saveState: '第零站台草稿已保存',
+  indexState: '咒物资料索引待构建',
+  modelState: '模型：本地咒力占位',
 }
