@@ -11,13 +11,18 @@ import ProjectSidebar from './ProjectSidebar.vue'
 import StatusBar from './StatusBar.vue'
 import TopToolbar from './TopToolbar.vue'
 
-// AppShell 是工作区状态中枢：负责后端加载/保存，以及画布、左侧工具栏、右侧详情之间的同步。
+/**
+ * 工作区状态中枢。
+ *
+ * AppShell 负责从后端加载和保存 graph，并协调画布、左侧工具栏、右侧详情面板
+ * 之间的状态同步。子组件只提交用户意图，权威 graph 快照由这里维护。
+ */
 const projectId = ref('')
 const projectName = ref('正在加载项目...')
 const graphNodes = ref<CreativeFlowNode[]>([])
 const graphEdges = ref<CreativeFlowEdge[]>([])
 const graphSnapshot = ref<CreativeGraphSnapshot>({ nodes: [], edges: [] })
-// graphVersion 用作重载信号：右侧编辑或后端恢复后通知 CanvasWorkspace 接受新的权威快照。
+/* graphVersion 是传给 CanvasWorkspace 的重载信号，用于接收后端恢复或右侧编辑后的权威快照。 */
 const graphVersion = ref(0)
 const selectedNodeId = ref('')
 const selectedEdgeId = ref('')
@@ -40,6 +45,13 @@ const workspaceStatus = computed<WorkspaceStatus>(() => ({
   saveState: saveState.value,
 }))
 
+/**
+ * 写入当前权威 graph 快照。
+ *
+ * Args:
+ *   snapshot: 已完成业务转换的前端 graph 快照。
+ *   shouldPushToCanvas: 是否通知画布接受这份外部快照。
+ */
 function setGraphSnapshot(snapshot: CreativeGraphSnapshot, shouldPushToCanvas = false) {
   graphSnapshot.value = snapshot
   graphNodes.value = snapshot.nodes
@@ -50,6 +62,15 @@ function setGraphSnapshot(snapshot: CreativeGraphSnapshot, shouldPushToCanvas = 
   }
 }
 
+/**
+ * 保存当前 graph 到后端。
+ *
+ * 自动保存只提交当前快照；手动保存可选择使用后端响应刷新本地状态，保证前端与
+ * SQLite 最终落库结果一致。
+ *
+ * Args:
+ *   refreshFromResponse: 是否用后端返回的 graph 覆盖本地快照。
+ */
 async function persistGraph(refreshFromResponse = false) {
   if (!projectId.value) {
     return
@@ -79,6 +100,11 @@ async function persistGraph(refreshFromResponse = false) {
   }
 }
 
+/**
+ * 安排一次防抖自动保存。
+ *
+ * 画布拖拽、连线和右侧详情编辑都进入同一保存队列，避免并发请求覆盖较新的快照。
+ */
 function scheduleAutoSave() {
   if (!isGraphReady.value || !projectId.value) {
     return
@@ -90,11 +116,16 @@ function scheduleAutoSave() {
 
   saveState.value = '有未保存的画布修改'
   autoSaveTimer = setTimeout(() => {
-    // 画布和右侧详情都走同一份快照保存，确保节点内容和连线标签能一起恢复。
     void persistGraph(false)
   }, 600)
 }
 
+/**
+ * 从后端加载默认项目 graph。
+ *
+ * 后端会在首次访问默认项目时初始化示例数据；前端拿到 DTO 后转换为 Vue Flow
+ * 可直接渲染的快照。
+ */
 async function loadGraph() {
   try {
     saveState.value = '正在从 SQLite 加载...'
@@ -117,6 +148,12 @@ async function loadGraph() {
   }
 }
 
+/**
+ * 接收画布内部产生的 graph 变更。
+ *
+ * Args:
+ *   snapshot: CanvasWorkspace 清理过运行时字段后的可保存快照。
+ */
 function handleGraphChanged(snapshot: CreativeGraphSnapshot) {
   setGraphSnapshot(snapshot)
   scheduleAutoSave()
@@ -139,8 +176,13 @@ function requestCreateNode(nodeType: CreativeNodeType) {
   }
 }
 
+/**
+ * 接收右侧详情面板的节点编辑结果。
+ *
+ * Args:
+ *   updatedNode: 合并过表单字段的完整节点。
+ */
 function handleNodeUpdated(updatedNode: CreativeFlowNode) {
-  // 右侧详情编辑节点后更新全局快照，再推回画布并触发自动保存。
   const nextSnapshot: CreativeGraphSnapshot = {
     nodes: graphSnapshot.value.nodes.map((node) => (node.id === updatedNode.id ? updatedNode : node)),
     edges: graphSnapshot.value.edges,
@@ -150,8 +192,13 @@ function handleNodeUpdated(updatedNode: CreativeFlowNode) {
   scheduleAutoSave()
 }
 
+/**
+ * 接收右侧详情面板的连线编辑结果。
+ *
+ * Args:
+ *   updatedEdge: 同步过顶层 label 与 data 的完整连线。
+ */
 function handleEdgeUpdated(updatedEdge: CreativeFlowEdge) {
-  // 右侧详情编辑连线后要同步 label/data，画布上才能立即显示新的创作关系。
   const nextSnapshot: CreativeGraphSnapshot = {
     nodes: graphSnapshot.value.nodes,
     edges: graphSnapshot.value.edges.map((edge) => (edge.id === updatedEdge.id ? updatedEdge : edge)),
@@ -161,6 +208,12 @@ function handleEdgeUpdated(updatedEdge: CreativeFlowEdge) {
   scheduleAutoSave()
 }
 
+/**
+ * 删除节点并同步移除相关连线。
+ *
+ * Args:
+ *   nodeId: 需要删除的节点 ID。
+ */
 function handleNodeDeleted(nodeId: string) {
   const node = graphSnapshot.value.nodes.find((item) => item.id === nodeId)
 
@@ -174,7 +227,6 @@ function handleNodeDeleted(nodeId: string) {
     return
   }
 
-  // 删除节点时必须同步删除所有相关连线，否则后端保存会因为 edge 端点缺失而校验失败。
   const nextSnapshot: CreativeGraphSnapshot = {
     nodes: graphSnapshot.value.nodes.filter((item) => item.id !== nodeId),
     edges: graphSnapshot.value.edges.filter((edge) => edge.source !== nodeId && edge.target !== nodeId),
@@ -186,18 +238,34 @@ function handleNodeDeleted(nodeId: string) {
   scheduleAutoSave()
 }
 
+/**
+ * 删除连线。
+ *
+ * 删除连线只影响关系本身，不修改两端节点；随后复用统一持久化流程。
+ *
+ * Args:
+ *   edgeId: 需要删除的连线 ID。
+ */
 function handleEdgeDeleted(edgeId: string) {
   const nextSnapshot: CreativeGraphSnapshot = {
     nodes: graphSnapshot.value.nodes,
     edges: graphSnapshot.value.edges.filter((edge) => edge.id !== edgeId),
   }
 
-  // 删除连线只影响关系本身，不修改两端节点；随后复用统一持久化流程。
   selectedEdgeId.value = ''
   setGraphSnapshot(nextSnapshot, true)
   scheduleAutoSave()
 }
 
+/**
+ * 判断键盘事件是否发生在文本编辑区域。
+ *
+ * Args:
+ *   target: 原始事件目标。
+ *
+ * Returns:
+ *   在输入控件或可编辑区域内时返回 true。
+ */
 function isTypingTarget(target: EventTarget | null) {
   if (!(target instanceof HTMLElement)) {
     return false
@@ -206,6 +274,14 @@ function isTypingTarget(target: EventTarget | null) {
   return ['INPUT', 'TEXTAREA', 'SELECT'].includes(target.tagName) || target.isContentEditable
 }
 
+/**
+ * 处理工作区级删除快捷键。
+ *
+ * Delete/Backspace 作为画布快捷键时只删除当前选中对象；输入框内按键保留文本编辑语义。
+ *
+ * Args:
+ *   event: 全局 keydown 事件。
+ */
 function handleGlobalKeydown(event: KeyboardEvent) {
   if (event.key !== 'Delete' && event.key !== 'Backspace') {
     return
@@ -229,6 +305,11 @@ function handleGlobalKeydown(event: KeyboardEvent) {
   }
 }
 
+/**
+ * 执行手动保存。
+ *
+ * 手动保存会清掉等待中的自动保存，并使用后端响应刷新本地快照。
+ */
 async function handleSaveGraph() {
   if (autoSaveTimer) {
     clearTimeout(autoSaveTimer)
@@ -239,7 +320,6 @@ async function handleSaveGraph() {
 }
 
 onMounted(() => {
-  // Delete/Backspace 作为画布快捷键时，只删除当前选中对象；输入框内按键仍保留文本编辑语义。
   window.addEventListener('keydown', handleGlobalKeydown, true)
   void loadGraph()
 })

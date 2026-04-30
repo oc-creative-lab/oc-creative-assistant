@@ -2,7 +2,11 @@ import { MarkerType, Position } from '@vue-flow/core'
 import type { CreativeFlowEdge, CreativeFlowNode } from '../types/node'
 import { createNodeData } from '../utils/nodeFactory'
 
-// 早期前端独立演示用 graph；当前主要作为 mock 状态和开发兜底数据来源。
+/**
+ * 早期前端独立演示用节点。
+ *
+ * 当前真实 graph 由后端提供，这里主要作为 mock 状态和开发兜底数据来源。
+ */
 export const mockGraphNodes: CreativeFlowNode[] = [
   {
     id: 'char-airin',
@@ -47,6 +51,7 @@ export const mockGraphNodes: CreativeFlowNode[] = [
   },
 ]
 
+/** 早期前端独立演示用连线，与 mockGraphNodes 配套使用。 */
 export const mockGraphEdges: CreativeFlowEdge[] = [
   {
     id: 'edge-airin-first-meet',

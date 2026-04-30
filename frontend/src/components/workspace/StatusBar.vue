@@ -1,8 +1,13 @@
 <script setup lang="ts">
 import type { WorkspaceStatus } from '../../types/workspace'
 
+/**
+ * 底部状态栏。
+ *
+ * 本组件只展示 AppShell 汇总后的保存、索引和模型状态，不直接发起保存、
+ * 索引构建或模型调用。
+ */
 defineProps<{
-  // 状态栏只展示 AppShell 汇总后的状态，不直接发起保存或索引动作。
   status: WorkspaceStatus
 }>()
 </script>

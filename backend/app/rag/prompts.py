@@ -1,12 +1,12 @@
 """RAG prompt 模板与上下文格式化。
 
-该模块只负责把已经筛选好的 graph/vector 上下文拼成给 Agent 预览的 prompt，
+本模块只负责把已经筛选好的 graph/vector 上下文拼成给 Agent 预览的 prompt，
 不读取数据库，也不触发真实 LLM 调用。
 """
 
 from __future__ import annotations
 
-from schemas import RagCurrentNodePayload, RagGraphContextItem, RagVectorContextItem
+from app.schemas import RagCurrentNodePayload, RagGraphContextItem, RagVectorContextItem
 
 
 def build_inspiration_prompt(
@@ -15,8 +15,17 @@ def build_inspiration_prompt(
     vector_context: list[RagVectorContextItem],
     user_query: str,
 ) -> str:
-    """这里只构造 prompt，不调用 LLM，方便调试 AI 实际能看到的上下文。"""
-    # 入参均为已经筛选好的上下文；函数只做字符串格式化，不读写数据库。
+    """构造灵感引导 Agent 的 prompt。
+
+    Args:
+        current_node: 当前正在请求 AI 辅助的节点。
+        graph_context: 从画布连线抽取的一跳关系上下文。
+        vector_context: 从向量索引检索到的语义相关节点。
+        user_query: 用户输入或服务层兜底生成的检索问题。
+
+    Returns:
+        给前端预览的 prompt 文本；本函数不会调用 LLM。
+    """
     graph_context_text = _format_graph_context(graph_context)
     vector_context_text = _format_vector_context(vector_context)
 
@@ -101,7 +110,14 @@ JSON 格式如下：
 
 
 def _format_graph_context(context: list[RagGraphContextItem]) -> str:
-    """把图关系上下文格式化成 prompt 片段；不修改状态。"""
+    """格式化图关系上下文。
+
+    Args:
+        context: 已筛选的一跳图关系上下文。
+
+    Returns:
+        prompt 中的图关系上下文片段。
+    """
     if not context:
         # 明确写出“暂无”比空字符串更利于后续 LLM 理解上下文缺口。
         return "暂无直接连接的相关节点"
@@ -118,7 +134,14 @@ def _format_graph_context(context: list[RagGraphContextItem]) -> str:
 
 
 def _format_vector_context(context: list[RagVectorContextItem]) -> str:
-    """把向量检索结果格式化成 prompt 片段；不修改状态。"""
+    """格式化向量检索上下文。
+
+    Args:
+        context: 已筛选的向量检索结果。
+
+    Returns:
+        prompt 中的向量检索上下文片段。
+    """
     if not context:
         # 无检索结果时仍保留段落占位，方便前端调试 prompt 结构。
         return "暂无向量检索结果"

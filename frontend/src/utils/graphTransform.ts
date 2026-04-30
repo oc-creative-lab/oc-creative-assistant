@@ -13,21 +13,56 @@ import { getNodeTypeOption } from './nodeFactory'
 
 const DEFAULT_RELATION_TYPE: CreativeRelationType = 'relates_to'
 
+/**
+ * 获取关系类型的中文展示名。
+ *
+ * Args:
+ *   relationType: 业务关系类型。
+ *
+ * Returns:
+ *   用户可读的关系标签。
+ */
 function getRelationLabel(relationType: CreativeRelationType) {
   return RELATION_TYPE_OPTIONS.find((option) => option.value === relationType)?.label ?? '关联'
 }
 
+/**
+ * 规范化后端返回的节点类型。
+ *
+ * Args:
+ *   type: 后端或旧数据中的原始类型字符串。
+ *
+ * Returns:
+ *   当前前端支持的节点类型；未知类型降级为灵感节点。
+ */
 function normalizeNodeType(type: string): CreativeNodeType {
   const allowedTypes: CreativeNodeType[] = ['character', 'plot', 'worldbuilding', 'idea', 'research', 'structure']
 
   return allowedTypes.includes(type as CreativeNodeType) ? (type as CreativeNodeType) : 'idea'
 }
 
+/**
+ * 规范化节点同步状态。
+ *
+ * Args:
+ *   status: 后端或旧数据中的原始状态。
+ *
+ * Returns:
+ *   当前 UI 支持的节点状态。
+ */
 function normalizeStatus(status: string | undefined): CreativeNodeStatus {
   return status === 'synced' || status === 'outdated' ? status : 'draft'
 }
 
-// 将后端 DTO 转成 Vue Flow 节点，补充 handle 方向和前端选中态字段。
+/**
+ * 将后端 graph DTO 转换为前端画布快照。
+ *
+ * Args:
+ *   graph: 后端读取接口返回的完整 graph。
+ *
+ * Returns:
+ *   可交给 Vue Flow 渲染的前端 graph 快照。
+ */
 export function graphDtoToSnapshot(graph: GraphDto): CreativeGraphSnapshot {
   return {
     nodes: graph.nodes.map((node) => graphNodeDtoToFlowNode(node)),
@@ -35,7 +70,15 @@ export function graphDtoToSnapshot(graph: GraphDto): CreativeGraphSnapshot {
   }
 }
 
-// 将当前画布快照转成后端保存 DTO，去掉 Vue Flow 临时状态。
+/**
+ * 将前端画布快照转换为后端保存 DTO。
+ *
+ * Args:
+ *   snapshot: AppShell 当前维护的前端 graph 快照。
+ *
+ * Returns:
+ *   去掉 Vue Flow 运行时状态后的保存请求体。
+ */
 export function snapshotToSaveDto(snapshot: CreativeGraphSnapshot): SaveGraphDto {
   return {
     nodes: snapshot.nodes.map((node) => flowNodeToGraphNodeDto(node)),
@@ -43,8 +86,18 @@ export function snapshotToSaveDto(snapshot: CreativeGraphSnapshot): SaveGraphDto
   }
 }
 
+/**
+ * 将后端节点 DTO 转换为 Vue Flow 节点。
+ *
+ * 该函数兼容旧 DTO：`nodeType`、`tags`、`status` 缺失时会补齐安全默认值。
+ *
+ * Args:
+ *   node: 后端节点 DTO。
+ *
+ * Returns:
+ *   Vue Flow 可渲染的业务节点。
+ */
 function graphNodeDtoToFlowNode(node: GraphNodeDto): CreativeFlowNode {
-  // 持久化恢复时兼容旧 DTO：nodeType/tags/status 不存在时给出安全默认值。
   const nodeType = normalizeNodeType(node.nodeType ?? node.type)
   const option = getNodeTypeOption(nodeType)
 
@@ -66,8 +119,16 @@ function graphNodeDtoToFlowNode(node: GraphNodeDto): CreativeFlowNode {
   }
 }
 
+/**
+ * 将后端边 DTO 转换为 Vue Flow 边。
+ *
+ * Args:
+ *   edge: 后端边 DTO。
+ *
+ * Returns:
+ *   带 marker 和业务关系 data 的前端边。
+ */
 function graphEdgeDtoToFlowEdge(edge: GraphEdgeDto): CreativeFlowEdge {
-  // 旧数据没有 label/relationType 时默认显示“关联”，避免画布恢复时报错或空白。
   const relationType = edge.relationType ?? DEFAULT_RELATION_TYPE
   const label = edge.label || getRelationLabel(relationType)
 
@@ -88,8 +149,18 @@ function graphEdgeDtoToFlowEdge(edge: GraphEdgeDto): CreativeFlowEdge {
   }
 }
 
+/**
+ * 将前端节点转换为后端节点 DTO。
+ *
+ * 保存时去掉 `isActive` 等前端状态，只保留可恢复的业务内容和画布坐标。
+ *
+ * Args:
+ *   node: 前端业务节点。
+ *
+ * Returns:
+ *   后端保存接口需要的节点 DTO。
+ */
 function flowNodeToGraphNodeDto(node: CreativeFlowNode): GraphNodeDto {
-  // 保存时去掉 isActive 等前端状态，只保留可恢复的业务内容和画布坐标。
   return {
     id: node.id,
     type: node.type,
@@ -107,8 +178,16 @@ function flowNodeToGraphNodeDto(node: CreativeFlowNode): GraphNodeDto {
   }
 }
 
+/**
+ * 将前端边转换为后端边 DTO。
+ *
+ * Args:
+ *   edge: 前端业务边。
+ *
+ * Returns:
+ *   后端保存接口需要的边 DTO。
+ */
 function flowEdgeToGraphEdgeDto(edge: CreativeFlowEdge): GraphEdgeDto {
-  // 修改关系标签后需要同步持久化，刷新或重启 Electron 才能恢复创作语义。
   const relationType = edge.data?.relationType ?? DEFAULT_RELATION_TYPE
   const label = edge.data?.label || edge.label || getRelationLabel(relationType)
 

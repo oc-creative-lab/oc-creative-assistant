@@ -3,6 +3,12 @@ import { computed } from 'vue'
 import type { CreativeFlowNode, CreativeNodeType } from '../../types/node'
 import { nodeTypeOptions } from '../../utils/nodeFactory'
 
+/**
+ * 左侧项目栏。
+ *
+ * 本组件负责展示可创建的节点类型和 PoC 阶段的资源统计占位；创建动作只上抛给
+ * AppShell，不直接写 graph 或访问后端。
+ */
 const props = defineProps<{
   nodes: CreativeFlowNode[]
 }>()
@@ -17,8 +23,13 @@ const loreCounts = computed(() => ({
   plot: props.nodes.filter((node) => node.data.nodeType === 'plot').length,
 }))
 
+/**
+ * 请求创建指定类型的节点。
+ *
+ * Args:
+ *   nodeType: 用户在左侧工具栏选择的节点类型。
+ */
 function handleCreateNode(nodeType: CreativeNodeType) {
-  // PoC 阶段左侧只负责创建本地节点入口，不触发 Agent、RAG 或后端 LLM 调用。
   emit('createNode', nodeType)
 }
 </script>

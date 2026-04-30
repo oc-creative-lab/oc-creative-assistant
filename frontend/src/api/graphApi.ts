@@ -1,18 +1,18 @@
 import type { CreativeNodeStatus, CreativeNodeType, CreativeRelationType } from '../types/node'
 
-// 后端项目 DTO：用于确定当前 graph 属于哪个项目。
+/** 后端项目 DTO，用于确定当前 graph 的生命周期边界。 */
 export interface GraphProjectDto {
   id: string
   name: string
 }
 
-// 后端只关心画布坐标，不保存 Vue Flow 的 viewport 或 computedPosition。
+/** 后端保存的节点坐标；不包含 Vue Flow viewport 或 computedPosition。 */
 export interface GraphPositionDto {
   x: number
   y: number
 }
 
-// 后端节点 DTO，content 对应前端节点卡片里的 summary。
+/** 后端节点 DTO，content 对应前端节点全文内容。 */
 export interface GraphNodeDto {
   id: string
   type: CreativeNodeType
@@ -26,7 +26,7 @@ export interface GraphNodeDto {
   status?: CreativeNodeStatus
 }
 
-// 后端边 DTO；handle 字段用于恢复从哪个连接点拉出的边。
+/** 后端边 DTO；handle 字段用于恢复从哪个连接点拉出的边。 */
 export interface GraphEdgeDto {
   id: string
   source: string
@@ -39,19 +39,20 @@ export interface GraphEdgeDto {
   animated: boolean
 }
 
-// 读取接口返回的完整 graph 快照。
+/** 读取接口返回的完整 graph 快照。 */
 export interface GraphDto {
   project: GraphProjectDto
   nodes: GraphNodeDto[]
   edges: GraphEdgeDto[]
 }
 
-// 保存接口只需要节点和边；projectId 由 URL 参数提供。
+/** 保存接口请求体；projectId 由 URL 参数提供。 */
 export interface SaveGraphDto {
   nodes: GraphNodeDto[]
   edges: GraphEdgeDto[]
 }
 
+/** RAG 上下文预览请求体；当前只支持 inspiration 调试入口。 */
 export interface RagContextRequestDto {
   node_id: string
   query: string
@@ -59,6 +60,7 @@ export interface RagContextRequestDto {
   top_k: number
 }
 
+/** RAG 响应中的当前节点快照。 */
 export interface RagCurrentNodeDto {
   id: string
   type: string
@@ -67,6 +69,7 @@ export interface RagCurrentNodeDto {
   tags: string[]
 }
 
+/** 由画布连线推导的一跳图关系上下文。 */
 export interface RagGraphContextItemDto {
   id: string
   type: string
@@ -77,6 +80,7 @@ export interface RagGraphContextItemDto {
   direction: string
 }
 
+/** 向量检索命中的相似节点上下文。 */
 export interface RagVectorContextItemDto {
   id: string
   type: string
@@ -85,6 +89,7 @@ export interface RagVectorContextItemDto {
   score: number
 }
 
+/** 后端合并去重后的上下文条目。 */
 export interface RagMergedContextItemDto {
   id: string
   source: string
@@ -93,6 +98,7 @@ export interface RagMergedContextItemDto {
   content: string
 }
 
+/** RAG 上下文预览接口响应。 */
 export interface RagContextResponseDto {
   current_node: RagCurrentNodeDto
   graph_context: RagGraphContextItemDto[]
@@ -108,14 +114,26 @@ export interface RagContextResponseDto {
   }
 }
 
-// 桌面态优先使用 preload 注入的后端地址，浏览器开发态回退到 Vite 环境变量。
+/* 桌面态优先使用 preload 注入的后端地址，浏览器开发态回退到 Vite 环境变量。 */
 const backendBaseUrl = (
   window.ocDesktop?.config.backendUrl ||
   import.meta.env.VITE_BACKEND_URL ||
   'http://127.0.0.1:9000'
 ).replace(/\/$/, '')
 
-// 统一封装 fetch，避免组件里散落后端地址和错误处理。
+/**
+ * 统一请求后端 JSON 接口。
+ *
+ * Args:
+ *   path: 以 `/api` 开头的后端路径。
+ *   init: fetch 请求配置。
+ *
+ * Returns:
+ *   反序列化后的响应体。
+ *
+ * Throws:
+ *   Error: 当后端返回非 2xx 状态时抛出。
+ */
 async function requestJson<T>(path: string, init?: RequestInit): Promise<T> {
   const response = await fetch(`${backendBaseUrl}${path}`, {
     headers: {
@@ -132,14 +150,32 @@ async function requestJson<T>(path: string, init?: RequestInit): Promise<T> {
   return (await response.json()) as T
 }
 
-// 先获取默认项目，再读取该项目 graph，保证首次启动时后端会自动初始化数据。
+/**
+ * 加载默认项目的 graph。
+ *
+ * 首次启动时会先访问默认项目接口，触发后端初始化示例数据。
+ *
+ * Returns:
+ *   默认项目的完整 graph DTO。
+ */
 export async function loadDefaultGraph(): Promise<GraphDto> {
   const project = await requestJson<GraphProjectDto>('/api/projects/default')
 
   return requestJson<GraphDto>(`/api/projects/${project.id}/graph`)
 }
 
-// 手动保存当前画布快照，后端会整体替换项目下的 nodes / edges。
+/**
+ * 保存项目 graph 快照。
+ *
+ * 后端采用整图替换策略，并在 SQLite 提交后同步向量索引。
+ *
+ * Args:
+ *   projectId: 当前项目 ID。
+ *   graph: 需要保存的节点和边快照。
+ *
+ * Returns:
+ *   后端最终落库后的 graph DTO。
+ */
 export async function saveProjectGraph(projectId: string, graph: SaveGraphDto): Promise<GraphDto> {
   return requestJson<GraphDto>(`/api/projects/${projectId}/graph`, {
     method: 'PUT',
@@ -147,7 +183,17 @@ export async function saveProjectGraph(projectId: string, graph: SaveGraphDto): 
   })
 }
 
-// 当前功能只用于调试 RAG 上下文和 prompt，不是真正 Agent/LLM 调用。
+/**
+ * 加载 RAG 上下文预览。
+ *
+ * 当前接口只用于调试图关系、向量结果和 prompt，不会调用真正 LLM。
+ *
+ * Args:
+ *   payload: RAG 上下文预览请求体。
+ *
+ * Returns:
+ *   后端构造的上下文和 prompt。
+ */
 export async function loadRagContext(payload: RagContextRequestDto): Promise<RagContextResponseDto> {
   return requestJson<RagContextResponseDto>('/api/rag/context', {
     method: 'POST',

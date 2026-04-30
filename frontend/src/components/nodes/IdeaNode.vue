@@ -3,7 +3,11 @@ import { Handle, Position } from '@vue-flow/core'
 import type { NodeProps } from '@vue-flow/core'
 import type { CreativeNodeData } from '../../types/node'
 
-// 灵感节点用于承接零散脑洞，画布上只展示摘要，完整内容在右侧编辑。
+/**
+ * 灵感节点卡片。
+ *
+ * 灵感节点用于承接零散脑洞；画布上只展示摘要，完整内容由右侧详情面板编辑。
+ */
 defineProps<NodeProps<CreativeNodeData>>()
 </script>
 

@@ -1,4 +1,10 @@
 <script setup lang="ts">
+/**
+ * 顶部工具栏。
+ *
+ * 本组件只展示项目名称和全局操作入口；当前只有保存动作接入业务逻辑，其余按钮
+ * 保留为后续导入、导出和设置能力的入口。
+ */
 defineProps<{
   projectName: string
   isSaving: boolean
@@ -8,15 +14,14 @@ defineEmits<{
   save: []
 }>()
 
-// 目前只有 save 接入实际逻辑，其余按钮先保留为后续桌面能力入口。
 const toolbarActions = [
-  { id: 'save', label: '\u4fdd\u5b58' },
-  { id: 'import', label: '\u5bfc\u5165\u8d44\u6599' },
-  { id: 'export', label: '\u5bfc\u51fa' },
-  { id: 'settings', label: '\u8bbe\u7f6e' },
+  { id: 'save', label: '保存' },
+  { id: 'import', label: '导入资料' },
+  { id: 'export', label: '导出' },
+  { id: 'settings', label: '设置' },
 ]
 
-const savingLabel = '\u4fdd\u5b58\u4e2d...'
+const savingLabel = '保存中...'
 </script>
 
 <template>

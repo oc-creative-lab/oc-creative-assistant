@@ -3,7 +3,11 @@ import { Handle, Position } from '@vue-flow/core'
 import type { NodeProps } from '@vue-flow/core'
 import type { CreativeNodeData } from '../../types/node'
 
-// 资料节点是 RAG 的前端入口占位，当前只保存摘要和来源说明。
+/**
+ * 资料节点卡片。
+ *
+ * 资料节点是 RAG 能力的前端入口占位；当前只保存摘要和来源说明，不直接发起检索。
+ */
 defineProps<NodeProps<CreativeNodeData>>()
 </script>
 

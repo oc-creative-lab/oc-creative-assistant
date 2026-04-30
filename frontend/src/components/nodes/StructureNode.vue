@@ -3,7 +3,11 @@ import { Handle, Position } from '@vue-flow/core'
 import type { NodeProps } from '@vue-flow/core'
 import type { CreativeNodeData } from '../../types/node'
 
-// 结构节点用于把多个素材整理成角色卡、关系摘要或剧情框架。
+/**
+ * 结构整理节点卡片。
+ *
+ * 结构节点用于把多个素材整理成角色卡、关系摘要或剧情框架；当前只负责画布展示。
+ */
 defineProps<NodeProps<CreativeNodeData>>()
 </script>
 

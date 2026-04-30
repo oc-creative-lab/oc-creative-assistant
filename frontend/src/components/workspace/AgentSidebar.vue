@@ -9,6 +9,12 @@ import {
   type CreativeRelationType,
 } from '../../types/node'
 
+/**
+ * 右侧详情面板。
+ *
+ * 本组件负责展示并编辑当前选中的节点或连线，所有 graph 数据变更都通过事件交给
+ * 上层容器统一落库。组件内只维护面板交互状态和 RAG 调试预览，不直接保存后端数据。
+ */
 const props = defineProps<{
   selectedNode: CreativeFlowNode | null
   selectedEdge: CreativeFlowEdge | null
@@ -28,11 +34,18 @@ const ragResult = ref<RagContextResponseDto | null>(null)
 const ragError = ref('')
 const isRagLoading = ref(false)
 
-// 自定义下拉框的状态
+/* 自定义下拉没有使用原生 select，需要在组件内维护展开状态和外部点击收起行为。 */
 const isNodeStatusSelectOpen = ref(false)
 const isEdgeRelationSelectOpen = ref(false)
 
-// 点击外部关闭下拉框
+/**
+ * 处理自定义下拉框的外部点击。
+ *
+ * 监听挂在 document 上，避免下拉选项溢出当前面板时无法可靠收起。
+ *
+ * Args:
+ *   e: document click 事件。
+ */
 function closeAllSelects(e: MouseEvent) {
   const target = e.target as HTMLElement
   if (!target.closest('.custom-select-container')) {
@@ -67,12 +80,20 @@ const targetNodeTitle = computed(() => {
   return props.nodes.find((node) => node.id === props.selectedEdge?.target)?.data.title ?? props.selectedEdge.target
 })
 
+/**
+ * 提交节点数据的局部更新。
+ *
+ * 右侧面板是节点完整内容的编辑入口，画布卡片只负责展示摘要；实际保存和全局
+ * graph 一致性由上层容器处理。
+ *
+ * Args:
+ *   partial: 需要合并到当前节点 data 的字段。
+ */
 function updateNodeData(partial: Partial<CreativeNodeData>) {
   if (!props.selectedNode) {
     return
   }
 
-  // 右侧面板是节点完整内容的编辑入口，画布卡片只负责展示摘要。
   emit('nodeUpdated', {
     ...props.selectedNode,
     data: {
@@ -82,6 +103,12 @@ function updateNodeData(partial: Partial<CreativeNodeData>) {
   })
 }
 
+/**
+ * 将输入框中的逗号分隔文本转换为节点标签。
+ *
+ * Args:
+ *   rawValue: 用户在标签输入框中输入的原始文本。
+ */
 function updateNodeTags(rawValue: string) {
   const tags = rawValue
     .split(',')
@@ -91,15 +118,28 @@ function updateNodeTags(rawValue: string) {
   updateNodeData({ tags })
 }
 
+/**
+ * 请求删除当前节点。
+ *
+ * 删除节点会影响相关连线，因此这里只发出意图事件，级联清理由 AppShell 统一执行。
+ */
 function handleDeleteNode() {
   if (!props.selectedNode) {
     return
   }
 
-  // 删除节点属于危险操作，实际级联删除相关连线由 AppShell 统一处理，避免右侧面板直接改全局 graph。
   emit('nodeDeleted', props.selectedNode.id)
 }
 
+/**
+ * 提交连线数据的局部更新。
+ *
+ * 连线标签同时写入 Vue Flow 的顶层 label 和业务 data，保证画布展示与后端 payload
+ * 使用同一份关系文本。
+ *
+ * Args:
+ *   partial: 需要合并到当前连线 data 的字段。
+ */
 function updateEdge(partial: Partial<CreativeFlowEdge['data']>) {
   if (!props.selectedEdge) {
     return
@@ -110,7 +150,6 @@ function updateEdge(partial: Partial<CreativeFlowEdge['data']>) {
     ...partial,
   }
 
-  // 修改关系标签后立即抛给 AppShell，随后由统一保存流程同步到后端。
   emit('edgeUpdated', {
     ...props.selectedEdge,
     label: data.label,
@@ -118,8 +157,16 @@ function updateEdge(partial: Partial<CreativeFlowEdge['data']>) {
   })
 }
 
+/**
+ * 生成 Agent 占位结果。
+ *
+ * 当前 mock 只用于确认侧边栏交互和结果展示形态，不自动写入节点正文，保留用户
+ * 手动采纳生成内容的产品边界。
+ *
+ * Args:
+ *   type: 需要预览的 Agent 类型。
+ */
 function runAgentMock(type: 'inspiration' | 'research' | 'structure') {
-  // Agent mock 只展示结构化占位结果，不自动写入节点正文，保留用户手动采纳边界。
   if (type === 'inspiration') {
     agentResult.value = JSON.stringify(
       {
@@ -160,10 +207,25 @@ function runAgentMock(type: 'inspiration' | 'research' | 'structure') {
   )
 }
 
+/**
+ * 截断长文本用于上下文卡片预览。
+ *
+ * Args:
+ *   content: 原始节点内容。
+ *
+ * Returns:
+ *   适合在侧边栏卡片展示的摘要文本。
+ */
 function summarizeContent(content: string) {
   return content.length > 120 ? `${content.slice(0, 120)}...` : content
 }
 
+/**
+ * 加载当前节点的 RAG 调试上下文。
+ *
+ * 该请求只展示后端检索到的图关系、向量上下文和最终 prompt，不调用 LLM，
+ * 也不会把结果写回节点内容。
+ */
 async function handleLoadRagContext() {
   if (!props.selectedNode) {
     return
@@ -172,7 +234,6 @@ async function handleLoadRagContext() {
   try {
     isRagLoading.value = true
     ragError.value = ''
-    // PoC 阶段先实现可解释的上下文预览，再接入真正 LLM，避免用户看不到检索是否合理。
     ragResult.value = await loadRagContext({
       node_id: props.selectedNode.id,
       query: ragQuery.value,
@@ -187,6 +248,7 @@ async function handleLoadRagContext() {
   }
 }
 
+/* 切换选中对象时清空临时预览，避免把上一节点的 Agent/RAG 结果误认为当前上下文。 */
 watch(
   () => [props.selectedNode?.id, props.selectedEdge?.id],
   () => {

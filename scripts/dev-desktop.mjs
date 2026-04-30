@@ -283,7 +283,7 @@ async function main() {
   const backendArgs = [
     '-m',
     'uvicorn',
-    'main:app',
+    'app.main:app',
     '--host',
     backendHost,
     '--port',

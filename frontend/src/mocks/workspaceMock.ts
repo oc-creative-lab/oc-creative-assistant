@@ -2,11 +2,13 @@ import { mockGraphNodes } from './graph'
 import type { AgentMode, AgentSuggestion, ProjectGroup, WorkspaceStatus } from '../types/workspace'
 import { buildProjectGroupsFromNodes } from '../utils/nodeFactory'
 
+/** PoC 默认项目名称，主要供前端独立演示和旧入口显示。 */
 export const mockProjectName = '\u300a\u661f\u5ead\u6863\u6848\u300b'
 
-// mock 数据仍用于右侧 Agent 和部分状态占位；真实 graph 已从后端加载。
+/** 旧左侧分组数据，真实 graph 已改为从后端加载。 */
 export const mockProjectGroups: ProjectGroup[] = buildProjectGroupsFromNodes(mockGraphNodes)
 
+/** Agent 占位建议，供尚未接入真实 LLM 的 UI 状态使用。 */
 export const mockAgentSuggestions: Record<AgentMode, AgentSuggestion[]> = {
   inspiration: [
     {
@@ -51,6 +53,7 @@ export const mockAgentSuggestions: Record<AgentMode, AgentSuggestion[]> = {
   ],
 }
 
+/** 工作区状态占位；保存状态会在 AppShell 中被真实后端状态覆盖。 */
 export const mockWorkspaceStatus: WorkspaceStatus = {
   saveState: '\u672c\u5730\u8349\u7a3f\u5df2\u4fdd\u5b58',
   indexState: '\u8d44\u6599\u7d22\u5f15\u5f85\u6784\u5efa',

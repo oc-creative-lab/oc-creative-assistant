@@ -20,14 +20,17 @@ const FLOW_ID = 'oc-main-flow'
 const DEFAULT_EDGE_LABEL = '关联'
 const DEFAULT_RELATION_TYPE = 'relates_to'
 
+/**
+ * 创作画布组件。
+ *
+ * 本组件负责 Vue Flow 运行时交互、节点渲染和连线创建；可持久化的 graph 快照
+ * 通过事件交给 AppShell。组件不会直接访问后端，也不维护项目级保存状态。
+ */
 const props = defineProps<{
-  // selectedNodeId 由 AppShell 统一维护，画布只负责映射到节点高亮。
   selectedNodeId: string
   initialNodes: CreativeFlowNode[]
   initialEdges: CreativeFlowEdge[]
-  // graphVersion 变化表示父组件已从后端拿到新的权威快照。
   graphVersion: number
-  // 左侧节点工具栏通过该请求触发画布在当前视口中心创建节点。
   createNodeRequest: { type: CreativeNodeType; nonce: number } | null
 }>()
 
@@ -41,7 +44,18 @@ const emit = defineEmits<{
 const flowShell = ref<HTMLElement | null>(null)
 const interactionMode = ref<'select' | 'connect'>('select')
 
-// 克隆节点时顺手写入选中态，避免直接修改父组件传入的 props。
+/**
+ * 克隆节点并写入前端选中态。
+ *
+ * Vue Flow 会在交互过程中修改节点对象；这里避免直接修改父组件传入的 props。
+ *
+ * Args:
+ *   node: 需要写入画布本地状态的节点。
+ *   selectedNodeId: 当前选中的节点 ID。
+ *
+ * Returns:
+ *   带有 isActive 展示状态的节点副本。
+ */
 function cloneNode(node: CreativeFlowNode, selectedNodeId = props.selectedNodeId): CreativeFlowNode {
   return {
     ...node,
@@ -49,6 +63,15 @@ function cloneNode(node: CreativeFlowNode, selectedNodeId = props.selectedNodeId
   }
 }
 
+/**
+ * 补齐连线的展示标签和业务关系类型。
+ *
+ * Args:
+ *   edge: 从后端、父组件或 Vue Flow 回传的连线。
+ *
+ * Returns:
+ *   可稳定渲染并可保存的连线对象。
+ */
 function normalizeEdge(edge: CreativeFlowEdge): CreativeFlowEdge {
   const relationType = edge.data?.relationType ?? DEFAULT_RELATION_TYPE
   const label = edge.data?.label || edge.label || DEFAULT_EDGE_LABEL
@@ -68,10 +91,18 @@ const edges = ref<CreativeFlowEdge[]>(props.initialEdges.map((edge) => normalize
 const addNodeCount = ref(0)
 const addEdgeCount = ref(0)
 
-// useVueFlow 绑定固定 id，确保工具栏操作的是当前这一个画布实例。
+/* 固定 flow id 确保工具栏操作绑定到当前画布实例，而不是页面上其他 Vue Flow。 */
 const { fitView, getViewport, setCenter, zoomIn, zoomOut } = useVueFlow({ id: FLOW_ID })
 
-// 把 Vue Flow 内部状态整理成可保存快照，避免 computedPosition 等运行时字段泄漏到后端。
+/**
+ * 构造可保存的 graph 快照。
+ *
+ * Vue Flow 会附加 computedPosition、尺寸等运行时字段；保存前只保留业务内容、
+ * 坐标和连线恢复所需字段。
+ *
+ * Returns:
+ *   可交给 AppShell 持久化的 graph 快照。
+ */
 function getGraphSnapshot(): CreativeGraphSnapshot {
   return {
     nodes: nodes.value.map((node) => ({
@@ -94,12 +125,18 @@ function getGraphSnapshot(): CreativeGraphSnapshot {
   }
 }
 
-// 通知上层当前 graph 已变化，AppShell 会据此触发自动保存。
+/** 通知 AppShell 当前 graph 已变化，并进入统一自动保存流程。 */
 function emitGraphChanged() {
   emit('graphChanged', getGraphSnapshot())
 }
 
-// 统一处理选中态，保证左侧创建、画布点击和右侧详情都走同一条数据流。
+/**
+ * 更新画布节点选中态，并按需聚焦视口。
+ *
+ * Args:
+ *   nodeId: 需要选中的节点 ID。
+ *   shouldFocus: 是否将视口移动到该节点附近。
+ */
 function selectNode(nodeId: string, shouldFocus = false) {
   const nextNodes: CreativeFlowNode[] = []
 
@@ -122,7 +159,7 @@ function selectNode(nodeId: string, shouldFocus = false) {
     const centerX = target.position.x + 120
     const centerY = target.position.y + 70
 
-    // 等节点选中态写入 DOM 后再移动视口，避免刚加载时定位到旧布局。
+    /* 先等待选中态写入 DOM，避免刚加载时聚焦到 Vue Flow 的旧布局位置。 */
     void nextTick(() => {
       void setCenter(centerX, centerY, {
         zoom: 1,
@@ -132,15 +169,17 @@ function selectNode(nodeId: string, shouldFocus = false) {
   }
 }
 
+/** 将 Vue Flow 节点点击事件上抛给 AppShell 维护全局选中对象。 */
 function handleNodeClick(event: NodeMouseEvent) {
   emit('nodeSelected', event.node.id)
 }
 
+/** 将 Vue Flow 连线点击事件上抛给 AppShell 维护全局选中对象。 */
 function handleEdgeClick(event: { edge: Edge }) {
   emit('edgeSelected', event.edge.id)
 }
 
-// 适配视图用于快速回到完整画布视野，适合节点变多后找回全局结构。
+/** 将视口调整到完整 graph 范围，便于节点变多后找回全局结构。 */
 function handleFitView() {
   void fitView({ padding: 0.2, duration: 260 })
 }
@@ -153,7 +192,11 @@ function handleZoomOut() {
   void zoomOut({ duration: 180 })
 }
 
-// 清空画布会删除所有节点和关系，是危险操作，因此必须二次确认。
+/**
+ * 清空当前画布。
+ *
+ * 该操作会删除所有节点和连线，因此必须由用户二次确认。
+ */
 function handleClearCanvas() {
   const confirmed = window.confirm('确定要清空当前画布吗？此操作会删除所有节点和连线。')
 
@@ -171,7 +214,14 @@ function handleAutoLayoutPlaceholder() {
   window.alert('自动布局将在后续 PoC 迭代中接入。')
 }
 
-// 根据当前 viewport 反推画布坐标，让新增节点落在用户正在看的区域中心附近。
+/**
+ * 计算新增节点的画布坐标。
+ *
+ * 根据当前 viewport 反推画布坐标，让节点落在用户正在查看的区域中心附近。
+ *
+ * Returns:
+ *   新节点应使用的画布坐标。
+ */
 function getNextNodePosition() {
   const viewport = getViewport()
   const rect = flowShell.value?.getBoundingClientRect()
@@ -185,7 +235,12 @@ function getNextNodePosition() {
   }
 }
 
-// 用户通过左侧节点工具栏选择类型，这里按类型生成默认数据并落到当前视口中心。
+/**
+ * 根据左侧工具栏请求创建节点。
+ *
+ * Args:
+ *   type: 需要创建的业务节点类型。
+ */
 function handleCreateNode(type: CreativeNodeType) {
   addNodeCount.value += 1
 
@@ -197,6 +252,15 @@ function handleCreateNode(type: CreativeNodeType) {
   emit('nodeSelected', node.id)
 }
 
+/**
+ * 判断一次连接是否已存在等价连线。
+ *
+ * Args:
+ *   connection: Vue Flow 提供的连接信息。
+ *
+ * Returns:
+ *   source、target 和 handle 完全一致时返回 true。
+ */
 function hasDuplicateEdge(connection: Connection) {
   return edges.value.some(
     (edge) =>
@@ -207,6 +271,14 @@ function hasDuplicateEdge(connection: Connection) {
   )
 }
 
+/**
+ * 创建用户手动连接的边。
+ *
+ * 自连接和重复连接会被忽略；新连线默认表达创作关系，不代表工作流执行顺序。
+ *
+ * Args:
+ *   connection: Vue Flow 提供的连接信息。
+ */
 function handleConnect(connection: Connection) {
   if (!connection.source || !connection.target || connection.source === connection.target) {
     return
@@ -218,7 +290,6 @@ function handleConnect(connection: Connection) {
 
   addEdgeCount.value += 1
 
-  // 新建连线时默认生成关系标签；这里表达的是创作关系，不是自动执行顺序。
   const edge: CreativeFlowEdge = {
     id: `edge-${connection.source}-${connection.target}-${Date.now()}-${addEdgeCount.value}`,
     source: connection.source,
@@ -245,7 +316,7 @@ function handleNodeDragStop() {
 watch(
   () => props.selectedNodeId,
   (nodeId, oldNodeId) => {
-    // 首次 immediate 只同步高亮；后续外部选择才自动聚焦到节点。
+    /* 首次 immediate 只同步高亮；后续外部选择再自动聚焦到节点。 */
     selectNode(nodeId, Boolean(oldNodeId && nodeId))
   },
   { immediate: true },
@@ -254,7 +325,7 @@ watch(
 watch(
   () => props.graphVersion,
   () => {
-    // 右侧详情编辑或后端恢复后，父组件会把新的权威快照推回画布。
+    /* 右侧详情编辑或后端恢复后，AppShell 会把新的权威快照推回画布。 */
     nodes.value = props.initialNodes.map((node) => cloneNode(node))
     edges.value = props.initialEdges.map((edge) => normalizeEdge(edge))
   },
