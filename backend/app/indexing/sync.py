@@ -11,6 +11,7 @@ from dataclasses import dataclass, field
 from typing import Any
 
 from app.db.models import NodeORM
+from app.indexing.config import INDEXING_DEBUG_LOG
 from app.indexing.document_loader import node_to_document
 from app.indexing.vector_store import (
     delete_nodes,
@@ -18,6 +19,13 @@ from app.indexing.vector_store import (
     get_embedding_signature,
     upsert_node,
 )
+
+
+def _log(message: str) -> None:
+    """打印索引同步调试信息。
+    """
+    if INDEXING_DEBUG_LOG:
+        print(f"[index-sync] {message}", flush=True)
 
 
 @dataclass
@@ -156,10 +164,18 @@ def sync_project_index_incremental(
     embedding_signature = get_embedding_signature()
     old_fingerprints = {node.id: build_node_fingerprint(node) for node in old_nodes}
     new_fingerprints = {node.id: build_node_fingerprint(node) for node in new_nodes}
+    _log(
+        "start project sync "
+        f"project_id={project_id} old_nodes={len(old_nodes)} new_nodes={len(new_nodes)} "
+        f"indexed_records={len(index_state)} signature={embedding_signature}"
+    )
 
     deleted_node_ids = sorted(set(old_fingerprints) - set(new_fingerprints))
     # 整图保存会重写 SQLite 行，但 ChromaDB 只删除真正从 payload 消失的节点。
     delete_nodes(collection, project_id, deleted_node_ids)
+
+    if deleted_node_ids:
+        _log(f"delete stale vectors node_ids={deleted_node_ids}")
 
     for node in new_nodes:
         new_fingerprint = new_fingerprints[node.id]
@@ -167,6 +183,18 @@ def sync_project_index_incremental(
         indexed_node = index_state.get(node.id, {})
         indexed_fingerprint = indexed_node.get("fingerprint")
         indexed_embedding_signature = indexed_node.get("embedding_signature")
+        update_reasons: list[str] = []
+
+        if old_fingerprint is None:
+            update_reasons.append("new_node")
+        elif old_fingerprint != new_fingerprint:
+            update_reasons.append("document_changed")
+
+        if indexed_fingerprint != new_fingerprint:
+            update_reasons.append("missing_or_stale_vector")
+
+        if indexed_embedding_signature != embedding_signature:
+            update_reasons.append("embedding_signature_changed")
 
         # 文档 fingerprint 和 embedding 配置签名都一致时才跳过；换模型或维度后需要重写向量。
         if (
@@ -175,11 +203,19 @@ def sync_project_index_incremental(
             and indexed_embedding_signature == embedding_signature
         ):
             # 坐标或排序变化不影响检索文档；索引已有相同 fingerprint 时跳过 embedding 更新。
+            _log(f"skip node_id={node.id} reason=fingerprint_and_embedding_signature_unchanged")
             continue
 
+        _log(f"upsert node_id={node.id} reasons={','.join(update_reasons) or 'unknown'}")
         upsert_node(collection, node, new_fingerprint)
 
-    return verify_project_index(project_id, new_nodes, collection)
+    result = verify_project_index(project_id, new_nodes, collection)
+    _log(
+        "finish project sync "
+        f"status={result.status} indexed={result.indexed_nodes}/{result.expected_nodes} "
+        f"missing={result.missing_node_ids}"
+    )
+    return result
 
 
 def sync_node_index(node: NodeORM, old_fingerprint: str | None = None) -> IndexingSyncResult:
@@ -191,6 +227,7 @@ def sync_node_index(node: NodeORM, old_fingerprint: str | None = None) -> Indexi
     """
     new_fingerprint = build_node_fingerprint(node)
     collection = get_chroma_collection()
+    _log(f"start node sync project_id={node.project_id} node_id={node.id}")
 
     if old_fingerprint == new_fingerprint:
         indexed_node = _read_index_state(collection, node.project_id).get(node.id, {})
@@ -201,12 +238,18 @@ def sync_node_index(node: NodeORM, old_fingerprint: str | None = None) -> Indexi
         if indexed_fingerprint == new_fingerprint and indexed_embedding_signature == get_embedding_signature():
             result = _base_result("synced", "向量索引已同步", expected_nodes=1)
             result.indexed_nodes = 1
+            _log(f"skip node_id={node.id} reason=fingerprint_and_embedding_signature_unchanged")
             return result
 
         # 检索字段没变但索引记录缺失时，通常是用户清空了 ChromaDB 目录，需要按 SQLite 补写。
+        _log(f"upsert node_id={node.id} reason=vector_missing_or_embedding_signature_changed")
+    else:
+        _log(f"upsert node_id={node.id} reason=document_changed")
 
     upsert_node(collection, node, new_fingerprint)
-    return verify_project_index(node.project_id, [node], collection)
+    result = verify_project_index(node.project_id, [node], collection)
+    _log(f"finish node sync node_id={node.id} status={result.status} indexed={result.indexed_nodes}/1")
+    return result
 
 
 def safe_sync_project_index_incremental(
@@ -227,6 +270,7 @@ def safe_sync_project_index_incremental(
         return sync_project_index_incremental(project_id, old_nodes, new_nodes)
     except Exception as error:  # noqa: BLE001
         # SQLite 是主数据源，ChromaDB/embedding 失败不能回滚保存；错误会返回给前端提示用户修复配置。
+        _log(f"project sync failed project_id={project_id} error={error}")
         result = _base_result(
             status="failed",
             message="SQLite 已保存，但 embedding 向量索引写入失败",
@@ -254,6 +298,7 @@ def safe_sync_node_index(node: NodeORM, old_fingerprint: str | None = None) -> I
         return sync_node_index(node, old_fingerprint)
     except Exception as error:  # noqa: BLE001
         # 索引可从 SQLite 重建，因此这里保持失败隔离，同时把错误返回给调用方。
+        _log(f"node sync failed node_id={node.id} error={error}")
         result = _base_result(
             status="failed",
             message="SQLite 已保存，但该节点 embedding 向量写入失败",

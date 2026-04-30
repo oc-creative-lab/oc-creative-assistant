@@ -27,13 +27,13 @@ def _load_backend_env() -> None:
         return
 
     for raw_line in env_path.read_text(encoding="utf-8").splitlines():
-        line = raw_line.strip()
+        line = raw_line.strip().lstrip("\ufeff")
 
         if not line or line.startswith("#") or "=" not in line:
             continue
 
         key, value = line.split("=", 1)
-        key = key.strip()
+        key = key.strip().lstrip("\ufeff")
         value = value.strip().strip("\"'")
 
         if key:
@@ -53,6 +53,16 @@ def _get_int_env(name: str, default: int) -> int:
         return default
 
 
+def _get_bool_env(name: str, default: bool) -> bool:
+    """读取布尔型环境变量，用于控制调试开关这类全局行为。"""
+    raw_value = os.getenv(name)
+
+    if raw_value is None:
+        return default
+
+    return raw_value.strip().lower() in {"1", "true", "yes", "on"}
+
+
 _load_backend_env()
 
 # DashScope 兼容 OpenAI SDK，因此保留 base_url / api key / model / dimension 给 .env 或系统环境变量控制。
@@ -66,4 +76,6 @@ EMBEDDING_DIMENSION = _get_int_env(
     "OC_EMBEDDING_DIMENSION",
     _get_int_env("DASHSCOPE_EMBEDDING_DIMENSION", 1024),
 )
+# 索引同步日志默认关闭，避免 Electron/uvicorn 控制台被增量同步细节刷屏；排查问题时在 .env 中改成 true。
+INDEXING_DEBUG_LOG = _get_bool_env("OC_INDEXING_DEBUG_LOG", False)
 MAX_TOP_K = 20

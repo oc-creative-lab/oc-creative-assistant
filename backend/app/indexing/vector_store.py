@@ -18,8 +18,15 @@ from app.indexing.config import (
     EMBEDDING_BASE_URL,
     EMBEDDING_DIMENSION,
     EMBEDDING_MODEL,
+    INDEXING_DEBUG_LOG,
 )
 from app.indexing.document_loader import node_to_document
+
+
+def _log(message: str) -> None:
+    """打印向量写入和 embedding API 调用信息，便于 PoC 阶段观察真实执行路径。"""
+    if INDEXING_DEBUG_LOG:
+        print(f"[vector-store] {message}", flush=True)
 
 
 class DashScopeEmbeddingProvider:
@@ -54,6 +61,7 @@ class DashScopeEmbeddingProvider:
         if not texts:
             return []
 
+        _log(f"call embedding api model={self.model} dimension={self.dimension} batch_size={len(texts)}")
         response = self._get_client().embeddings.create(
             model=self.model,
             input=texts,
@@ -73,7 +81,9 @@ class DashScopeEmbeddingProvider:
 
             vectors_by_index[int(index)] = vector
 
-        return [vectors_by_index[index] for index in range(len(texts))]
+        vectors = [vectors_by_index[index] for index in range(len(texts))]
+        _log(f"embedding api success model={self.model} vectors={len(vectors)} dimension={self.dimension}")
+        return vectors
 
     def _get_client(self) -> Any:
         """延迟初始化 OpenAI-compatible client，避免启动时暴露 API key 配置问题。"""
@@ -160,9 +170,11 @@ def upsert_node(collection: Any, node: NodeORM, fingerprint: str | None = None) 
     """
     document = node_to_document(node)
     node_fingerprint = fingerprint or hashlib.sha256(f"ID: {node.id}\n{document}".encode("utf-8")).hexdigest()
+    chroma_id = build_chroma_id(node.project_id, node.id)
+    _log(f"upsert vector chroma_id={chroma_id} node_id={node.id} title={node.title!r}")
 
     collection.upsert(
-        ids=[build_chroma_id(node.project_id, node.id)],
+        ids=[chroma_id],
         documents=[document],
         embeddings=[embedding_provider.embed(document)],
         metadatas=[
@@ -177,6 +189,7 @@ def upsert_node(collection: Any, node: NodeORM, fingerprint: str | None = None) 
             }
         ],
     )
+    _log(f"upsert vector success chroma_id={chroma_id}")
 
 
 def upsert_nodes(collection: Any, nodes: list[NodeORM]) -> None:
@@ -212,6 +225,7 @@ def delete_nodes(collection: Any, project_id: str, node_ids: list[str]) -> None:
     if not node_ids:
         return
 
+    _log(f"delete vectors project_id={project_id} node_ids={node_ids}")
     collection.delete(ids=[build_chroma_id(project_id, node_id) for node_id in node_ids])
 
 
@@ -238,8 +252,10 @@ def query_collection(
         依次返回 ChromaDB ID 列表、metadata 列表和 distance 列表。
     """
     if collection.count() == 0:
+        _log(f"query skipped project_id={project_id} reason=empty_collection")
         return [], [], []
 
+    _log(f"query vectors project_id={project_id} top_k={top_k} node_count={node_count}")
     result = collection.query(
         query_embeddings=[embedding_provider.embed(query)],
         n_results=min(top_k + 1, node_count),

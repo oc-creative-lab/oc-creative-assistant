@@ -11,6 +11,10 @@ import ProjectSidebar from './ProjectSidebar.vue'
 import StatusBar from './StatusBar.vue'
 import TopToolbar from './TopToolbar.vue'
 
+const CANVAS_AUTO_SAVE_DELAY_MS = 1000
+const FORM_AUTO_SAVE_DELAY_MS = 3000
+const QUICK_AUTO_SAVE_DELAY_MS = 300
+
 /**
  * 工作区状态中枢。
  *
@@ -29,24 +33,76 @@ const selectedEdgeId = ref('')
 const isGraphReady = ref(false)
 const isSaving = ref(false)
 const saveState = ref('正在从本地后端加载...')
+const indexState = ref('向量索引未检查')
+const indexingAlert = ref('')
 const createNodeRequest = ref<{ type: CreativeNodeType; nonce: number } | null>(null)
 let autoSaveTimer: ReturnType<typeof setTimeout> | null = null
 
+function simplifyIndexingError(error?: string | null) {
+  if (!error) {
+    return '请检查 backend/.env 中的 embedding 配置。'
+  }
+
+  if (error.includes('invalid_api_key') || error.includes('Incorrect API key') || error.includes('401')) {
+    return 'API Key 无效。'
+  }
+
+  if (error.toLowerCase().includes('timeout')) {
+    return 'embedding 服务请求超时，请稍后重试。'
+  }
+
+  if (error.includes('Connection') || error.includes('connect') || error.includes('network')) {
+    return '无法连接 embedding 服务，请检查网络或 base_url。'
+  }
+
+  return error.length > 120 ? `${error.slice(0, 120)}...` : error
+}
+
 /**
- * 将后端 indexing 状态转成状态栏文案。
- * SQLite 保存和 embedding 写入是两个阶段：前者成功后仍可能因为 API key、网络或维度配置导致索引失败。
+ * 将后端 indexing 状态转成底部状态栏文案。
+ * 状态栏空间有限，只显示短状态；详细原因放到顶部告警条里，避免一长串错误挤满界面。
  */
 function formatIndexingState(indexing?: IndexingStatusDto) {
   if (!indexing || indexing.status === 'not_checked') {
-    return ''
+    return '向量索引未检查'
   }
 
   if (indexing.status === 'synced') {
     return `向量索引已同步 ${indexing.indexed_nodes}/${indexing.expected_nodes}`
   }
 
-  const detail = indexing.error || indexing.message || '请检查 backend/.env 中的 embedding 配置'
-  return `SQLite 已保存，但向量索引${indexing.status === 'failed' ? '失败' : '未完整'}：${detail}`
+  return indexing.status === 'failed'
+    ? `向量索引失败 ${indexing.indexed_nodes}/${indexing.expected_nodes}`
+    : `向量索引未完整 ${indexing.indexed_nodes}/${indexing.expected_nodes}`
+}
+
+/**
+ * 生成顶部告警文案。
+ * 这里把后端原始异常翻译成用户能直接处理的提示，不把 API 返回的整段 JSON 暴露在界面上。
+ */
+function formatIndexingAlert(indexing: IndexingStatusDto) {
+  const problem = simplifyIndexingError(indexing.error)
+  const missingCount = indexing.missing_node_ids.length
+  const missingText = missingCount > 0 ? `当前还有 ${missingCount} 个节点缺少可用向量。` : ''
+
+  return `SQLite 已保存，但向量索引${indexing.status === 'failed' ? '失败' : '未完整'}。${problem} ${missingText}`.trim()
+}
+
+/**
+ * 单独处理后端返回的 embedding/ChromaDB 状态。
+ * 这个状态不能混在普通保存文案里，否则用户连续输入时会被下一次自动保存提示覆盖。
+ */
+function applyIndexingStatus(indexing?: IndexingStatusDto) {
+  const nextState = formatIndexingState(indexing)
+
+  indexState.value = nextState
+
+  if (!indexing || indexing.status === 'not_checked' || indexing.status === 'synced') {
+    indexingAlert.value = ''
+    return
+  }
+
+  indexingAlert.value = formatIndexingAlert(indexing)
 }
 
 const selectedNode = computed(() => {
@@ -60,6 +116,7 @@ const selectedEdge = computed(() => {
 const workspaceStatus = computed<WorkspaceStatus>(() => ({
   ...mockWorkspaceStatus,
   saveState: saveState.value,
+  indexState: indexState.value,
 }))
 
 /**
@@ -109,8 +166,8 @@ async function persistGraph(refreshFromResponse = false) {
       setGraphSnapshot(graphDtoToSnapshot(savedGraph), true)
     }
 
-    const indexingState = formatIndexingState(savedGraph.indexing)
-    saveState.value = indexingState || `已保存：${new Date().toLocaleTimeString()}`
+    applyIndexingStatus(savedGraph.indexing)
+    saveState.value = `SQLite 已保存：${new Date().toLocaleTimeString()}`
   } catch (error) {
     saveState.value = error instanceof Error ? `保存失败：${error.message}` : '保存失败'
   } finally {
@@ -123,7 +180,7 @@ async function persistGraph(refreshFromResponse = false) {
  *
  * 画布拖拽、连线和右侧详情编辑都进入同一保存队列，避免并发请求覆盖较新的快照。
  */
-function scheduleAutoSave() {
+function scheduleAutoSave(delayMs = CANVAS_AUTO_SAVE_DELAY_MS) {
   if (!isGraphReady.value || !projectId.value) {
     return
   }
@@ -135,7 +192,7 @@ function scheduleAutoSave() {
   saveState.value = '有未保存的画布修改'
   autoSaveTimer = setTimeout(() => {
     void persistGraph(false)
-  }, 600)
+  }, delayMs)
 }
 
 /**
@@ -157,6 +214,7 @@ async function loadGraph() {
     selectedEdgeId.value = ''
     isGraphReady.value = true
     saveState.value = '已从 SQLite 加载'
+    applyIndexingStatus(graph.indexing)
   } catch (error) {
     isGraphReady.value = false
     saveState.value =
@@ -174,7 +232,7 @@ async function loadGraph() {
  */
 function handleGraphChanged(snapshot: CreativeGraphSnapshot) {
   setGraphSnapshot(snapshot)
-  scheduleAutoSave()
+  scheduleAutoSave(CANVAS_AUTO_SAVE_DELAY_MS)
 }
 
 function selectNode(nodeId: string) {
@@ -207,7 +265,7 @@ function handleNodeUpdated(updatedNode: CreativeFlowNode) {
   }
 
   setGraphSnapshot(nextSnapshot, true)
-  scheduleAutoSave()
+  scheduleAutoSave(FORM_AUTO_SAVE_DELAY_MS)
 }
 
 /**
@@ -223,7 +281,7 @@ function handleEdgeUpdated(updatedEdge: CreativeFlowEdge) {
   }
 
   setGraphSnapshot(nextSnapshot, true)
-  scheduleAutoSave()
+  scheduleAutoSave(FORM_AUTO_SAVE_DELAY_MS)
 }
 
 /**
@@ -253,7 +311,7 @@ function handleNodeDeleted(nodeId: string) {
   selectedNodeId.value = ''
   selectedEdgeId.value = ''
   setGraphSnapshot(nextSnapshot, true)
-  scheduleAutoSave()
+  scheduleAutoSave(QUICK_AUTO_SAVE_DELAY_MS)
 }
 
 /**
@@ -272,7 +330,7 @@ function handleEdgeDeleted(edgeId: string) {
 
   selectedEdgeId.value = ''
   setGraphSnapshot(nextSnapshot, true)
-  scheduleAutoSave()
+  scheduleAutoSave(QUICK_AUTO_SAVE_DELAY_MS)
 }
 
 /**
@@ -355,6 +413,13 @@ onBeforeUnmount(() => {
   <div class="app-shell">
     <TopToolbar :project-name="projectName" :is-saving="isSaving" @save="handleSaveGraph" />
 
+    <div class="indexing-alert" :class="{ 'is-hidden': !indexingAlert }" role="alert" aria-live="polite">
+      <template v-if="indexingAlert">
+        <span>{{ indexingAlert }}</span>
+        <button type="button" class="indexing-alert__close" @click="indexingAlert = ''">关闭</button>
+      </template>
+    </div>
+
     <main class="workspace-grid">
       <ProjectSidebar
         :nodes="graphNodes"
@@ -389,10 +454,42 @@ onBeforeUnmount(() => {
 .app-shell {
   height: 100vh;
   display: grid;
-  grid-template-rows: 56px minmax(0, 1fr) 30px;
+  grid-template-rows: 56px auto minmax(0, 1fr) 30px;
   background: var(--app-bg);
   color: var(--text);
   overflow: hidden;
+}
+
+.indexing-alert {
+  min-height: 36px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 8px 16px;
+  background: #fff7ed;
+  border-bottom: 1px solid #fed7aa;
+  color: #9a3412;
+  font-size: 0.84rem;
+  line-height: 1.4;
+}
+
+.indexing-alert.is-hidden {
+  min-height: 0;
+  padding-top: 0;
+  padding-bottom: 0;
+  border-bottom: 0;
+  overflow: hidden;
+}
+
+.indexing-alert__close {
+  flex: 0 0 auto;
+  border: 1px solid #fdba74;
+  border-radius: 4px;
+  background: #ffedd5;
+  color: #9a3412;
+  padding: 3px 8px;
+  cursor: pointer;
 }
 
 .workspace-grid {
