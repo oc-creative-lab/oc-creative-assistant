@@ -128,6 +128,36 @@ export interface RagContextResponseDto {
   }
 }
 
+/** 项目级 Lore Memory 检索请求体；不依赖当前选中节点。 */
+export interface MemorySearchRequestDto {
+  query: string
+  node_type?: CreativeNodeType | null
+  top_k: number
+}
+
+/** 项目级 Lore Memory 检索命中项。 */
+export interface MemorySearchItemDto {
+  id: string
+  type: CreativeNodeType
+  title: string
+  content: string
+  tags: string[]
+  status: CreativeNodeStatus
+  score: number
+}
+
+/** 项目级 Lore Memory 检索响应。 */
+export interface MemorySearchResponseDto {
+  items: MemorySearchItemDto[]
+  debug: {
+    query_used: string
+    top_k: number
+    vector_store: string
+    llm_called: boolean
+    vector_error?: string | null
+  }
+}
+
 /* 桌面态优先使用 preload 注入的后端地址，浏览器开发态回退到 Vite 环境变量。 */
 const backendBaseUrl = (
   window.ocDesktop?.config.backendUrl ||
@@ -210,6 +240,28 @@ export async function saveProjectGraph(projectId: string, graph: SaveGraphDto): 
  */
 export async function loadRagContext(payload: RagContextRequestDto): Promise<RagContextResponseDto> {
   return requestJson<RagContextResponseDto>('/api/rag/context', {
+    method: 'POST',
+    body: JSON.stringify(payload),
+  })
+}
+
+/**
+ * 在当前项目内搜索 Lore Memory。
+ *
+ * 该接口只返回向量检索命中的记忆卡片，不构造 prompt，也不会调用 LLM。
+ *
+ * Args:
+ *   projectId: 当前项目 ID。
+ *   payload: 搜索文本、类型过滤和返回数量。
+ *
+ * Returns:
+ *   项目内语义相关的记忆条目。
+ */
+export async function searchProjectMemory(
+  projectId: string,
+  payload: MemorySearchRequestDto,
+): Promise<MemorySearchResponseDto> {
+  return requestJson<MemorySearchResponseDto>(`/api/projects/${projectId}/memory/search`, {
     method: 'POST',
     body: JSON.stringify(payload),
   })

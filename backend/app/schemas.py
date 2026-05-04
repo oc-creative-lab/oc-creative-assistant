@@ -174,6 +174,33 @@ class RagDebugPayload(BaseModel):
     vector_error: str | None = None
 
 
+class MemorySearchRequest(BaseModel):
+    """项目级 Lore Memory 搜索请求。"""
+
+    query: str = ""
+    node_type: str | None = None
+    top_k: int = 6
+
+
+class MemorySearchItem(BaseModel):
+    """项目级 Lore Memory 搜索命中项。"""
+
+    id: str
+    type: str
+    title: str
+    content: str
+    tags: list[str] = Field(default_factory=list)
+    status: str = "draft"
+    score: float
+
+
+class MemorySearchResponse(BaseModel):
+    """项目级 Lore Memory 搜索响应。"""
+
+    items: list[MemorySearchItem]
+    debug: RagDebugPayload
+
+
 class RagContextResponse(BaseModel):
     """RAG 上下文接口的完整响应。"""
 

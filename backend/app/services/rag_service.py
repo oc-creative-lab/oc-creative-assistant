@@ -4,6 +4,6 @@
 `app.services`，后续接入更多 Agent 时也能在这里统一编排。
 """
 
-from app.rag.service import build_rag_context
+from app.rag.service import build_rag_context, search_project_memory
 
-__all__ = ["build_rag_context"]
+__all__ = ["build_rag_context", "search_project_memory"]

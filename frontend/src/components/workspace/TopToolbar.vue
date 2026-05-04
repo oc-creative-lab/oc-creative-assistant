@@ -36,7 +36,7 @@ const savingLabel = '保存中...'
       <span class="project-name">{{ projectName }}</span>
     </div>
 
-    <nav class="toolbar-actions" aria-label="&#24037;&#20316;&#21306;&#25805;&#20316;">
+    <nav class="toolbar-actions" aria-label="工作区操作">
       <button
         v-for="action in toolbarActions"
         :key="action.id"

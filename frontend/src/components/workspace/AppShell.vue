@@ -34,6 +34,7 @@ const isGraphReady = ref(false)
 const isSaving = ref(false)
 const saveState = ref('正在从本地后端加载...')
 const indexState = ref('向量索引未检查')
+const indexingStatus = ref<IndexingStatusDto | undefined>()
 const indexingAlert = ref('')
 const createNodeRequest = ref<{ type: CreativeNodeType; nonce: number } | null>(null)
 let autoSaveTimer: ReturnType<typeof setTimeout> | null = null
@@ -95,6 +96,7 @@ function formatIndexingAlert(indexing: IndexingStatusDto) {
 function applyIndexingStatus(indexing?: IndexingStatusDto) {
   const nextState = formatIndexingState(indexing)
 
+  indexingStatus.value = indexing
   indexState.value = nextState
 
   if (!indexing || indexing.status === 'not_checked' || indexing.status === 'synced') {
@@ -422,8 +424,12 @@ onBeforeUnmount(() => {
 
     <main class="workspace-grid">
       <ProjectSidebar
+        :project-id="projectId"
         :nodes="graphNodes"
+        :selected-node="selectedNode"
+        :indexing-status="indexingStatus"
         @create-node="requestCreateNode"
+        @node-selected="selectNode"
       />
       <CanvasWorkspace
         :selected-node-id="selectedNodeId"

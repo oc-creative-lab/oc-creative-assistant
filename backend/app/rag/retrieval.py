@@ -132,6 +132,68 @@ def _query_chroma_context(
     return context, "chroma", None
 
 
+def build_project_vector_context(
+    project_id: str,
+    nodes: list[NodeORM],
+    query: str,
+    top_k: int,
+    node_type: str | None = None,
+) -> tuple[list[RagVectorContextItem], str, str | None]:
+    """构建项目级向量检索上下文。
+
+    Args:
+        project_id: 当前项目 ID。
+        nodes: 当前项目完整节点快照。
+        query: 用户输入的检索问题。
+        top_k: 最多返回的向量上下文数量。
+        node_type: 可选节点类型过滤。
+
+    Returns:
+        相似节点列表、实际使用的向量库标识和可选错误信息。
+    """
+    candidate_nodes = [node for node in nodes if node_type is None or node.node_type == node_type]
+
+    if not query.strip() or not candidate_nodes:
+        return [], "chroma", None
+
+    try:
+        return _query_project_chroma_context(project_id, candidate_nodes, query, top_k, node_type)
+    except Exception as error:  # noqa: BLE001
+        return [], "chroma_unavailable", str(error)
+
+
+def _query_project_chroma_context(
+    project_id: str,
+    nodes: list[NodeORM],
+    query: str,
+    top_k: int,
+    node_type: str | None = None,
+) -> tuple[list[RagVectorContextItem], str, str | None]:
+    """使用本地 ChromaDB 做项目级 Lore Memory 检索。"""
+    collection = get_chroma_collection()
+    result_ids, metadatas, distances = query_collection(collection, project_id, query, top_k, len(nodes), node_type)
+    node_by_id = {node.id: node for node in nodes}
+    context: list[RagVectorContextItem] = []
+
+    for _chroma_id, metadata, distance in zip(result_ids, metadatas, distances, strict=False):
+        node_id = metadata.get("node_id") if isinstance(metadata, dict) else None
+
+        if not isinstance(node_id, str):
+            continue
+
+        node = node_by_id.get(node_id)
+
+        if node is None:
+            continue
+
+        context.append(node_to_vector_item(node, score=max(0.0, 1.0 - float(distance))))
+
+        if len(context) >= top_k:
+            break
+
+    return context, "chroma", None
+
+
 def _merge_context(
     graph_context: list[RagGraphContextItem],
     vector_context: list[RagVectorContextItem],

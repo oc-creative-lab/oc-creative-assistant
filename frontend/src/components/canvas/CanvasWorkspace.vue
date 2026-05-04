@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { nextTick, ref, watch } from 'vue'
+import { nextTick, onMounted, onUnmounted, ref, watch } from 'vue'
 import { ConnectionMode, MarkerType, VueFlow, addEdge, useVueFlow } from '@vue-flow/core'
 import type { Connection, Edge, NodeMouseEvent } from '@vue-flow/core'
 import type {
@@ -28,12 +28,12 @@ const DEFAULT_SOURCE_HANDLE = 'right'
 const DEFAULT_TARGET_HANDLE = 'left'
 
 const relationEdgeStyles: Record<CreativeRelationType, { color: string; labelBg: string; animated?: boolean }> = {
-  relates_to: { color: '#7b8798', labelBg: '#ffffff' },
-  causes: { color: '#dc2626', labelBg: '#fee2e2' },
-  belongs_to: { color: '#0f766e', labelBg: '#ccfbf1' },
-  conflicts_with: { color: '#b42318', labelBg: '#fee2e2', animated: true },
-  references: { color: '#2563eb', labelBg: '#dbeafe' },
-  develops_into: { color: '#7c3aed', labelBg: '#ede9fe' },
+  relates_to: { color: '#64748b', labelBg: '#f8fafc' },
+  causes: { color: '#d97706', labelBg: '#fffbeb' },
+  belongs_to: { color: '#059669', labelBg: '#ecfdf5' },
+  conflicts_with: { color: '#dc2626', labelBg: '#fef2f2', animated: true },
+  references: { color: '#2563eb', labelBg: '#eff6ff' },
+  develops_into: { color: '#7c3aed', labelBg: '#f5f3ff' },
 }
 
 /**
@@ -59,6 +59,22 @@ const emit = defineEmits<{
 
 const flowShell = ref<HTMLElement | null>(null)
 const selectedRelationType = ref<CreativeRelationType>(DEFAULT_RELATION_TYPE)
+const isRelationSelectOpen = ref(false)
+
+function closeAllSelects(e: MouseEvent) {
+  const target = e.target as HTMLElement
+  if (!target.closest('.custom-select-container')) {
+    isRelationSelectOpen.value = false
+  }
+}
+
+onMounted(() => {
+  document.addEventListener('click', closeAllSelects)
+})
+
+onUnmounted(() => {
+  document.removeEventListener('click', closeAllSelects)
+})
 
 /**
  * 克隆节点并写入前端选中态。
@@ -491,11 +507,27 @@ watch(
         <span class="interaction-hint">点击节点选择，拖拽端点连线</span>
         <label class="relation-picker" for="new-edge-relation">
           新连线关系
-          <select id="new-edge-relation" v-model="selectedRelationType">
-            <option v-for="option in RELATION_TYPE_OPTIONS" :key="option.value" :value="option.value">
-              {{ option.label }}
-            </option>
-          </select>
+          <div class="custom-select-container">
+            <div
+              class="custom-select-trigger"
+              :class="{ 'is-open': isRelationSelectOpen }"
+              @click="isRelationSelectOpen = !isRelationSelectOpen"
+            >
+              <span>{{ getRelationLabel(selectedRelationType) }}</span>
+              <div class="custom-select-arrow"></div>
+            </div>
+            <ul class="custom-select-options" v-show="isRelationSelectOpen">
+              <li
+                v-for="option in RELATION_TYPE_OPTIONS"
+                :key="option.value"
+                class="custom-select-option"
+                :class="{ 'is-selected': selectedRelationType === option.value }"
+                @click="selectedRelationType = option.value; isRelationSelectOpen = false"
+              >
+                {{ option.label }}
+              </li>
+            </ul>
+          </div>
         </label>
         <button type="button" @click="handleAutoLayout">自动布局</button>
       </div>
@@ -586,8 +618,7 @@ watch(
 }
 
 .mode-actions button,
-.canvas-actions button,
-.relation-picker select {
+.canvas-actions button {
   min-height: 30px;
   padding: 0 12px;
   border: 1px solid var(--border);
@@ -598,8 +629,7 @@ watch(
 }
 
 .mode-actions button:hover,
-.canvas-actions button:hover,
-.relation-picker select:hover {
+.canvas-actions button:hover {
   border-color: var(--accent-border);
   background: var(--accent-soft);
   color: var(--accent);
@@ -616,6 +646,104 @@ watch(
   gap: 6px;
   color: var(--muted);
   font-size: 0.84rem;
+}
+
+/* 自定义下拉框组件样式 (与右侧边栏一致) */
+.custom-select-container {
+  position: relative;
+  width: 120px;
+  user-select: none;
+}
+
+.custom-select-trigger {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  width: 100%;
+  min-height: 30px;
+  padding: 0 10px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background-color: var(--panel);
+  color: var(--muted);
+  font-size: 0.84rem;
+  line-height: 1.5;
+  cursor: pointer;
+  transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.02);
+}
+
+.custom-select-trigger:hover {
+  border-color: var(--accent-border);
+  background: var(--accent-soft);
+  color: var(--accent);
+}
+
+.custom-select-trigger.is-open {
+  border-color: var(--accent);
+  background-color: #ffffff;
+  box-shadow: 0 0 0 3px var(--accent-soft), 0 1px 2px rgba(0, 0, 0, 0.02);
+  color: var(--text);
+}
+
+.custom-select-arrow {
+  width: 10px;
+  height: 6px;
+  background-color: currentColor;
+  clip-path: polygon(100% 0%, 0 0%, 50% 100%);
+  transition: transform 0.2s ease;
+}
+
+.custom-select-trigger.is-open .custom-select-arrow {
+  transform: rotate(180deg);
+}
+
+.custom-select-options {
+  position: absolute;
+  top: calc(100% + 4px);
+  left: 0;
+  right: 0;
+  z-index: 100;
+  max-height: 240px;
+  overflow-y: auto;
+  margin: 0;
+  padding: 6px;
+  list-style: none;
+  background-color: #ffffff;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.08), 0 2px 4px rgba(0, 0, 0, 0.04);
+  animation: dropdownFadeIn 0.15s ease-out forwards;
+}
+
+@keyframes dropdownFadeIn {
+  from {
+    opacity: 0;
+    transform: translateY(-4px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.custom-select-option {
+  padding: 8px 12px;
+  border-radius: 6px;
+  color: var(--text);
+  font-size: 0.84rem;
+  cursor: pointer;
+  transition: background-color 0.15s ease;
+}
+
+.custom-select-option:hover {
+  background-color: var(--app-bg);
+}
+
+.custom-select-option.is-selected {
+  background-color: var(--accent-soft);
+  color: var(--accent);
+  font-weight: 600;
 }
 
 .canvas-actions button:first-child,
@@ -646,12 +774,7 @@ watch(
 }
 
 :deep(.vue-flow__edge-path) {
-  stroke: #7b8798;
   stroke-width: 1.8;
-}
-
-:deep(.vue-flow__edge.animated .vue-flow__edge-path) {
-  stroke: #2764c5;
 }
 
 :deep(.creative-edge.vue-flow__edge.animated .vue-flow__edge-path) {
@@ -659,14 +782,7 @@ watch(
 }
 
 :deep(.vue-flow__edge-text) {
-  fill: #1f2933;
   font-size: 12px;
-  font-weight: 700;
-}
-
-:deep(.vue-flow__edge-textbg) {
-  fill: #ffffff;
-  stroke: #d9dee7;
 }
 
 :deep(.vue-flow__handle) {

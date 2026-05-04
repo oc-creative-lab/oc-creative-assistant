@@ -10,12 +10,20 @@ from fastapi import HTTPException
 from sqlalchemy import select
 
 from app.db.database import SessionLocal
-from app.db.models import EdgeORM, NodeORM
+from app.db.models import EdgeORM, NodeORM, ProjectORM
 from app.indexing.config import MAX_TOP_K
 from app.indexing.document_loader import node_to_current_payload
 from app.rag.prompts import build_inspiration_prompt
-from app.rag.retrieval import _build_graph_context, _build_vector_context, _merge_context
-from app.schemas import RagContextRequest, RagContextResponse, RagDebugPayload
+from app.rag.retrieval import _build_graph_context, _build_vector_context, _merge_context, build_project_vector_context
+from app.schemas import (
+    MemorySearchItem,
+    MemorySearchRequest,
+    MemorySearchResponse,
+    RagContextRequest,
+    RagContextResponse,
+    RagDebugPayload,
+)
+from app.services.graph_mappers import db_status_to_api, db_tags_to_api
 
 
 def build_rag_context(request: RagContextRequest) -> RagContextResponse:
@@ -66,6 +74,74 @@ def build_rag_context(request: RagContextRequest) -> RagContextResponse:
         vector_context=vector_context,
         merged_context=merged_context,
         prompt=prompt,
+        debug=RagDebugPayload(
+            query_used=query_used,
+            top_k=top_k,
+            vector_store=vector_store,
+            llm_called=False,
+            vector_error=vector_error,
+        ),
+    )
+
+
+def search_project_memory(project_id: str, request: MemorySearchRequest) -> MemorySearchResponse:
+    """搜索当前项目的 Lore Memory。
+
+    该函数只做项目内向量检索并返回记忆卡片，不构造 prompt，也不调用 LLM。
+
+    Args:
+        project_id: 当前项目 ID。
+        request: 项目级搜索条件。
+
+    Returns:
+        当前项目内语义相关的记忆条目和调试状态。
+
+    Raises:
+        HTTPException: 当项目不存在时抛出。
+    """
+    top_k = max(1, min(request.top_k, MAX_TOP_K))
+    query_used = request.query.strip()
+
+    with SessionLocal() as session:
+        project = session.get(ProjectORM, project_id)
+
+        if project is None:
+            raise HTTPException(status_code=404, detail="Project not found")
+
+        nodes = session.scalars(
+            select(NodeORM).where(NodeORM.project_id == project_id).order_by(NodeORM.sort_order, NodeORM.created_at)
+        ).all()
+
+    vector_context, vector_store, vector_error = build_project_vector_context(
+        project_id,
+        nodes,
+        query_used,
+        top_k,
+        request.node_type,
+    )
+    node_by_id = {node.id: node for node in nodes}
+    items: list[MemorySearchItem] = []
+
+    for item in vector_context:
+        node = node_by_id.get(item.id)
+
+        if node is None:
+            continue
+
+        items.append(
+            MemorySearchItem(
+                id=node.id,
+                type=node.node_type,
+                title=node.title,
+                content=node.content,
+                tags=db_tags_to_api(node.meta),
+                status=db_status_to_api(node.meta),
+                score=item.score,
+            )
+        )
+
+    return MemorySearchResponse(
+        items=items,
         debug=RagDebugPayload(
             query_used=query_used,
             top_k=top_k,

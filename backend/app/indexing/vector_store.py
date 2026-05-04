@@ -235,6 +235,7 @@ def query_collection(
     query: str,
     top_k: int,
     node_count: int,
+    node_type: str | None = None,
 ) -> tuple[list[str], list[dict], list[float]]:
     """查询当前项目的 ChromaDB 记录。
 
@@ -247,6 +248,7 @@ def query_collection(
         query: 用户输入或当前节点内容构造的检索问题。
         top_k: 期望返回的最多上下文数量。
         node_count: 当前项目节点总数，用于限制 ChromaDB 查询规模。
+        node_type: 可选节点类型过滤，用于项目级 Lore Memory 搜索。
 
     Returns:
         依次返回 ChromaDB ID 列表、metadata 列表和 distance 列表。
@@ -255,11 +257,16 @@ def query_collection(
         _log(f"query skipped project_id={project_id} reason=empty_collection")
         return [], [], []
 
-    _log(f"query vectors project_id={project_id} top_k={top_k} node_count={node_count}")
+    where_filter: dict[str, Any] = {"project_id": project_id}
+
+    if node_type:
+        where_filter = {"$and": [{"project_id": project_id}, {"node_type": node_type}]}
+
+    _log(f"query vectors project_id={project_id} top_k={top_k} node_count={node_count} node_type={node_type}")
     result = collection.query(
         query_embeddings=[embedding_provider.embed(query)],
         n_results=min(top_k + 1, node_count),
-        where={"project_id": project_id},
+        where=where_filter,
         include=["metadatas", "distances"],
     )
     return (

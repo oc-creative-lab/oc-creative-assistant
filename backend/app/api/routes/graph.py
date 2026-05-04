@@ -5,7 +5,16 @@
 
 from fastapi import APIRouter
 
-from app.schemas import EdgePayload, GraphPayload, NodePayload, ProjectPayload, SaveGraphRequest, UpdateNodeRequest
+from app.schemas import (
+    EdgePayload,
+    GraphPayload,
+    MemorySearchRequest,
+    MemorySearchResponse,
+    NodePayload,
+    ProjectPayload,
+    SaveGraphRequest,
+    UpdateNodeRequest,
+)
 from app.services.graph_store import (
     create_edge,
     create_node,
@@ -14,6 +23,7 @@ from app.services.graph_store import (
     save_project_graph,
     update_node,
 )
+from app.services.rag_service import search_project_memory
 
 
 router = APIRouter(prefix="/api", tags=["graph"])
@@ -35,6 +45,12 @@ async def read_project_graph(project_id: str) -> GraphPayload:
 async def replace_project_graph(project_id: str, payload: SaveGraphRequest) -> GraphPayload:
     """保存当前画布快照，整体替换该项目 graph。"""
     return save_project_graph(project_id, payload)
+
+
+@router.post("/projects/{project_id}/memory/search", response_model=MemorySearchResponse)
+async def search_memory(project_id: str, payload: MemorySearchRequest) -> MemorySearchResponse:
+    """在指定项目内做 Lore Memory 语义搜索。"""
+    return search_project_memory(project_id, payload)
 
 
 @router.post("/projects/{project_id}/nodes", response_model=NodePayload)
