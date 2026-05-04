@@ -10,11 +10,12 @@ defineProps<{
   isSaving: boolean
 }>()
 
-defineEmits<{
+const emit = defineEmits<{
   save: []
 }>()
 
 const toolbarActions = [
+  { id: 'refresh', label: '刷新' },
   { id: 'save', label: '保存' },
   { id: 'import', label: '导入资料' },
   { id: 'export', label: '导出' },
@@ -22,6 +23,14 @@ const toolbarActions = [
 ]
 
 const savingLabel = '保存中...'
+
+function handleActionClick(actionId: string) {
+  if (actionId === 'save') {
+    emit('save')
+  } else if (actionId === 'refresh') {
+    window.location.reload()
+  }
+}
 </script>
 
 <template>
@@ -42,7 +51,7 @@ const savingLabel = '保存中...'
         :key="action.id"
         type="button"
         :disabled="action.id === 'save' && isSaving"
-        @click="action.id === 'save' ? $emit('save') : undefined"
+        @click="handleActionClick(action.id)"
       >
         {{ action.id === 'save' && isSaving ? savingLabel : action.label }}
       </button>
