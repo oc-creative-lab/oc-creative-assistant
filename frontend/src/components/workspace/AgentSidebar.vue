@@ -80,6 +80,10 @@ const targetNodeTitle = computed(() => {
   return props.nodes.find((node) => node.id === props.selectedEdge?.target)?.data.title ?? props.selectedEdge.target
 })
 
+function getRelationLabel(relationType: CreativeRelationType) {
+  return RELATION_TYPE_OPTIONS.find((option) => option.value === relationType)?.label ?? '关联'
+}
+
 /**
  * 提交节点数据的局部更新。
  *
@@ -154,6 +158,27 @@ function updateEdge(partial: Partial<CreativeFlowEdge['data']>) {
     ...props.selectedEdge,
     label: data.label,
     data,
+  })
+}
+
+function updateEdgeRelation(relationType: CreativeRelationType) {
+  updateEdge({
+    relationType,
+    label: getRelationLabel(relationType),
+  })
+}
+
+function reverseSelectedEdge() {
+  if (!props.selectedEdge) {
+    return
+  }
+
+  emit('edgeUpdated', {
+    ...props.selectedEdge,
+    source: props.selectedEdge.target,
+    target: props.selectedEdge.source,
+    sourceHandle: props.selectedEdge.targetHandle,
+    targetHandle: props.selectedEdge.sourceHandle,
   })
 }
 
@@ -436,7 +461,7 @@ watch(
               :key="option.value"
               class="custom-select-option"
               :class="{ 'is-selected': selectedEdge.data.relationType === option.value }"
-              @click="updateEdge({ relationType: option.value as CreativeRelationType }); isEdgeRelationSelectOpen = false"
+              @click="updateEdgeRelation(option.value as CreativeRelationType); isEdgeRelationSelectOpen = false"
             >
               {{ option.label }}
             </li>
@@ -453,6 +478,7 @@ watch(
           />
         </div>
 
+        <button type="button" class="secondary-action" @click="reverseSelectedEdge">反转方向</button>
         <button type="button" class="danger" @click="$emit('edgeDeleted', selectedEdge.id)">删除连线</button>
       </section>
     </template>
@@ -762,6 +788,13 @@ button.danger {
 button.danger:hover {
   background: #fee2e2;
   border-color: #fca5a5;
+}
+
+button.secondary-action {
+  margin-bottom: 10px;
+  color: var(--accent);
+  border-color: var(--accent-border);
+  background: var(--accent-soft);
 }
 
 /* Agent Actions 区块 */

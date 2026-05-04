@@ -1,24 +1,23 @@
 <script setup lang="ts">
-import { Handle, Position } from '@vue-flow/core'
 import type { NodeProps } from '@vue-flow/core'
 import type { CreativeNodeData } from '../../types/node'
+import NodeHandles from './NodeHandles.vue'
 
 /**
  * 角色节点卡片。
  *
  * Vue Flow 注入 selected、connectable 和 data；本组件只负责角色节点的摘要展示
- * 和左右连接点，不编辑业务数据。
+ * 和四向连接点，不编辑业务数据。
  */
 defineProps<NodeProps<CreativeNodeData>>()
 </script>
 
 <template>
   <article class="creative-node character" :class="{ selected: selected || data.isActive }">
-    <Handle type="target" :position="Position.Left" :connectable="connectable" />
+    <NodeHandles :connectable="connectable" />
     <p class="node-type"><span>{{ data.icon }}</span>{{ data.typeLabel }}</p>
     <h3>{{ data.title }}</h3>
     <p class="node-summary">{{ data.content }}</p>
-    <Handle type="source" :position="Position.Right" :connectable="connectable" />
   </article>
 </template>
 

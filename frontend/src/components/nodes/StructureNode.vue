@@ -1,7 +1,7 @@
 <script setup lang="ts">
-import { Handle, Position } from '@vue-flow/core'
 import type { NodeProps } from '@vue-flow/core'
 import type { CreativeNodeData } from '../../types/node'
+import NodeHandles from './NodeHandles.vue'
 
 /**
  * 结构整理节点卡片。
@@ -13,11 +13,10 @@ defineProps<NodeProps<CreativeNodeData>>()
 
 <template>
   <article class="creative-node structure" :class="{ selected: selected || data.isActive }">
-    <Handle type="target" :position="Position.Left" :connectable="connectable" />
+    <NodeHandles :connectable="connectable" />
     <p class="node-type"><span>{{ data.icon }}</span>{{ data.typeLabel }}</p>
     <h3>{{ data.title }}</h3>
     <p class="node-summary">{{ data.content }}</p>
-    <Handle type="source" :position="Position.Right" :connectable="connectable" />
   </article>
 </template>
 

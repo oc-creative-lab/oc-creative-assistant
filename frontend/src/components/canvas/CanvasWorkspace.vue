@@ -1,13 +1,15 @@
 <script setup lang="ts">
 import { nextTick, ref, watch } from 'vue'
-import { MarkerType, VueFlow, addEdge, useVueFlow } from '@vue-flow/core'
+import { ConnectionMode, MarkerType, VueFlow, addEdge, useVueFlow } from '@vue-flow/core'
 import type { Connection, Edge, NodeMouseEvent } from '@vue-flow/core'
 import type {
   CreativeFlowEdge,
   CreativeFlowNode,
   CreativeGraphSnapshot,
   CreativeNodeType,
+  CreativeRelationType,
 } from '../../types/node'
+import { RELATION_TYPE_OPTIONS } from '../../types/node'
 import { createCreativeNode } from '../../utils/nodeFactory'
 import CharacterNode from '../nodes/CharacterNode.vue'
 import IdeaNode from '../nodes/IdeaNode.vue'
@@ -17,8 +19,22 @@ import StructureNode from '../nodes/StructureNode.vue'
 import WorldNode from '../nodes/WorldNode.vue'
 
 const FLOW_ID = 'oc-main-flow'
-const DEFAULT_EDGE_LABEL = '关联'
-const DEFAULT_RELATION_TYPE = 'relates_to'
+const DEFAULT_RELATION_TYPE: CreativeRelationType = 'relates_to'
+const LAYOUT_START_X = 80
+const LAYOUT_START_Y = 80
+const LAYOUT_COLUMN_GAP = 340
+const LAYOUT_ROW_GAP = 180
+const DEFAULT_SOURCE_HANDLE = 'right'
+const DEFAULT_TARGET_HANDLE = 'left'
+
+const relationEdgeStyles: Record<CreativeRelationType, { color: string; labelBg: string; animated?: boolean }> = {
+  relates_to: { color: '#7b8798', labelBg: '#ffffff' },
+  causes: { color: '#dc2626', labelBg: '#fee2e2' },
+  belongs_to: { color: '#0f766e', labelBg: '#ccfbf1' },
+  conflicts_with: { color: '#b42318', labelBg: '#fee2e2', animated: true },
+  references: { color: '#2563eb', labelBg: '#dbeafe' },
+  develops_into: { color: '#7c3aed', labelBg: '#ede9fe' },
+}
 
 /**
  * 创作画布组件。
@@ -42,7 +58,7 @@ const emit = defineEmits<{
 }>()
 
 const flowShell = ref<HTMLElement | null>(null)
-const interactionMode = ref<'select' | 'connect'>('select')
+const selectedRelationType = ref<CreativeRelationType>(DEFAULT_RELATION_TYPE)
 
 /**
  * 克隆节点并写入前端选中态。
@@ -63,6 +79,14 @@ function cloneNode(node: CreativeFlowNode, selectedNodeId = props.selectedNodeId
   }
 }
 
+function getRelationLabel(relationType: CreativeRelationType) {
+  return RELATION_TYPE_OPTIONS.find((option) => option.value === relationType)?.label ?? '关联'
+}
+
+function getRelationStyle(relationType: CreativeRelationType) {
+  return relationEdgeStyles[relationType] ?? relationEdgeStyles.relates_to
+}
+
 /**
  * 补齐连线的展示标签和业务关系类型。
  *
@@ -74,11 +98,33 @@ function cloneNode(node: CreativeFlowNode, selectedNodeId = props.selectedNodeId
  */
 function normalizeEdge(edge: CreativeFlowEdge): CreativeFlowEdge {
   const relationType = edge.data?.relationType ?? DEFAULT_RELATION_TYPE
-  const label = edge.data?.label || edge.label || DEFAULT_EDGE_LABEL
+  const label = edge.data?.label || edge.label || getRelationLabel(relationType)
+  const relationStyle = getRelationStyle(relationType)
 
   return {
     ...edge,
     label,
+    sourceHandle: edge.sourceHandle ?? DEFAULT_SOURCE_HANDLE,
+    targetHandle: edge.targetHandle ?? DEFAULT_TARGET_HANDLE,
+    type: edge.type ?? 'smoothstep',
+    markerEnd: {
+      type: MarkerType.ArrowClosed,
+      color: relationStyle.color,
+    },
+    animated: Boolean(edge.animated || relationStyle.animated),
+    class: `creative-edge creative-edge--${relationType}`,
+    style: {
+      stroke: relationStyle.color,
+    },
+    labelStyle: {
+      fill: relationStyle.color,
+      fontWeight: 700,
+    },
+    labelBgStyle: {
+      fill: relationStyle.labelBg,
+      stroke: relationStyle.color,
+    },
+    interactionWidth: 18,
     data: {
       label,
       relationType,
@@ -109,8 +155,6 @@ function getGraphSnapshot(): CreativeGraphSnapshot {
       id: node.id,
       type: node.type,
       position: { x: node.position.x, y: node.position.y },
-      sourcePosition: node.sourcePosition,
-      targetPosition: node.targetPosition,
       data: {
         title: node.data.title,
         content: node.data.content,
@@ -210,8 +254,102 @@ function handleClearCanvas() {
   emitGraphChanged()
 }
 
-function handleAutoLayoutPlaceholder() {
-  window.alert('自动布局将在后续 PoC 迭代中接入。')
+function buildLayoutLayers() {
+  const nodeIds = new Set(nodes.value.map((node) => node.id))
+  const outgoing = new Map<string, string[]>()
+  const incomingCount = new Map<string, number>()
+  const layerByNodeId = new Map<string, number>()
+
+  for (const node of nodes.value) {
+    outgoing.set(node.id, [])
+    incomingCount.set(node.id, 0)
+  }
+
+  for (const edge of edges.value) {
+    if (!nodeIds.has(edge.source) || !nodeIds.has(edge.target)) {
+      continue
+    }
+
+    outgoing.get(edge.source)?.push(edge.target)
+    incomingCount.set(edge.target, (incomingCount.get(edge.target) ?? 0) + 1)
+  }
+
+  const queue = nodes.value
+    .filter((node) => (incomingCount.get(node.id) ?? 0) === 0)
+    .map((node) => node.id)
+
+  if (queue.length === 0 && nodes.value[0]) {
+    queue.push(nodes.value[0].id)
+  }
+
+  const visited = new Set<string>()
+
+  for (const nodeId of queue) {
+    layerByNodeId.set(nodeId, 0)
+    visited.add(nodeId)
+  }
+
+  for (let cursor = 0; cursor < queue.length; cursor += 1) {
+    const nodeId = queue[cursor]
+    const currentLayer = layerByNodeId.get(nodeId) ?? 0
+
+    for (const targetId of outgoing.get(nodeId) ?? []) {
+      if (!visited.has(targetId)) {
+        layerByNodeId.set(targetId, currentLayer + 1)
+        visited.add(targetId)
+        queue.push(targetId)
+      }
+    }
+  }
+
+  const fallbackLayer = Math.max(0, ...layerByNodeId.values()) + 1
+
+  for (const node of nodes.value) {
+    if (!layerByNodeId.has(node.id)) {
+      layerByNodeId.set(node.id, fallbackLayer)
+    }
+  }
+
+  const layers = new Map<number, CreativeFlowNode[]>()
+
+  for (const node of nodes.value) {
+    const layer = layerByNodeId.get(node.id) ?? 0
+    const layerNodes = layers.get(layer) ?? []
+
+    layerNodes.push(node)
+    layers.set(layer, layerNodes)
+  }
+
+  return layers
+}
+
+function handleAutoLayout() {
+  if (nodes.value.length === 0) {
+    return
+  }
+
+  const layers = buildLayoutLayers()
+
+  nodes.value = nodes.value.map((node) => {
+    const layer = [...layers.entries()].find(([, layerNodes]) => layerNodes.some((item) => item.id === node.id))?.[0] ?? 0
+    const layerNodes = layers.get(layer) ?? []
+    const row = layerNodes.findIndex((item) => item.id === node.id)
+
+    return {
+      ...node,
+      sourcePosition: undefined,
+      targetPosition: undefined,
+      position: {
+        x: LAYOUT_START_X + layer * LAYOUT_COLUMN_GAP,
+        y: LAYOUT_START_Y + Math.max(row, 0) * LAYOUT_ROW_GAP,
+      },
+    }
+  })
+
+  emitGraphChanged()
+  void nextTick(() => {
+    void fitView({ padding: 0.24, duration: 300 })
+  })
 }
 
 /**
@@ -289,24 +427,26 @@ function handleConnect(connection: Connection) {
   }
 
   addEdgeCount.value += 1
+  const relationType = selectedRelationType.value
+  const label = getRelationLabel(relationType)
 
   const edge: CreativeFlowEdge = {
     id: `edge-${connection.source}-${connection.target}-${Date.now()}-${addEdgeCount.value}`,
     source: connection.source,
     target: connection.target,
-    label: DEFAULT_EDGE_LABEL,
-    sourceHandle: connection.sourceHandle,
-    targetHandle: connection.targetHandle,
+    label,
+    sourceHandle: connection.sourceHandle ?? DEFAULT_SOURCE_HANDLE,
+    targetHandle: connection.targetHandle ?? DEFAULT_TARGET_HANDLE,
     type: 'smoothstep',
-    markerEnd: MarkerType.ArrowClosed,
     data: {
-      label: DEFAULT_EDGE_LABEL,
-      relationType: DEFAULT_RELATION_TYPE,
+      label,
+      relationType,
     },
   }
 
-  edges.value = addEdge(edge as Edge, edges.value as Edge[]) as CreativeFlowEdge[]
+  edges.value = addEdge(normalizeEdge(edge) as Edge, edges.value as Edge[]) as CreativeFlowEdge[]
   emitGraphChanged()
+  emit('edgeSelected', edge.id)
 }
 
 function handleNodeDragStop() {
@@ -348,21 +488,16 @@ watch(
     <!-- 画布工具栏：只处理画布相关操作 -->
     <header class="canvas-toolbar">
       <div class="mode-actions" aria-label="画布模式">
-        <button
-          type="button"
-          :class="{ active: interactionMode === 'select' }"
-          @click="interactionMode = 'select'"
-        >
-          选择
-        </button>
-        <button
-          type="button"
-          :class="{ active: interactionMode === 'connect' }"
-          @click="interactionMode = 'connect'"
-        >
-          连线
-        </button>
-        <button type="button" @click="handleAutoLayoutPlaceholder">自动布局占位</button>
+        <span class="interaction-hint">点击节点选择，拖拽端点连线</span>
+        <label class="relation-picker" for="new-edge-relation">
+          新连线关系
+          <select id="new-edge-relation" v-model="selectedRelationType">
+            <option v-for="option in RELATION_TYPE_OPTIONS" :key="option.value" :value="option.value">
+              {{ option.label }}
+            </option>
+          </select>
+        </label>
+        <button type="button" @click="handleAutoLayout">自动布局</button>
       </div>
 
       <div class="canvas-actions" aria-label="画布工具">
@@ -383,7 +518,12 @@ watch(
         :default-viewport="{ x: 40, y: 36, zoom: 0.82 }"
         :min-zoom="0.35"
         :max-zoom="1.6"
-        :nodes-connectable="interactionMode === 'connect'"
+        :nodes-connectable="true"
+        :nodes-draggable="true"
+        :elements-selectable="true"
+        :connection-mode="ConnectionMode.Loose"
+        :connect-on-click="false"
+        :connection-radius="24"
         :fit-view-on-init="true"
         @connect="handleConnect"
         @node-click="handleNodeClick"
@@ -446,7 +586,8 @@ watch(
 }
 
 .mode-actions button,
-.canvas-actions button {
+.canvas-actions button,
+.relation-picker select {
   min-height: 30px;
   padding: 0 12px;
   border: 1px solid var(--border);
@@ -456,12 +597,25 @@ watch(
   cursor: pointer;
 }
 
-.mode-actions button.active,
 .mode-actions button:hover,
-.canvas-actions button:hover {
+.canvas-actions button:hover,
+.relation-picker select:hover {
   border-color: var(--accent-border);
   background: var(--accent-soft);
   color: var(--accent);
+}
+
+.interaction-hint {
+  color: var(--muted);
+  font-size: 0.84rem;
+}
+
+.relation-picker {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  color: var(--muted);
+  font-size: 0.84rem;
 }
 
 .canvas-actions button:first-child,
@@ -498,6 +652,10 @@ watch(
 
 :deep(.vue-flow__edge.animated .vue-flow__edge-path) {
   stroke: #2764c5;
+}
+
+:deep(.creative-edge.vue-flow__edge.animated .vue-flow__edge-path) {
+  stroke-dasharray: 8 6;
 }
 
 :deep(.vue-flow__edge-text) {

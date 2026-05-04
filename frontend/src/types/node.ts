@@ -1,3 +1,4 @@
+import type { CSSProperties } from 'vue'
 import type { Edge, EdgeMarkerType, Position } from '@vue-flow/core'
 
 /** 当前画布支持的节点类型，需要与后端 DTO、节点工厂和 Vue Flow 插槽名保持一致。 */
@@ -74,6 +75,11 @@ export interface CreativeFlowEdge {
   type?: string
   animated?: boolean
   markerEnd?: EdgeMarkerType
+  class?: string
+  style?: CSSProperties
+  labelStyle?: CSSProperties
+  labelBgStyle?: CSSProperties
+  interactionWidth?: number
   data: CreativeEdgeData
 }
 
