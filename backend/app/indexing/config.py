@@ -17,9 +17,6 @@ DEFAULT_NODE_STATUS = "draft"
 
 def _load_backend_env() -> None:
     """加载 backend/.env 中的本地配置。
-
-    PoC 阶段不额外引入 python-dotenv；这里只支持常见的 KEY=VALUE 写法。
-    已存在的系统环境变量优先级更高，便于部署或命令行临时覆盖。
     """
     env_path = BACKEND_ROOT / ".env"
 
@@ -65,7 +62,7 @@ def _get_bool_env(name: str, default: bool) -> bool:
 
 _load_backend_env()
 
-# DashScope 兼容 OpenAI SDK，因此保留 base_url / api key / model / dimension 给 .env 或系统环境变量控制。
+# 加载向量模型配置
 EMBEDDING_BASE_URL = os.getenv(
     "OC_EMBEDDING_BASE_URL",
     os.getenv("DASHSCOPE_BASE_URL", "https://dashscope.aliyuncs.com/compatible-mode/v1"),

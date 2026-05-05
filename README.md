@@ -94,6 +94,8 @@ npm run dev:desktop
 
 启动桌面端联调流程，由 `scripts/dev-desktop.mjs` 协调前端、后端和 Electron 开发进程。
 
+**推荐**：先在两个终端分别执行 `npm run frontend:dev` 与 `npm run backend:dev`（后端需已激活虚拟环境），确认 Vite 与 FastAPI 就绪后再运行 `npm run dev:desktop`。脚本会复用已在运行的前后端，避免重复启动；若未手动启动，也会自动拉起前后端后再打开 Electron。
+
 ```powershell
 npm run build:desktop
 ```
