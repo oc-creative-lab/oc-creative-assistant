@@ -15,7 +15,7 @@ from app.indexing.config import INDEXING_DEBUG_LOG
 from app.indexing.document_loader import node_to_document
 from app.indexing.vector_store import (
     delete_nodes,
-    get_chroma_collection,
+    get_all_chroma_collections,
     get_embedding_signature,
     upsert_node,
 )
@@ -61,33 +61,36 @@ def _base_result(status: str, message: str, expected_nodes: int = 0, error: str 
     )
 
 
-def _read_index_state(collection: Any, project_id: str) -> dict[str, dict[str, str]]:
-    """读取当前项目已写入 ChromaDB 的 fingerprint。
+def _read_index_state(project_id: str) -> dict[str, dict[str, str]]:
+    """读取所有 collection 中当前项目已写入的 fingerprint。
+
+    跨集合合并到单一 dict, 因为同一 node_id 在 Plan A 下永远只属于其中一个集合
+    (upsert_node 用 self-heal 保证), 不会有重复 key。
 
     Args:
-        collection: ChromaDB collection 对象。
         project_id: 需要读取索引状态的项目 ID。
 
     Returns:
-        原始 node_id 到 fingerprint 的映射。
+        node_id 到 fingerprint / embedding_signature 的映射。
     """
-    records = collection.get(where={"project_id": project_id}, include=["metadatas"])
     index_state: dict[str, dict[str, str]] = {}
 
-    for metadata in records.get("metadatas", []) or []:
-        if not isinstance(metadata, dict):
-            continue
+    for collection in get_all_chroma_collections().values():
+        records = collection.get(where={"project_id": project_id}, include=["metadatas"])
 
-        node_id = metadata.get("node_id")
-        fingerprint = metadata.get("fingerprint")
-        embedding_signature = metadata.get("embedding_signature")
+        for metadata in records.get("metadatas", []) or []:
+            if not isinstance(metadata, dict):
+                continue
 
-        if isinstance(node_id, str) and isinstance(fingerprint, str):
-            # embedding_signature 用于感知 base_url / model / dimension 变化，避免沿用旧模型写出的向量。
-            index_state[node_id] = {
-                "fingerprint": fingerprint,
-                "embedding_signature": embedding_signature if isinstance(embedding_signature, str) else "",
-            }
+            node_id = metadata.get("node_id")
+            fingerprint = metadata.get("fingerprint")
+            embedding_signature = metadata.get("embedding_signature")
+
+            if isinstance(node_id, str) and isinstance(fingerprint, str):
+                index_state[node_id] = {
+                    "fingerprint": fingerprint,
+                    "embedding_signature": embedding_signature if isinstance(embedding_signature, str) else "",
+                }
 
     return index_state
 
@@ -109,18 +112,17 @@ def build_node_fingerprint(node: NodeORM) -> str:
     return hashlib.sha256(document.encode("utf-8")).hexdigest()
 
 
-def verify_project_index(project_id: str, nodes: list[NodeORM], collection: Any | None = None) -> IndexingSyncResult:
-    """检查当前项目节点是否都已经写入当前 embedding 配置对应的向量。
+def verify_project_index(project_id: str, nodes: list[NodeORM]) -> IndexingSyncResult:
+    """检查当前项目节点是否都已经写入对应 collection。
 
     Args:
         project_id: 当前项目 ID。
         nodes: SQLite 提交后的最新节点快照。
-        collection: 可选 ChromaDB collection，复用调用方已有连接。
+
     Returns:
         描述已索引数量、缺失节点和当前 embedding 配置的同步结果。
     """
-    active_collection = collection or get_chroma_collection()
-    index_state = _read_index_state(active_collection, project_id)
+    index_state = _read_index_state(project_id)
     embedding_signature = get_embedding_signature()
     missing_node_ids: list[str] = []
 
@@ -131,7 +133,6 @@ def verify_project_index(project_id: str, nodes: list[NodeORM], collection: Any 
             indexed_node.get("fingerprint") != build_node_fingerprint(node)
             or indexed_node.get("embedding_signature") != embedding_signature
         ):
-            # fingerprint 或 embedding 配置签名不一致，说明该节点还没有可用于当前语义检索的向量。
             missing_node_ids.append(node.id)
 
     result = _base_result(
@@ -159,8 +160,7 @@ def sync_project_index_incremental(
         old_nodes: 保存前的项目节点快照。
         new_nodes: SQLite 提交后的最新项目节点快照。
     """
-    collection = get_chroma_collection()
-    index_state = _read_index_state(collection, project_id)
+    index_state = _read_index_state(project_id)
     embedding_signature = get_embedding_signature()
     old_fingerprints = {node.id: build_node_fingerprint(node) for node in old_nodes}
     new_fingerprints = {node.id: build_node_fingerprint(node) for node in new_nodes}
@@ -172,7 +172,7 @@ def sync_project_index_incremental(
 
     deleted_node_ids = sorted(set(old_fingerprints) - set(new_fingerprints))
     # 整图保存会重写 SQLite 行，但 ChromaDB 只删除真正从 payload 消失的节点。
-    delete_nodes(collection, project_id, deleted_node_ids)
+    delete_nodes(project_id, deleted_node_ids)
 
     if deleted_node_ids:
         _log(f"delete stale vectors node_ids={deleted_node_ids}")
@@ -207,9 +207,9 @@ def sync_project_index_incremental(
             continue
 
         _log(f"upsert node_id={node.id} reasons={','.join(update_reasons) or 'unknown'}")
-        upsert_node(collection, node, new_fingerprint)
+        upsert_node(node, new_fingerprint)
 
-    result = verify_project_index(project_id, new_nodes, collection)
+    result = verify_project_index(project_id, new_nodes)
     _log(
         "finish project sync "
         f"status={result.status} indexed={result.indexed_nodes}/{result.expected_nodes} "
@@ -226,11 +226,10 @@ def sync_node_index(node: NodeORM, old_fingerprint: str | None = None) -> Indexi
         old_fingerprint: 更新前的检索文档指纹；相同则可跳过写入。
     """
     new_fingerprint = build_node_fingerprint(node)
-    collection = get_chroma_collection()
     _log(f"start node sync project_id={node.project_id} node_id={node.id}")
 
     if old_fingerprint == new_fingerprint:
-        indexed_node = _read_index_state(collection, node.project_id).get(node.id, {})
+        indexed_node = _read_index_state(node.project_id).get(node.id, {})
         indexed_fingerprint = indexed_node.get("fingerprint")
         indexed_embedding_signature = indexed_node.get("embedding_signature")
 
@@ -246,8 +245,8 @@ def sync_node_index(node: NodeORM, old_fingerprint: str | None = None) -> Indexi
     else:
         _log(f"upsert node_id={node.id} reason=document_changed")
 
-    upsert_node(collection, node, new_fingerprint)
-    result = verify_project_index(node.project_id, [node], collection)
+    upsert_node(node, new_fingerprint)
+    result = verify_project_index(node.project_id, [node])
     _log(f"finish node sync node_id={node.id} status={result.status} indexed={result.indexed_nodes}/1")
     return result
 

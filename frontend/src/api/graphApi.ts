@@ -66,11 +66,12 @@ export interface SaveGraphDto {
   edges: GraphEdgeDto[]
 }
 
-/** RAG 上下文预览请求体；当前只支持 inspiration 调试入口。 */
+/** RAG / Agent 请求体; inspiration / research 用 node_id, structure 用 node_ids。 */
 export interface RagContextRequestDto {
-  node_id: string
+  node_id?: string | null
+  node_ids?: string[]
   query: string
-  agent_type: 'inspiration'
+  agent_type: 'inspiration' | 'research' | 'structure'
   top_k: number
 }
 
@@ -112,13 +113,80 @@ export interface RagMergedContextItemDto {
   content: string
 }
 
-/** RAG 上下文预览接口响应。 */
+/** Inspiration / Structure Agent 建议创建的节点摘要。 */
+export interface SuggestedNodeDto {
+  nodeType: string
+  title: string
+  reason: string
+}
+
+/** Inspiration Agent 结构化输出。 */
+export interface InspirationOutputDto {
+  summary: string
+  questions: string[]
+  missing_parts: string[]
+  suggested_nodes: SuggestedNodeDto[]
+  boundary_notice: string
+}
+
+/** Research Agent 输出的单条参考资料。 */
+export interface ResearchReferenceDto {
+  title: string
+  source: string
+  snippet: string
+  relevance: string
+}
+
+/** Research Agent 结构化输出。 */
+export interface ResearchOutputDto {
+  summary: string
+  references: ResearchReferenceDto[]
+  suggested_tags: string[]
+  boundary_notice: string
+}
+
+/** Structure Agent 整理出的角色卡。 */
+export interface CharacterCardDto {
+  name: string
+  one_liner: string
+  motivation: string
+  key_relationships: string[]
+}
+
+/** Structure Agent 输出的关系图三元组。 */
+export interface RelationshipDto {
+  source: string
+  relation: string
+  target: string
+}
+
+/** Structure Agent 输出的剧情节拍。 */
+export interface PlotBeatDto {
+  order: number
+  title: string
+  involved_characters: string[]
+  summary: string
+}
+
+/** Structure Agent 结构化输出。 */
+export interface StructureOutputDto {
+  summary: string
+  character_cards: CharacterCardDto[]
+  relationship_graph: RelationshipDto[]
+  plot_outline: PlotBeatDto[]
+  boundary_notice: string
+}
+
+/** RAG / Agent 接口响应; 三个 *_output 字段同一时刻只有一个非空。 */
 export interface RagContextResponseDto {
   current_node: RagCurrentNodeDto
   graph_context: RagGraphContextItemDto[]
   vector_context: RagVectorContextItemDto[]
   merged_context: RagMergedContextItemDto[]
   prompt: string
+  inspiration_output: InspirationOutputDto | null
+  research_output: ResearchOutputDto | null
+  structure_output: StructureOutputDto | null
   debug: {
     query_used: string
     top_k: number

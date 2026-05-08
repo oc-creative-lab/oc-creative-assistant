@@ -3,4 +3,9 @@ uvicorn[standard]
 sqlalchemy
 pydantic
 chromadb
+python-dotenv
 openai
+langchain
+langchain-openai
+langgraph
+tiktoken

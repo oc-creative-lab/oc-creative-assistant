@@ -10,6 +10,7 @@ import CanvasWorkspace from '../canvas/CanvasWorkspace.vue'
 import ProjectSidebar from './ProjectSidebar.vue'
 import StatusBar from './StatusBar.vue'
 import TopToolbar from './TopToolbar.vue'
+import { createCreativeNode } from '../../utils/nodeFactory'
 
 const CANVAS_AUTO_SAVE_DELAY_MS = 1000
 const FORM_AUTO_SAVE_DELAY_MS = 3000
@@ -30,6 +31,7 @@ const graphSnapshot = ref<CreativeGraphSnapshot>({ nodes: [], edges: [] })
 const graphVersion = ref(0)
 const selectedNodeId = ref('')
 const selectedEdgeId = ref('')
+const selectedNodeIds = ref<string[]>([])
 const isGraphReady = ref(false)
 const isSaving = ref(false)
 const saveState = ref('正在从本地后端加载...')
@@ -312,6 +314,7 @@ function handleNodeDeleted(nodeId: string) {
 
   selectedNodeId.value = ''
   selectedEdgeId.value = ''
+  selectedNodeIds.value = selectedNodeIds.value.filter((id) => id !== nodeId)
   setGraphSnapshot(nextSnapshot, true)
   scheduleAutoSave(QUICK_AUTO_SAVE_DELAY_MS)
 }
@@ -332,6 +335,64 @@ function handleEdgeDeleted(edgeId: string) {
 
   selectedEdgeId.value = ''
   setGraphSnapshot(nextSnapshot, true)
+  scheduleAutoSave(QUICK_AUTO_SAVE_DELAY_MS)
+}
+
+/**
+ * 把节点加入 Structure Agent 的选区。
+ *
+ * 选区是 Agent 调用层面的概念, 与画布的单选高亮独立; 不影响 Vue Flow 内部状态。
+ */
+ function handleSelectionAdded(nodeId: string) {
+  if (!selectedNodeIds.value.includes(nodeId)) {
+    selectedNodeIds.value = [...selectedNodeIds.value, nodeId]
+  }
+}
+
+function handleSelectionRemoved(nodeId: string) {
+  selectedNodeIds.value = selectedNodeIds.value.filter((id) => id !== nodeId)
+}
+
+function handleSelectionCleared() {
+  selectedNodeIds.value = []
+}
+
+/**
+ * 接收 Agent 卡片中"+ 添加到画布"按钮发出的节点创建意图。
+ *
+ * 复用整图保存通道, 而不是调单节点 POST 接口, 这样能确保 SQLite 与向量索引一次性同步。
+ */
+function handleNodeCreated(payload: {
+  nodeType: CreativeNodeType
+  title: string
+  content: string
+  tags: string[]
+}) {
+  /* 选取已有节点最右下角再向右下偏移, 避免新节点直接叠在已有节点上方。 */
+  const offsetX = 320
+  const offsetY = 60
+  const baseX = graphSnapshot.value.nodes.reduce((max, node) => Math.max(max, node.position.x), 0)
+  const baseY = graphSnapshot.value.nodes.reduce((max, node) => Math.max(max, node.position.y), 0)
+
+  const newNode: CreativeFlowNode = createCreativeNode(payload.nodeType, graphSnapshot.value.nodes.length + 1, {
+    x: baseX + offsetX,
+    y: baseY + offsetY,
+  })
+  newNode.data = {
+    ...newNode.data,
+    title: payload.title,
+    content: payload.content,
+    tags: payload.tags,
+  }
+
+  const nextSnapshot: CreativeGraphSnapshot = {
+    nodes: [...graphSnapshot.value.nodes, newNode],
+    edges: graphSnapshot.value.edges,
+  }
+
+  setGraphSnapshot(nextSnapshot, true)
+  selectedNodeId.value = newNode.id
+  selectedEdgeId.value = ''
   scheduleAutoSave(QUICK_AUTO_SAVE_DELAY_MS)
 }
 
@@ -445,10 +506,15 @@ onBeforeUnmount(() => {
         :selected-node="selectedNode"
         :selected-edge="selectedEdge"
         :nodes="graphNodes"
+        :selected-node-ids="selectedNodeIds"
         @node-updated="handleNodeUpdated"
         @node-deleted="handleNodeDeleted"
         @edge-updated="handleEdgeUpdated"
         @edge-deleted="handleEdgeDeleted"
+        @node-created="handleNodeCreated"
+        @selection-added="handleSelectionAdded"
+        @selection-removed="handleSelectionRemoved"
+        @selection-cleared="handleSelectionCleared"
       />
     </main>
 

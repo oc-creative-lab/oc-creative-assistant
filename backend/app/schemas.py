@@ -1,10 +1,15 @@
 """后端 API 的 Pydantic DTO。
 
-字段命名以现有前端契约为准，避免结构迁移改变 HTTP 请求和响应格式。
+字段命名以现有前端契约为准, 避免结构迁移改变 HTTP 请求和响应格式。
 数据库内部字段和 API 字段的转换由服务层完成。
+Agent 结构化输出 schema 来自 app.agents.schemas, 在响应里直接复用。
 """
 
+from typing import Literal
+
 from pydantic import BaseModel, Field
+
+from app.agents.schemas import InspirationOutput, ResearchOutput, StructureOutput
 
 
 class ProjectPayload(BaseModel):
@@ -111,14 +116,16 @@ class UpdateNodeRequest(BaseModel):
 
 
 class RagContextRequest(BaseModel):
-    """RAG 上下文预览请求。
+    """RAG / Agent 请求。
 
-    当前接口只构造上下文和 prompt，不调用任何 LLM。
+    inspiration / research 走 node_id 单节点入口;
+    structure 走 node_ids 多节点入口, 当 agent_type=structure 时 node_id 可省略。
     """
 
-    node_id: str
+    node_id: str | None = None
+    node_ids: list[str] = Field(default_factory=list)
     query: str = ""
-    agent_type: str = "inspiration"
+    agent_type: Literal["inspiration", "research", "structure"] = "inspiration"
     top_k: int = 5
 
 
@@ -202,11 +209,18 @@ class MemorySearchResponse(BaseModel):
 
 
 class RagContextResponse(BaseModel):
-    """RAG 上下文接口的完整响应。"""
+    """RAG / Agent 接口完整响应。
+
+    同一时刻只有一个 *_output 字段被填充, 由 agent_type 决定; 其它字段为 None。
+    与重构前相比移除 answer 字符串字段, 改为类型安全的结构化输出。
+    """
 
     current_node: RagCurrentNodePayload
     graph_context: list[RagGraphContextItem]
     vector_context: list[RagVectorContextItem]
     merged_context: list[RagMergedContextItem]
     prompt: str
+    inspiration_output: InspirationOutput | None = None
+    research_output: ResearchOutput | None = None
+    structure_output: StructureOutput | None = None
     debug: RagDebugPayload

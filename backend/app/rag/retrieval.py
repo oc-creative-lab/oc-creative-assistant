@@ -9,7 +9,11 @@ from __future__ import annotations
 from app.db.models import EdgeORM, NodeORM
 from app.indexing.config import DEFAULT_RELATION_LABEL, DEFAULT_RELATION_TYPE
 from app.indexing.document_loader import node_to_vector_item
-from app.indexing.vector_store import get_chroma_collection, query_collection
+from app.indexing.vector_store import (
+    get_all_chroma_collections,
+    get_chroma_collection_for_node,
+    query_collection,
+)
 from app.schemas import RagGraphContextItem, RagMergedContextItem, RagVectorContextItem
 
 
@@ -62,76 +66,6 @@ def _build_graph_context(
     return context
 
 
-def _build_vector_context(
-    project_id: str,
-    current_node_id: str,
-    nodes: list[NodeORM],
-    query: str,
-    top_k: int,
-) -> tuple[list[RagVectorContextItem], str, str | None]:
-    """构建向量检索上下文。
-
-    Args:
-        project_id: 当前项目 ID。
-        current_node_id: 当前节点 ID，用于排除自身。
-        nodes: 当前项目完整节点快照。
-        query: 检索问题。
-        top_k: 最多返回的向量上下文数量。
-
-    Returns:
-        相似节点列表、实际使用的向量库标识和可选错误信息。
-    """
-    if len(nodes) <= 1:
-        return [], "chroma", None
-
-    try:
-        return _query_chroma_context(project_id, current_node_id, nodes, query, top_k)
-    except Exception as error:  # noqa: BLE001
-        # 向量检索失败时直接返回空列表，并把错误透出到 debug.vector_error，避免假装语义检索可用。
-        return [], "chroma_unavailable", str(error)
-
-
-def _query_chroma_context(
-    project_id: str,
-    current_node_id: str,
-    nodes: list[NodeORM],
-    query: str,
-    top_k: int,
-) -> tuple[list[RagVectorContextItem], str, str | None]:
-    """使用本地 ChromaDB 做持久化向量检索。
-
-    RAG 请求阶段只查询，不写索引；索引写入由保存 graph 后的 `app.indexing.sync` 负责。
-    """
-    collection = get_chroma_collection()
-    result_ids, metadatas, distances = query_collection(collection, project_id, query, top_k, len(nodes))
-    node_by_id = {node.id: node for node in nodes}
-    context: list[RagVectorContextItem] = []
-
-    for _chroma_id, metadata, distance in zip(result_ids, metadatas, distances, strict=False):
-        node_id = metadata.get("node_id") if isinstance(metadata, dict) else None
-
-        if not isinstance(node_id, str):
-            continue
-
-        if node_id == current_node_id:
-            # 当前节点本身通常最相似，但注入 prompt 没有增量信息，所以跳过。
-            continue
-
-        node = node_by_id.get(node_id)
-
-        if node is None:
-            # ChromaDB 中可能残留旧 id；RAG 响应以当前数据库快照为准。
-            continue
-
-        # ChromaDB cosine distance 越小越相似，这里转换为前端更直观的 0-1 score。
-        context.append(node_to_vector_item(node, score=max(0.0, 1.0 - float(distance))))
-
-        if len(context) >= top_k:
-            break
-
-    return context, "chroma", None
-
-
 def build_project_vector_context(
     project_id: str,
     nodes: list[NodeORM],
@@ -169,30 +103,53 @@ def _query_project_chroma_context(
     top_k: int,
     node_type: str | None = None,
 ) -> tuple[list[RagVectorContextItem], str, str | None]:
-    """使用本地 ChromaDB 做项目级 Lore Memory 检索。"""
-    collection = get_chroma_collection()
-    result_ids, metadatas, distances = query_collection(collection, project_id, query, top_k, len(nodes), node_type)
+    """跨 collection 做项目级 Lore Memory 检索。
+
+    指定 node_type 时只查对应 collection; 否则三集合都查并按 score 取 top_k。
+    """
     node_by_id = {node.id: node for node in nodes}
-    context: list[RagVectorContextItem] = []
 
-    for _chroma_id, metadata, distance in zip(result_ids, metadatas, distances, strict=False):
-        node_id = metadata.get("node_id") if isinstance(metadata, dict) else None
+    if node_type is not None:
+        collection = get_chroma_collection_for_node(node_type)
+        ids, metadatas, distances = query_collection(collection, project_id, query, top_k)
+        return _hits_to_items(ids, metadatas, distances, node_by_id, top_k), "chroma", None
 
-        if not isinstance(node_id, str):
+    # 不指定类型时合并三集合结果, 按 score 取 top_k
+    all_items: list[RagVectorContextItem] = []
+    for collection in get_all_chroma_collections().values():
+        ids, metadatas, distances = query_collection(collection, project_id, query, top_k)
+        all_items.extend(_hits_to_items(ids, metadatas, distances, node_by_id, top_k))
+
+    all_items.sort(key=lambda item: item.score, reverse=True)
+    return all_items[:top_k], "chroma", None
+
+
+def _hits_to_items(
+    ids: list[str],
+    metadatas: list[dict],
+    distances: list[float],
+    node_by_id: dict[str, NodeORM],
+    top_k: int,
+) -> list[RagVectorContextItem]:
+    """把 ChromaDB 命中转换为 RagVectorContextItem, 兜底处理失效 metadata。"""
+    items: list[RagVectorContextItem] = []
+
+    for _, metadata, distance in zip(ids, metadatas, distances, strict=False):
+        target_id = metadata.get("node_id") if isinstance(metadata, dict) else None
+
+        if not isinstance(target_id, str):
             continue
 
-        node = node_by_id.get(node_id)
-
-        if node is None:
+        target_node = node_by_id.get(target_id)
+        if target_node is None:
             continue
 
-        context.append(node_to_vector_item(node, score=max(0.0, 1.0 - float(distance))))
+        items.append(node_to_vector_item(target_node, score=max(0.0, 1.0 - float(distance))))
 
-        if len(context) >= top_k:
+        if len(items) >= top_k:
             break
 
-    return context, "chroma", None
-
+    return items
 
 def _merge_context(
     graph_context: list[RagGraphContextItem],
