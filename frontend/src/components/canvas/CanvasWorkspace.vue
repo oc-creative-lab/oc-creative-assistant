@@ -42,12 +42,15 @@ const relationEdgeStyles: Record<CreativeRelationType, { color: string; labelBg:
  * 本组件负责 Vue Flow 运行时交互、节点渲染和连线创建；可持久化的 graph 快照
  * 通过事件交给 AppShell。组件不会直接访问后端，也不维护项目级保存状态。
  */
-const props = defineProps<{
+ const props = defineProps<{
   selectedNodeId: string
   initialNodes: CreativeFlowNode[]
   initialEdges: CreativeFlowEdge[]
   graphVersion: number
   createNodeRequest: { type: CreativeNodeType; nonce: number } | null
+  /* 由 AppShell 在 staging 接受后做差集计算的"刚出现"的 ID; 跑完动画后会清空 */
+  highlightedNodeIds: string[]
+  highlightedEdgeIds: string[]
 }>()
 
 const emit = defineEmits<{
@@ -88,9 +91,14 @@ onUnmounted(() => {
  * Returns:
  *   带有 isActive 展示状态的节点副本。
  */
-function cloneNode(node: CreativeFlowNode, selectedNodeId = props.selectedNodeId): CreativeFlowNode {
+ function cloneNode(
+  node: CreativeFlowNode,
+  selectedNodeId = props.selectedNodeId,
+  highlighted: Set<string> = new Set(props.highlightedNodeIds),
+): CreativeFlowNode {
   return {
     ...node,
+    class: highlighted.has(node.id) ? 'is-highlighted' : '',
     data: { ...node.data, isActive: node.id === selectedNodeId },
   }
 }
@@ -112,10 +120,18 @@ function getRelationStyle(relationType: CreativeRelationType) {
  * Returns:
  *   可稳定渲染并可保存的连线对象。
  */
-function normalizeEdge(edge: CreativeFlowEdge): CreativeFlowEdge {
+ function normalizeEdge(
+  edge: CreativeFlowEdge,
+  highlighted: Set<string> = new Set(props.highlightedEdgeIds),
+): CreativeFlowEdge {
   const relationType = edge.data?.relationType ?? DEFAULT_RELATION_TYPE
   const label = edge.data?.label || edge.label || getRelationLabel(relationType)
   const relationStyle = getRelationStyle(relationType)
+  const classNames = [
+    'creative-edge',
+    `creative-edge--${relationType}`,
+    highlighted.has(edge.id) ? 'is-highlighted' : '',
+  ].filter(Boolean)
 
   return {
     ...edge,
@@ -128,7 +144,7 @@ function normalizeEdge(edge: CreativeFlowEdge): CreativeFlowEdge {
       color: relationStyle.color,
     },
     animated: Boolean(edge.animated || relationStyle.animated),
-    class: `creative-edge creative-edge--${relationType}`,
+    class: classNames.join(' '),
     style: {
       stroke: relationStyle.color,
     },
@@ -154,7 +170,7 @@ const addNodeCount = ref(0)
 const addEdgeCount = ref(0)
 
 /* 固定 flow id 确保工具栏操作绑定到当前画布实例，而不是页面上其他 Vue Flow。 */
-const { fitView, getViewport, setCenter, zoomIn, zoomOut } = useVueFlow({ id: FLOW_ID })
+const { fitView, getViewport, setCenter, zoomIn, zoomOut, findEdge } = useVueFlow({ id: FLOW_ID })
 
 /**
  * 构造可保存的 graph 快照。
@@ -488,6 +504,28 @@ watch(
 )
 
 watch(
+  () => [props.highlightedNodeIds.join(','), props.highlightedEdgeIds.join(',')],
+  () => {
+    const highlightedNodes = new Set(props.highlightedNodeIds)
+    const highlightedEdges = new Set(props.highlightedEdgeIds)
+
+    nodes.value = nodes.value.map((node) => ({
+      ...node,
+      class: highlightedNodes.has(node.id) ? 'is-highlighted' : '',
+    }))
+
+    edges.value = edges.value.map((edge) => normalizeEdge(edge, highlightedEdges))
+
+    edges.value.forEach((edge) => {
+      const internal = findEdge(edge.id)
+      if (internal) {
+        internal.class = edge.class
+      }
+    })
+  },
+)
+
+watch(
   () => props.createNodeRequest?.nonce,
   () => {
     if (!props.createNodeRequest) {
@@ -790,6 +828,39 @@ watch(
   height: 8px;
   border: 2px solid #ffffff;
   background: #667085;
+}
+
+:deep(.creative-edge.is-highlighted .vue-flow__edge-path),
+:deep(.vue-flow__edge.is-highlighted .vue-flow__edge-path) {
+  animation: edgeHighlightPulse 1.4s ease-in-out 2 !important;
+}
+
+@keyframes edgeHighlightPulse {
+  0%, 100% {
+    filter: drop-shadow(0 0 0 rgba(245, 158, 11, 0));
+  }
+  35%, 65% {
+    stroke: #f59e0b !important;
+    stroke-width: 6 !important;
+    filter:
+      drop-shadow(0 0 8px rgba(245, 158, 11, 1))
+      drop-shadow(0 0 18px rgba(245, 158, 11, 0.55));
+  }
+}
+
+:deep(.creative-edge.is-highlighted .vue-flow__edge-textbg),
+:deep(.vue-flow__edge.is-highlighted .vue-flow__edge-textbg) {
+  animation: edgeLabelBgHighlightPulse 1.4s ease-in-out 2;
+}
+
+@keyframes edgeLabelBgHighlightPulse {
+  0%, 100% {
+  }
+  50% {
+    fill: #fef3c7 !important;
+    stroke: #f59e0b !important;
+    stroke-width: 2;
+  }
 }
 
 @media (max-width: 640px) {

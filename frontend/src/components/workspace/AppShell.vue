@@ -7,14 +7,16 @@ import type { WorkspaceStatus } from '../../types/workspace'
 import { graphDtoToSnapshot, snapshotToSaveDto } from '../../utils/graphTransform'
 import AgentSidebar from './AgentSidebar.vue'
 import CanvasWorkspace from '../canvas/CanvasWorkspace.vue'
+import FloatingChatDock from '../chat/FloatingChatDock.vue'
 import ProjectSidebar from './ProjectSidebar.vue'
 import StatusBar from './StatusBar.vue'
 import TopToolbar from './TopToolbar.vue'
-import { createCreativeNode } from '../../utils/nodeFactory'
 
 const CANVAS_AUTO_SAVE_DELAY_MS = 1000
 const FORM_AUTO_SAVE_DELAY_MS = 3000
 const QUICK_AUTO_SAVE_DELAY_MS = 300
+const HIGHLIGHT_DURATION_MS = 2600
+
 
 /**
  * 工作区状态中枢。
@@ -31,7 +33,6 @@ const graphSnapshot = ref<CreativeGraphSnapshot>({ nodes: [], edges: [] })
 const graphVersion = ref(0)
 const selectedNodeId = ref('')
 const selectedEdgeId = ref('')
-const selectedNodeIds = ref<string[]>([])
 const isGraphReady = ref(false)
 const isSaving = ref(false)
 const saveState = ref('正在从本地后端加载...')
@@ -39,7 +40,10 @@ const indexState = ref('向量索引未检查')
 const indexingStatus = ref<IndexingStatusDto | undefined>()
 const indexingAlert = ref('')
 const createNodeRequest = ref<{ type: CreativeNodeType; nonce: number } | null>(null)
+const highlightedNodeIds = ref<string[]>([])
+const highlightedEdgeIds = ref<string[]>([])
 let autoSaveTimer: ReturnType<typeof setTimeout> | null = null
+let highlightClearTimer: ReturnType<typeof setTimeout> | null = null
 
 function simplifyIndexingError(error?: string | null) {
   if (!error) {
@@ -116,6 +120,8 @@ const selectedNode = computed(() => {
 const selectedEdge = computed(() => {
   return graphSnapshot.value.edges.find((edge) => edge.id === selectedEdgeId.value) ?? null
 })
+
+const selectedNodeIds = computed(() => (selectedNodeId.value ? [selectedNodeId.value] : []))
 
 const workspaceStatus = computed<WorkspaceStatus>(() => ({
   ...mockWorkspaceStatus,
@@ -314,7 +320,6 @@ function handleNodeDeleted(nodeId: string) {
 
   selectedNodeId.value = ''
   selectedEdgeId.value = ''
-  selectedNodeIds.value = selectedNodeIds.value.filter((id) => id !== nodeId)
   setGraphSnapshot(nextSnapshot, true)
   scheduleAutoSave(QUICK_AUTO_SAVE_DELAY_MS)
 }
@@ -335,64 +340,6 @@ function handleEdgeDeleted(edgeId: string) {
 
   selectedEdgeId.value = ''
   setGraphSnapshot(nextSnapshot, true)
-  scheduleAutoSave(QUICK_AUTO_SAVE_DELAY_MS)
-}
-
-/**
- * 把节点加入 Structure Agent 的选区。
- *
- * 选区是 Agent 调用层面的概念, 与画布的单选高亮独立; 不影响 Vue Flow 内部状态。
- */
- function handleSelectionAdded(nodeId: string) {
-  if (!selectedNodeIds.value.includes(nodeId)) {
-    selectedNodeIds.value = [...selectedNodeIds.value, nodeId]
-  }
-}
-
-function handleSelectionRemoved(nodeId: string) {
-  selectedNodeIds.value = selectedNodeIds.value.filter((id) => id !== nodeId)
-}
-
-function handleSelectionCleared() {
-  selectedNodeIds.value = []
-}
-
-/**
- * 接收 Agent 卡片中"+ 添加到画布"按钮发出的节点创建意图。
- *
- * 复用整图保存通道, 而不是调单节点 POST 接口, 这样能确保 SQLite 与向量索引一次性同步。
- */
-function handleNodeCreated(payload: {
-  nodeType: CreativeNodeType
-  title: string
-  content: string
-  tags: string[]
-}) {
-  /* 选取已有节点最右下角再向右下偏移, 避免新节点直接叠在已有节点上方。 */
-  const offsetX = 320
-  const offsetY = 60
-  const baseX = graphSnapshot.value.nodes.reduce((max, node) => Math.max(max, node.position.x), 0)
-  const baseY = graphSnapshot.value.nodes.reduce((max, node) => Math.max(max, node.position.y), 0)
-
-  const newNode: CreativeFlowNode = createCreativeNode(payload.nodeType, graphSnapshot.value.nodes.length + 1, {
-    x: baseX + offsetX,
-    y: baseY + offsetY,
-  })
-  newNode.data = {
-    ...newNode.data,
-    title: payload.title,
-    content: payload.content,
-    tags: payload.tags,
-  }
-
-  const nextSnapshot: CreativeGraphSnapshot = {
-    nodes: [...graphSnapshot.value.nodes, newNode],
-    edges: graphSnapshot.value.edges,
-  }
-
-  setGraphSnapshot(nextSnapshot, true)
-  selectedNodeId.value = newNode.id
-  selectedEdgeId.value = ''
   scheduleAutoSave(QUICK_AUTO_SAVE_DELAY_MS)
 }
 
@@ -458,6 +405,44 @@ async function handleSaveGraph() {
   await persistGraph(true)
 }
 
+async function handleGraphRefreshNeeded() {
+  /* staging 接受后, 后端已经写好新节点/新边; 此刻本地 snapshot 还停留在"接受前"。
+     如果在等待面板时用户碰过画布, autoSaveTimer 已经排上 — 必须直接丢弃,
+     绝对不能再 persistGraph(旧 snapshot), 否则新 edge 会被全量覆盖回退。
+     loadGraph 完了之后用户再动画布, 会基于新 snapshot 重新触发 auto-save。 */
+  if (autoSaveTimer) {
+    clearTimeout(autoSaveTimer)
+    autoSaveTimer = null
+  }
+
+  const prevNodeIds = new Set(graphSnapshot.value.nodes.map((node) => node.id))
+  const prevEdgeIds = new Set(graphSnapshot.value.edges.map((edge) => edge.id))
+
+  await loadGraph()
+
+  const newNodeIds = graphSnapshot.value.nodes
+    .map((node) => node.id)
+    .filter((id) => !prevNodeIds.has(id))
+  const newEdgeIds = graphSnapshot.value.edges
+    .map((edge) => edge.id)
+    .filter((id) => !prevEdgeIds.has(id))
+
+  if (newNodeIds.length === 0 && newEdgeIds.length === 0) {
+    return
+  }
+
+  highlightedNodeIds.value = newNodeIds
+  highlightedEdgeIds.value = newEdgeIds
+
+  if (highlightClearTimer) {
+    clearTimeout(highlightClearTimer)
+  }
+  highlightClearTimer = setTimeout(() => {
+    highlightedNodeIds.value = []
+    highlightedEdgeIds.value = []
+  }, HIGHLIGHT_DURATION_MS)
+}
+
 onMounted(() => {
   window.addEventListener('keydown', handleGlobalKeydown, true)
   void loadGraph()
@@ -468,6 +453,10 @@ onBeforeUnmount(() => {
 
   if (autoSaveTimer) {
     clearTimeout(autoSaveTimer)
+  }
+
+  if (highlightClearTimer) {
+    clearTimeout(highlightClearTimer)
   }
 })
 </script>
@@ -498,6 +487,8 @@ onBeforeUnmount(() => {
         :initial-edges="graphEdges"
         :graph-version="graphVersion"
         :create-node-request="createNodeRequest"
+        :highlighted-node-ids="highlightedNodeIds"
+        :highlighted-edge-ids="highlightedEdgeIds"
         @node-selected="selectNode"
         @edge-selected="selectEdge"
         @graph-changed="handleGraphChanged"
@@ -506,19 +497,21 @@ onBeforeUnmount(() => {
         :selected-node="selectedNode"
         :selected-edge="selectedEdge"
         :nodes="graphNodes"
-        :selected-node-ids="selectedNodeIds"
         @node-updated="handleNodeUpdated"
         @node-deleted="handleNodeDeleted"
         @edge-updated="handleEdgeUpdated"
         @edge-deleted="handleEdgeDeleted"
-        @node-created="handleNodeCreated"
-        @selection-added="handleSelectionAdded"
-        @selection-removed="handleSelectionRemoved"
-        @selection-cleared="handleSelectionCleared"
       />
     </main>
 
     <StatusBar :status="workspaceStatus" />
+
+    <FloatingChatDock
+      v-if="projectId"
+      :project-id="projectId"
+      :selected-node-ids="selectedNodeIds"
+      @graph-refresh-needed="handleGraphRefreshNeeded"
+    />
   </div>
 </template>
 

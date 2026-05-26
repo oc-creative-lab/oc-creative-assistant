@@ -1,144 +1,193 @@
-"""LLM Strategy 抽象与具体实现。
+"""LLM 调用的 Strategy Pattern 入口。
 
-通过统一 Provider 接口在 OpenAI 兼容协议下切换 DeepSeek / Qwen / OpenAI。
-为离线开发与测试提供 MockProvider, 避免每次调试都消耗外部 API 配额, 同时
-满足 proposal 7.3.1 的 multi-model hot-swap 缓解措施。
+把 LangChain / OpenAI SDK 的细节封在 Provider 内, agent 节点只看到统一的
+``chat`` (字符串) 与 ``structured`` (Pydantic) 两个方法, 屏蔽底层协议差异。
+
+DeepSeek / 通义等 OpenAI 兼容服务普遍不支持 ``response_format=json_schema``,
+真实 provider 显式固定 ``method="function_calling"`` 走 tool calls 协议,
+兼容性最广。Mock provider 完全脱离网络, 按 schema 名字返回登记好的样本,
+方便离线开发与 CI。
 """
 
 from __future__ import annotations
 
 import logging
-import os
-from abc import ABC, abstractmethod
-from typing import Any
+from typing import Any, Protocol, TypeVar
 
+from langchain_core.messages import AIMessage, BaseMessage, HumanMessage
+from langchain_core.tools import BaseTool
+from langchain_openai import ChatOpenAI
 from pydantic import BaseModel
 
-from app.core.settings import LlmSettings, get_llm_settings
+from app.core.settings import LlmSettings
+
 
 logger = logging.getLogger(__name__)
 
+TSchema = TypeVar("TSchema", bound=BaseModel)
 
-class LlmProvider(ABC):
-    """LLM 调用抽象。
 
-    业务层只关心传入 messages 与 response_schema, 具体协议、结构化输出兜底
-    由实现类负责, 便于在不改业务代码的前提下切换模型。
+class LlmProvider(Protocol):
+    """LLM 调用的统一接口契约。
+
+    所有 agent 节点都通过本协议的实现来访问模型, Strategy Pattern 让 mock 与
+    真实 provider 可在 .env 中无缝切换, 不需要改业务代码。
     """
 
-    name: str = "abstract"
+    def chat(self, messages: list[BaseMessage]) -> str: ...
 
-    @abstractmethod
-    def chat(
+    def structured(
         self,
-        messages: list[dict[str, str]],
-        response_schema: type[BaseModel] | None = None,
-    ) -> str | BaseModel:
-        """同步调用 LLM。
+        messages: list[BaseMessage],
+        schema: type[TSchema],
+    ) -> TSchema: ...
 
-        Args:
-            messages: OpenAI 风格 chat messages。
-            response_schema: 指定时强制 LangChain `with_structured_output` 校验。
-
-        Returns:
-            未指定 schema 时返回原始字符串; 指定时返回对应 Pydantic 实例。
-        """
+    def chat_with_tools(
+        self,
+        messages: list[BaseMessage],
+        tools: list[BaseTool],
+    ) -> AIMessage: ...
 
 
-class OpenAICompatibleProvider(LlmProvider):
-    """覆盖 OpenAI / DeepSeek / 阿里 Qwen 等 OpenAI-compatible endpoint。"""
+class OpenAICompatibleProvider:
+    """通过 OpenAI 兼容协议调用 DeepSeek / 通义 / OpenAI 官方等服务。
 
-    name = "openai_compatible"
+    底层使用 LangChain 的 ``ChatOpenAI``, 后续接 ToolNode / Checkpointer 时可以
+    直接复用 LangChain 生态, 不必自己手写工具调用循环。
+    """
 
     def __init__(self, settings: LlmSettings) -> None:
-        """构造 LangChain ChatOpenAI client。
-
-        Args:
-            settings: 已校验过的 LLM 设置, 缺一不可。
-        """
         if not settings.is_configured:
-            raise ValueError("LLM 配置缺失, 请检查 .env 中的 OC_LLM_* 变量")
+            raise ValueError("OC_LLM_* 配置缺失, 无法初始化 OpenAI 兼容 provider")
 
-        # 延迟导入避免无 LLM 配置场景下也要装 langchain-openai。
-        from langchain_openai import ChatOpenAI
-
-        self._llm = ChatOpenAI(
+        self._client = ChatOpenAI(
             base_url=settings.base_url,
             api_key=settings.api_key,
             model=settings.model,
-            temperature=0.7,
+            temperature=0.3,
         )
 
-    def chat(
-        self,
-        messages: list[dict[str, str]],
-        response_schema: type[BaseModel] | None = None,
-    ) -> str | BaseModel:
-        if response_schema is None:
-            response = self._llm.invoke(messages)
-            return response.content
+    def chat(self, messages: list[BaseMessage]) -> str:
+        response = self._client.invoke(messages)
+        content = response.content if isinstance(response, AIMessage) else response
+        return content if isinstance(content, str) else str(content)
 
-        structured_llm = self._llm.with_structured_output(
-            response_schema,
-            method="function_calling",
+    def structured(
+        self,
+        messages: list[BaseMessage],
+        schema: type[TSchema],
+    ) -> TSchema:
+        runnable = self._client.with_structured_output(schema, method="function_calling")
+        return runnable.invoke(messages)
+
+    def chat_with_tools(
+        self,
+        messages: list[BaseMessage],
+        tools: list[BaseTool],
+    ) -> AIMessage:
+        """绑定工具调一次 LLM, 返回原生 AIMessage 让 tool_loop 解析 tool_calls。"""
+        bound = self._client.bind_tools(tools)
+        response = bound.invoke(messages)
+        if isinstance(response, AIMessage):
+            return response
+        return AIMessage(content=str(getattr(response, "content", response)))
+
+_MOCK_SAMPLES: dict[str, dict[str, Any]] = {
+    "IntentClassification": {
+        "intent": "inspiration",
+        "confidence": 0.85,
+        "reasoning": "用户希望探索创作方向, 命中 inspiration 意图。",
+    },
+    "InspirationOutput": {
+        "reasoning": "围绕已有矮人铁匠设定补充背景冲突, 让角色更立体。",
+        "suggestions": [
+            "为铁匠设计一段被族长流放的过往",
+            "引入一名挑战她技艺的年轻学徒",
+            "让她持有一件揭示先祖秘密的器物",
+        ],
+        "referenced_node_ids": [],
+        "proposed_changes": [
+            {
+                "change_type": "create_node",
+                "target_id": None,
+                "pending_id": "pending-1",
+                "payload": {
+                    "title": "暮岩",
+                    "content": "年轻矮人学徒, 师从主角, 暗中怀疑师父的过往",
+                    "node_type": "character",
+                },
+                "reason": "为主角引入冲突线",
+            }
+        ],
+    },
+    "ResearchOutput": {
+        "reasoning": "在已有 graph 中按主题汇总相关角色与世界观片段。",
+        "summary": "[mock] 该角色与现有族群存在历史纠葛, 核心冲突源自身份认同。",
+        "referenced_node_ids": [],
+        "proposed_changes": [],
+    },
+    "StructureOutput": {
+        "reasoning": "用户已选定的角色尚未与情节连接, 补一条交互线。",
+        "summary": "建议新增一条角色与族长之间的对抗交互线。",
+        "proposed_changes": [],
+    },
+    "SimulationOutput": {
+        "reasoning": "针对用户假设展开多条走向, 评估对现有节点的影响。",
+        "branches": [
+            {
+                "scenario": "她接受任务但留下后路",
+                "likelihood": "high",
+                "downstream_impacts": ["部族暂时和解", "学徒身份成谜"],
+                "affected_node_ids": [],
+            }
+        ],
+    },
+    "ChatAssemblerOutput": {
+        "reply_text": "[mock] 围绕铁匠的故事, 给你几个方向: 流放过往、年轻学徒、先祖器物。",
+        "cited_node_ids": [],
+        "staging_summary": "我准备帮你新增 1 处, 等你确认。",
+    },
+        "SummaryOutput": {
+        "summary": "[mock] 用户与 agent 围绕主角的过往与族群冲突展开了多轮探讨, 已就主线方向达成基本共识。",
+        "key_facts": [
+            "主角是矮人铁匠, 身世存疑",
+            "用户倾向于让冲突来自族群内部",
+        ],
+    },
+}
+
+
+class MockProvider:
+    """离线确定性桩, 不发出任何网络请求。
+
+    根据目标 schema 名字返回 ``_MOCK_SAMPLES`` 里登记的样本, 让前端联调与单测
+    可以脱离 LLM。遇到未注册 schema 直接抛错, 暴露遗漏比静默返回 None 更安全。
+    """
+
+    def chat(self, messages: list[BaseMessage]) -> str:
+        last_user = next(
+            (m.content for m in reversed(messages) if isinstance(m, HumanMessage)),
+            "",
         )
-        return structured_llm.invoke(messages)
+        text = last_user if isinstance(last_user, str) else str(last_user)
+        return f"[mock] received: {text[:60]}"
 
-
-class MockProvider(LlmProvider):
-    """离线占位 Provider。
-
-    返回符合 schema 的占位实例, 便于在无网络或未配置 API key 的开发机上跑通
-    LangGraph 链路, 也方便单元测试断言。
-    """
-
-    name = "mock"
-
-    def chat(
+    def structured(
         self,
-        messages: list[dict[str, str]],
-        response_schema: type[BaseModel] | None = None,
-    ) -> str | BaseModel:
-        if response_schema is None:
-            return "[mock] LLM 未配置, 返回占位文本。"
+        messages: list[BaseMessage],
+        schema: type[TSchema],
+    ) -> TSchema:
+        sample = _MOCK_SAMPLES.get(schema.__name__)
+        if sample is None:
+            raise ValueError(
+                f"MockProvider 缺少 {schema.__name__} 样本; 请在 _MOCK_SAMPLES 注册"
+            )
+        return schema.model_validate(sample)
 
-        return response_schema.model_validate(self._build_sample(response_schema))
-
-    def _build_sample(self, schema: type[BaseModel]) -> dict[str, Any]:
-        """按 schema 字段类型生成 mock 值, 容器全部留空, 字符串填占位标记。"""
-        sample: dict[str, Any] = {}
-        for field_name, field in schema.model_fields.items():
-            sample[field_name] = self._sample_for_annotation(field.annotation)
-        return sample
-
-    def _sample_for_annotation(self, annotation: Any) -> Any:
-        origin = getattr(annotation, "__origin__", None)
-        if origin is list:
-            return []
-        if annotation is str:
-            return "[mock]"
-        if annotation is int:
-            return 0
-        return None
-
-
-def get_llm_provider() -> LlmProvider:
-    """根据 .env 选择 Provider。
-
-    OC_LLM_MODE=mock 或 LLM 配置缺失时降级到 MockProvider, 保证 PoC 离线可跑。
-    """
-    if os.getenv("OC_LLM_MODE", "").strip().lower() == "mock":
-        return MockProvider()
-
-    settings = get_llm_settings()
-
-    if not settings.is_configured:
-        logger.warning("OC_LLM_* 未配置, 降级到 MockProvider")
-        return MockProvider()
-
-    try:
-        return OpenAICompatibleProvider(settings)
-    except Exception as error:  # noqa: BLE001
-        # 初始化期间任何导入或配置异常都降级到 mock, 避免阻塞应用启动。
-        logger.warning("OpenAICompatibleProvider 初始化失败, 降级 Mock: %s", error)
-        return MockProvider()
+    def chat_with_tools(
+        self,
+        messages: list[BaseMessage],
+        tools: list[BaseTool],
+    ) -> AIMessage:
+        """Mock 模式跳过工具调用, 直接返回空回复让 tool_loop 立即退出。"""
+        return AIMessage(content="")

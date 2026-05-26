@@ -14,7 +14,7 @@ import logging
 import math
 import re
 from typing import Any
-
+from functools import lru_cache
 from app.core.settings import get_embedding_settings, get_indexing_settings
 from app.db.models import NodeORM
 from app.indexing.config import (
@@ -211,6 +211,21 @@ def _build_embedding_provider() -> Any:
 embedding_provider = _build_embedding_provider()
 
 
+@lru_cache(maxsize=2048)
+def _cached_query_embedding(text: str) -> tuple[float, ...]:
+    """进程级 query embedding 缓存; 用 tuple 是为了 lru_cache 可 hash, 调用方再 list 化。
+
+    仅用于"查询路径"; 写入路径 (upsert document embedding) 不能缓存,
+    因为每个文档内容不同, 没有命中可言。
+    """
+    return tuple(embedding_provider.embed(text))
+
+
+def embed_query(text: str) -> list[float]:
+    """带 LRU 缓存的 query embedding 入口; tool_loop / RAG / parallel_retrieval 都走它。"""
+    return list(_cached_query_embedding(text))
+
+
 def get_embedding_signature() -> str:
     """返回当前 embedding 配置签名。
 
@@ -262,9 +277,21 @@ def _build_chroma_client() -> Any:
     return chromadb.PersistentClient(path=str(CHROMA_PATH))
 
 
+_chroma_client_singleton: Any | None = None
+
+
+def _get_chroma_client() -> Any:
+    """进程级单例。
+    """
+    global _chroma_client_singleton
+    if _chroma_client_singleton is None:
+        _chroma_client_singleton = _build_chroma_client()
+    return _chroma_client_singleton
+
+
 def get_chroma_collection_by_name(name: str) -> Any:
     """按名称获取 collection, 不存在时按 cosine 距离自动创建。"""
-    client = _build_chroma_client()
+    client = _get_chroma_client()
     return client.get_or_create_collection(name=name, metadata={"hnsw:space": "cosine"})
 
 
@@ -347,17 +374,23 @@ def query_collection(
     project_id: str,
     query: str,
     top_k: int,
+    query_embedding: list[float] | None = None,
 ) -> tuple[list[str], list[dict], list[float]]:
     """在指定 collection 内做项目级查询。
 
     collection 已按 node_type 物理隔离, 不再需要 node_type metadata filter;
     project_id 过滤仍然保留, 避免跨项目数据泄漏到当前 prompt。
 
+    跨多个 collection 用同一个 query 时, 调用方应先用 ``embedding_provider.embed``
+    算好一次 query_embedding 传进来, 避免每个 collection 重算同一个向量,
+    把 embedding API 调用从 N 次砍到 1 次。
+
     Args:
         collection: 已经按 node_type 路由过的具体 collection。
         project_id: 当前项目 ID。
-        query: 检索 query。
+        query: 检索 query, 仅在 query_embedding 未提供时用于 embed。
         top_k: 期望返回的最多上下文数量。
+        query_embedding: 预计算好的 query 向量; 不传则在内部 embed 一次。
 
     Returns:
         ChromaDB ID 列表、metadata 列表和 distance 列表。
@@ -368,8 +401,9 @@ def query_collection(
         return [], [], []
 
     _log(f"query vectors collection={collection.name} project_id={project_id} top_k={top_k} total={total}")
+    embedding = query_embedding if query_embedding is not None else embed_query(query)
     result = collection.query(
-        query_embeddings=[embedding_provider.embed(query)],
+        query_embeddings=[embedding],
         # +1 是给当前节点自身留位置, 后续在调用方按需过滤; clamp 到 total 避免 Chroma 报参数越界
         n_results=min(top_k + 1, total),
         where={"project_id": project_id},

@@ -69,7 +69,14 @@ SessionLocal = sessionmaker(bind=engine, autoflush=False, expire_on_commit=False
 def init_db() -> None:
     """初始化 ORM 表结构，并为旧 PoC 数据库补齐轻量兼容字段。"""
     # 延迟导入模型，确保 Base.metadata 已注册所有表后再 create_all。
-    from app.db.models import EdgeORM, NodeORM, ProjectORM  # noqa: F401
+    from app.db.models import (  # noqa: F401
+        AgentStagingORM,
+        ChatMessageORM,
+        ChatSessionORM,
+        EdgeORM,
+        NodeORM,
+        ProjectORM,
+    )
 
     Base.metadata.create_all(bind=engine)
     _ensure_sqlite_schema_compatibility()
@@ -89,4 +96,24 @@ def _ensure_sqlite_schema_compatibility() -> None:
         if "relation_type" not in edge_columns:
             connection.exec_driver_sql(
                 "ALTER TABLE edges ADD COLUMN relation_type VARCHAR NOT NULL DEFAULT 'relates_to'"
+            )
+
+        project_columns = {
+            row[1]
+            for row in connection.exec_driver_sql("PRAGMA table_info(projects)").fetchall()
+        }
+        if "world_brief" not in project_columns:
+            connection.exec_driver_sql(
+                "ALTER TABLE projects ADD COLUMN world_brief TEXT NOT NULL DEFAULT ''"
+            )
+
+        session_columns = {
+            row[1]
+            for row in connection.exec_driver_sql(
+                "PRAGMA table_info(chat_sessions)"
+            ).fetchall()
+        }
+        if "summary_message_count" not in session_columns:
+            connection.exec_driver_sql(
+                "ALTER TABLE chat_sessions ADD COLUMN summary_message_count INTEGER NOT NULL DEFAULT 0"
             )

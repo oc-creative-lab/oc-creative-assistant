@@ -1,15 +1,13 @@
 """后端 API 的 Pydantic DTO。
 
-字段命名以现有前端契约为准, 避免结构迁移改变 HTTP 请求和响应格式。
+字段命名以现有前端契约为准，避免结构迁移改变 HTTP 请求和响应格式。
 数据库内部字段和 API 字段的转换由服务层完成。
-Agent 结构化输出 schema 来自 app.agents.schemas, 在响应里直接复用。
 """
 
-from typing import Literal
+from datetime import datetime
+from typing import Any, Literal
 
 from pydantic import BaseModel, Field
-
-from app.agents.schemas import InspirationOutput, ResearchOutput, StructureOutput
 
 
 class ProjectPayload(BaseModel):
@@ -116,16 +114,14 @@ class UpdateNodeRequest(BaseModel):
 
 
 class RagContextRequest(BaseModel):
-    """RAG / Agent 请求。
+    """RAG 上下文预览请求。
 
-    inspiration / research 走 node_id 单节点入口;
-    structure 走 node_ids 多节点入口, 当 agent_type=structure 时 node_id 可省略。
+    当前接口只构造上下文和 prompt，不调用任何 LLM。
     """
 
-    node_id: str | None = None
-    node_ids: list[str] = Field(default_factory=list)
+    node_id: str
     query: str = ""
-    agent_type: Literal["inspiration", "research", "structure"] = "inspiration"
+    agent_type: str = "inspiration"
     top_k: int = 5
 
 
@@ -209,18 +205,139 @@ class MemorySearchResponse(BaseModel):
 
 
 class RagContextResponse(BaseModel):
-    """RAG / Agent 接口完整响应。
-
-    同一时刻只有一个 *_output 字段被填充, 由 agent_type 决定; 其它字段为 None。
-    与重构前相比移除 answer 字符串字段, 改为类型安全的结构化输出。
-    """
+    """RAG 上下文接口的完整响应。"""
 
     current_node: RagCurrentNodePayload
     graph_context: list[RagGraphContextItem]
     vector_context: list[RagVectorContextItem]
     merged_context: list[RagMergedContextItem]
     prompt: str
-    inspiration_output: InspirationOutput | None = None
-    research_output: ResearchOutput | None = None
-    structure_output: StructureOutput | None = None
     debug: RagDebugPayload
+
+
+class ChatSessionCreateRequest(BaseModel):
+    """创建对话会话的请求体。"""
+
+    project_id: str
+    title: str = ""
+
+
+class ChatSessionPayload(BaseModel):
+    """对话会话 DTO。"""
+
+    id: str
+    project_id: str
+    thread_id: str
+    title: str
+    created_at: datetime
+    updated_at: datetime
+
+
+class ChatMessageCreateRequest(BaseModel):
+    """追加对话消息的请求体, Phase 4 起由 graph 入口取代直接 POST。"""
+
+    role: Literal["user", "assistant", "system"]
+    content: str
+    meta: dict[str, Any] = Field(default_factory=dict)
+
+
+class ChatMessagePayload(BaseModel):
+    """对话消息 DTO。"""
+
+    id: str
+    session_id: str
+    role: str
+    content: str
+    meta: dict[str, Any]
+    created_at: datetime
+
+
+class AgentStagingCreateItem(BaseModel):
+    """单条 staging 的写入载荷, persistence_hub 与手动接口都使用该结构。"""
+
+    change_type: Literal[
+        "create_node",
+        "create_edge",
+        "update_node",
+        "delete_node",
+        "delete_edge",
+    ]
+    target_id: str | None = None
+    pending_id: str | None = None
+    payload: dict[str, Any] = Field(default_factory=dict)
+    reasoning: str = ""
+
+
+class AgentStagingBatchCreateRequest(BaseModel):
+    """同一 Agent turn 写入一批 staging 的请求体。"""
+
+    message_id: str
+    agent_type: str = ""
+    items: list[AgentStagingCreateItem] = Field(default_factory=list)
+
+
+class AgentStagingPayload(BaseModel):
+    """staging 单项 DTO。"""
+
+    id: str
+    session_id: str
+    message_id: str
+    project_id: str
+    batch_id: str
+    change_type: str
+    target_id: str | None
+    pending_id: str | None
+    payload: dict[str, Any]
+    payload_edited: dict[str, Any] | None
+    agent_type: str
+    reasoning: str
+    order_in_batch: int
+    status: str
+    created_at: datetime
+    resolved_at: datetime | None
+
+
+class AgentStagingBatchPayload(BaseModel):
+    """staging 批次 DTO, 把同一 batch_id 的多条变更聚合展示。"""
+
+    batch_id: str
+    items: list[AgentStagingPayload]
+
+
+class AgentStagingActionRequest(BaseModel):
+    """单条 staging 处理请求。
+
+    ``action='edit'`` 时 ``payload_edited`` 必填; 其它 action 下被忽略。
+    """
+
+    action: Literal["accept", "edit", "reject"]
+    payload_edited: dict[str, Any] | None = None
+
+
+class AgentStagingBatchActionRequest(BaseModel):
+    """批量 staging 处理请求。"""
+
+    action: Literal["accept_all", "reject_all"]
+
+
+class ChatRequest(BaseModel):
+    """触发 agent_graph 推理的请求体。"""
+
+    session_id: str
+    user_message: str
+    selected_node_ids: list[str] = Field(default_factory=list)
+
+
+class ChatResponse(BaseModel):
+    """agent 一轮推理后的对话回复 + 副作用摘要。
+
+    ``batch_id`` 仅当本轮产出 staging 时有值, 前端凭它去拉 staging 面板的内容。
+    """
+
+    message_id: str
+    reply_text: str
+    cited_node_ids: list[str] = Field(default_factory=list)
+    intent: str
+    batch_id: str | None
+    staging_count: int
+    staging_summary: str = ""

@@ -10,6 +10,7 @@ from app.db.models import EdgeORM, NodeORM
 from app.indexing.config import DEFAULT_RELATION_LABEL, DEFAULT_RELATION_TYPE
 from app.indexing.document_loader import node_to_vector_item
 from app.indexing.vector_store import (
+    embed_query,
     get_all_chroma_collections,
     get_chroma_collection_for_node,
     query_collection,
@@ -93,6 +94,9 @@ def build_project_vector_context(
     try:
         return _query_project_chroma_context(project_id, candidate_nodes, query, top_k, node_type)
     except Exception as error:  # noqa: BLE001
+        import traceback
+        print(f"[retrieval] chroma_unavailable: {error!r}", flush=True)
+        traceback.print_exc()
         return [], "chroma_unavailable", str(error)
 
 
@@ -106,18 +110,31 @@ def _query_project_chroma_context(
     """跨 collection 做项目级 Lore Memory 检索。
 
     指定 node_type 时只查对应 collection; 否则三集合都查并按 score 取 top_k。
+    多 collection 时复用同一份 query embedding, 避免每个 collection 重复
+    调用一次 embedding API; 这是 RAG 路径上 embedding 调用次数的最大放大点。
     """
+    print(
+        f"[debug-retrieval] node_type={node_type!r} query={query[:30]!r} "
+        f"nodes_count={len(nodes)} top_k={top_k}",
+        flush=True,
+    )
     node_by_id = {node.id: node for node in nodes}
 
     if node_type is not None:
+        print(f"[debug-retrieval] -> SINGLE collection branch (node_type={node_type})", flush=True)
         collection = get_chroma_collection_for_node(node_type)
         ids, metadatas, distances = query_collection(collection, project_id, query, top_k)
         return _hits_to_items(ids, metadatas, distances, node_by_id, top_k), "chroma", None
 
-    # 不指定类型时合并三集合结果, 按 score 取 top_k
+    print("[debug-retrieval] -> MULTI collection branch (node_type=None)", flush=True)
+    query_embedding = embed_query(query)
+
     all_items: list[RagVectorContextItem] = []
     for collection in get_all_chroma_collections().values():
-        ids, metadatas, distances = query_collection(collection, project_id, query, top_k)
+        print(f"[debug-retrieval]    iter collection.name={collection.name!r}", flush=True)
+        ids, metadatas, distances = query_collection(
+            collection, project_id, query, top_k, query_embedding=query_embedding,
+        )
         all_items.extend(_hits_to_items(ids, metadatas, distances, node_by_id, top_k))
 
     all_items.sort(key=lambda item: item.score, reverse=True)

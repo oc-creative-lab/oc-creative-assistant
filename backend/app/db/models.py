@@ -34,7 +34,9 @@ class ProjectORM(Base):
         server_default=func.now(),
         onupdate=func.now(),
     )
-
+    world_brief: Mapped[str] = mapped_column(
+        Text, nullable=False, default="", server_default=""
+    )
     nodes: Mapped[list["NodeORM"]] = relationship(
         back_populates="project",
         cascade="all, delete-orphan",
@@ -163,3 +165,155 @@ class EdgeORM(Base):
         foreign_keys=[target],
         passive_deletes=True,
     )
+
+
+class ChatSessionORM(Base):
+    """对话会话表。
+
+    一个会话对应前端的一个聊天面板上下文; ``thread_id`` 给 LangGraph 的
+    Checkpointer 使用, 让同一会话刷新页面后能从 sqlite 取回中间状态。
+    ``conversation_summary`` 由摘要压缩节点定期更新, 用于长对话不爆 token。
+    """
+
+    __tablename__ = "chat_sessions"
+    __table_args__ = (
+        Index("ix_chat_sessions_project_created", "project_id", "created_at"),
+    )
+
+    id: Mapped[str] = mapped_column(String, primary_key=True)
+    project_id: Mapped[str] = mapped_column(
+        String,
+        ForeignKey("projects.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
+    )
+    thread_id: Mapped[str] = mapped_column(String, nullable=False, unique=True, index=True)
+    title: Mapped[str] = mapped_column(String, nullable=False, default="", server_default="")
+    conversation_summary: Mapped[str] = mapped_column(
+        Text, nullable=False, default="", server_default=""
+    )
+    # summary 已涵盖前 N 条消息的高水位; 用来做摘要压缩的增量节流, 避免每轮都重压
+    summary_message_count: Mapped[int] = mapped_column(
+        Integer, nullable=False, default=0, server_default=text("0")
+    )
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, server_default=func.now()
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        nullable=False,
+        server_default=func.now(),
+        onupdate=func.now(),
+    )
+
+    project: Mapped[ProjectORM] = relationship()
+    messages: Mapped[list["ChatMessageORM"]] = relationship(
+        back_populates="session",
+        cascade="all, delete-orphan",
+        order_by="ChatMessageORM.created_at",
+    )
+    staging_items: Mapped[list["AgentStagingORM"]] = relationship(
+        back_populates="session",
+        cascade="all, delete-orphan",
+    )
+
+
+class ChatMessageORM(Base):
+    """对话消息表。
+
+    消息只追加, 不就地修改; ``meta`` 用于挂载 cited_node_ids / agent_type 等
+    扩展字段, 避免每加一个上下文字段都要改表结构。
+    """
+
+    __tablename__ = "chat_messages"
+    __table_args__ = (
+        Index("ix_chat_messages_session_created", "session_id", "created_at"),
+    )
+
+    id: Mapped[str] = mapped_column(String, primary_key=True)
+    session_id: Mapped[str] = mapped_column(
+        String,
+        ForeignKey("chat_sessions.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
+    )
+    role: Mapped[str] = mapped_column(String, nullable=False)
+    content: Mapped[str] = mapped_column(Text, nullable=False)
+    meta: Mapped[dict[str, Any]] = mapped_column(
+        JSON,
+        nullable=False,
+        default=dict,
+        server_default=text("'{}'"),
+    )
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, server_default=func.now()
+    )
+
+    session: Mapped[ChatSessionORM] = relationship(back_populates="messages")
+    staging_items: Mapped[list["AgentStagingORM"]] = relationship(
+        back_populates="message",
+        cascade="all, delete-orphan",
+    )
+
+
+class AgentStagingORM(Base):
+    """Agent 待确认变更表。
+
+    Agent 想做的画布操作先沉淀在这里, 等用户在前端 staging 面板接受 / 编辑 / 拒绝
+    再决定是否真正落到画布。同一 turn 产生的多条变更共享 ``batch_id``,
+    支持"接受全部"/"拒绝全部"批量操作; ``pending_id`` 给同一 batch 内的新节点
+    分配占位 id, 让边可以引用尚未落库的新节点, 提交时再回填真实 node_id。
+    """
+
+    __tablename__ = "agent_staging"
+    __table_args__ = (
+        Index("ix_agent_staging_session_status", "session_id", "status"),
+        Index("ix_agent_staging_batch_order", "batch_id", "order_in_batch"),
+    )
+
+    id: Mapped[str] = mapped_column(String, primary_key=True)
+    session_id: Mapped[str] = mapped_column(
+        String,
+        ForeignKey("chat_sessions.id", ondelete="CASCADE"),
+        nullable=False,
+    )
+    message_id: Mapped[str] = mapped_column(
+        String,
+        ForeignKey("chat_messages.id", ondelete="CASCADE"),
+        nullable=False,
+    )
+    project_id: Mapped[str] = mapped_column(
+        String,
+        ForeignKey("projects.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
+    )
+    batch_id: Mapped[str] = mapped_column(String, nullable=False)
+    change_type: Mapped[str] = mapped_column(String, nullable=False)
+    target_id: Mapped[str | None] = mapped_column(String, nullable=True)
+    pending_id: Mapped[str | None] = mapped_column(String, nullable=True)
+    payload: Mapped[dict[str, Any]] = mapped_column(
+        JSON, nullable=False, default=dict, server_default=text("'{}'")
+    )
+    payload_edited: Mapped[dict[str, Any] | None] = mapped_column(JSON, nullable=True)
+    agent_type: Mapped[str] = mapped_column(
+        String, nullable=False, default="", server_default=""
+    )
+    reasoning: Mapped[str] = mapped_column(
+        Text, nullable=False, default="", server_default=""
+    )
+    order_in_batch: Mapped[int] = mapped_column(
+        Integer, nullable=False, default=0, server_default=text("0")
+    )
+    status: Mapped[str] = mapped_column(
+        String, nullable=False, default="pending", server_default="pending"
+    )
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, server_default=func.now()
+    )
+    resolved_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+
+    session: Mapped[ChatSessionORM] = relationship(back_populates="staging_items")
+    message: Mapped[ChatMessageORM] = relationship(back_populates="staging_items")

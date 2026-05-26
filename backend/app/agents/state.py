@@ -1,15 +1,24 @@
-"""LangGraph Agent 共享状态定义。
+"""LangGraph 共享状态定义。
 
-State 在节点之间传递数据, 是 RAG 检索结果与 Agent 输出的统一容器。
-LangGraph 节点函数读取 / 部分更新这里的字段, conditional_edges 根据
-agent_type 决定下一步路由, 实现 proposal 4.1.2 描述的非线性执行。
+agent 图围绕这份 ``AgentState`` 流转: load_context 写入项目和会话快照,
+intent_router 决定本轮 intent, RAG 与对应 agent 把结果落到各自字段,
+装配器与持久化中枢按 intent 取对应 agent 的输出做后处理。
+
+所有字段都用 ``total=False``, 让局部测试可以只构造关心的子集启动单节点。
 """
 
 from __future__ import annotations
 
-from typing import Literal, TypedDict
+from typing import TypedDict
 
-from app.agents.schemas import InspirationOutput, ResearchOutput, StructureOutput
+from app.agents.schemas import (
+    ChatAssemblerOutput,
+    InspirationOutput,
+    IntentClassification,
+    ResearchOutput,
+    SimulationOutput,
+    StructureOutput,
+)
 from app.schemas import (
     RagCurrentNodePayload,
     RagGraphContextItem,
@@ -18,36 +27,34 @@ from app.schemas import (
 )
 
 
-AgentType = Literal["inspiration", "research", "structure"]
-
-
 class AgentState(TypedDict, total=False):
-    """LangGraph 共享状态。
+    """LangGraph 节点之间共享的状态字典。"""
 
-    使用 total=False 是因为不同节点只填充自己关心的字段:
-    - 检索节点不会写 final_output;
-    - Agent 节点不需要写 graph_context;
-    - Structure Agent 走 node_ids 多节点入口, inspiration / research 走 node_id。
-    """
-
-    # ---------- 输入 ----------
+    session_id: str
     project_id: str
-    node_id: str | None
-    node_ids: list[str]
-    user_query: str
-    agent_type: AgentType
-    top_k: int
+    user_message: str
+    selected_node_ids: list[str]
 
-    # ---------- 检索阶段产出, 注入到 shared state(proposal 4.3.3) ----------
+    world_brief: str
+    conversation_summary: str
+    recent_messages: list[dict]
+
+    intent: IntentClassification
+
     current_node: RagCurrentNodePayload | None
     graph_context: list[RagGraphContextItem]
-    # 按 node_type 分组, 让 Research / Structure 各取所需(proposal 3.1.3 三集合的逻辑等价)
-    vector_context: dict[str, list[RagVectorContextItem]]
+    vector_context: list[RagVectorContextItem]
     merged_context: list[RagMergedContextItem]
-    # 用于 proposal 7.3.4 的 2000 token cap 与 summary compression
-    context_token_count: int
 
-    # ---------- Agent 阶段产出 ----------
-    final_output: InspirationOutput | ResearchOutput | StructureOutput | None
-    # 任一节点遇到不可恢复错误时填写, 后续节点检测到 error 直接短路
-    error: str | None
+    inspiration_output: InspirationOutput
+    research_output: ResearchOutput
+    structure_output: StructureOutput
+    simulation_output: SimulationOutput
+
+    assembler_output: ChatAssemblerOutput
+
+    boundary_warnings: list[str]
+
+    assistant_message_id: str
+    staging_batch_id: str | None
+    staging_count: int

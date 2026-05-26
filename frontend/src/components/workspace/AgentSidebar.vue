@@ -1,37 +1,24 @@
 <script setup lang="ts">
 import { computed, ref, watch, onMounted, onUnmounted } from 'vue'
-import {
-  loadRagContext,
-  type InspirationOutputDto,
-  type RagContextResponseDto,
-  type ResearchOutputDto,
-  type StructureOutputDto,
-} from '../../api/graphApi'
+import { loadRagContext, type RagContextResponseDto } from '../../api/graphApi'
 import {
   RELATION_TYPE_OPTIONS,
   type CreativeFlowEdge,
   type CreativeFlowNode,
   type CreativeNodeData,
-  type CreativeNodeType,
   type CreativeRelationType,
 } from '../../types/node'
-import InspirationCard from '../agents/InspirationCard.vue'
-import ResearchCard from '../agents/ResearchCard.vue'
-import StructureCard from '../agents/StructureCard.vue'
-
-type AgentType = 'inspiration' | 'research' | 'structure'
 
 /**
  * 右侧详情面板。
  *
- * 编辑当前选中节点 / 连线, 并在同一面板内提供三类 Agent 调用入口和结构化结果展示。
- * 所有 graph 数据变更都通过事件交给上层容器统一落库, 组件只维护交互态。
+ * 本组件负责展示并编辑当前选中的节点或连线，所有 graph 数据变更都通过事件交给
+ * 上层容器统一落库。组件内只维护面板交互状态和 RAG 调试预览，不直接保存后端数据。
  */
 const props = defineProps<{
   selectedNode: CreativeFlowNode | null
   selectedEdge: CreativeFlowEdge | null
   nodes: CreativeFlowNode[]
-  selectedNodeIds: string[]
 }>()
 
 const emit = defineEmits<{
@@ -39,28 +26,26 @@ const emit = defineEmits<{
   nodeDeleted: [nodeId: string]
   edgeUpdated: [edge: CreativeFlowEdge]
   edgeDeleted: [edgeId: string]
-  nodeCreated: [payload: { nodeType: CreativeNodeType; title: string; content: string; tags: string[] }]
-  selectionAdded: [nodeId: string]
-  selectionRemoved: [nodeId: string]
-  selectionCleared: []
 }>()
 
+const agentResult = ref('')
 const ragQuery = ref('')
 const ragResult = ref<RagContextResponseDto | null>(null)
 const ragError = ref('')
 const isRagLoading = ref(false)
 
-/* Agent 调用结果按类型分别保存, 切换 Agent 类型时不会清空其他类型的上一次结果。 */
-const lastAgentType = ref<AgentType | null>(null)
-const inspirationOutput = ref<InspirationOutputDto | null>(null)
-const researchOutput = ref<ResearchOutputDto | null>(null)
-const structureOutput = ref<StructureOutputDto | null>(null)
-const agentError = ref('')
-const agentLoadingType = ref<AgentType | null>(null)
-
+/* 自定义下拉没有使用原生 select，需要在组件内维护展开状态和外部点击收起行为。 */
 const isNodeStatusSelectOpen = ref(false)
 const isEdgeRelationSelectOpen = ref(false)
 
+/**
+ * 处理自定义下拉框的外部点击。
+ *
+ * 监听挂在 document 上，避免下拉选项溢出当前面板时无法可靠收起。
+ *
+ * Args:
+ *   e: document click 事件。
+ */
 function closeAllSelects(e: MouseEvent) {
   const target = e.target as HTMLElement
   if (!target.closest('.custom-select-container')) {
@@ -83,6 +68,7 @@ const sourceNodeTitle = computed(() => {
   if (!props.selectedEdge) {
     return ''
   }
+
   return props.nodes.find((node) => node.id === props.selectedEdge?.source)?.data.title ?? props.selectedEdge.source
 })
 
@@ -90,69 +76,103 @@ const targetNodeTitle = computed(() => {
   if (!props.selectedEdge) {
     return ''
   }
+
   return props.nodes.find((node) => node.id === props.selectedEdge?.target)?.data.title ?? props.selectedEdge.target
-})
-
-/* 选区栏需要展示标题, 这里用 id -> 节点的快速查找避免每次循环全 nodes。 */
-const nodeIndex = computed(() => {
-  const map = new Map<string, CreativeFlowNode>()
-  for (const node of props.nodes) {
-    map.set(node.id, node)
-  }
-  return map
-})
-
-const selectedNodesPreview = computed(() => {
-  return props.selectedNodeIds
-    .map((id) => nodeIndex.value.get(id))
-    .filter((node): node is CreativeFlowNode => Boolean(node))
-})
-
-const isCurrentNodeInSelection = computed(() => {
-  return props.selectedNode ? props.selectedNodeIds.includes(props.selectedNode.id) : false
 })
 
 function getRelationLabel(relationType: CreativeRelationType) {
   return RELATION_TYPE_OPTIONS.find((option) => option.value === relationType)?.label ?? '关联'
 }
 
+/**
+ * 提交节点数据的局部更新。
+ *
+ * 右侧面板是节点完整内容的编辑入口，画布卡片只负责展示摘要；实际保存和全局
+ * graph 一致性由上层容器处理。
+ *
+ * Args:
+ *   partial: 需要合并到当前节点 data 的字段。
+ */
 function updateNodeData(partial: Partial<CreativeNodeData>) {
   if (!props.selectedNode) {
     return
   }
+
   emit('nodeUpdated', {
     ...props.selectedNode,
-    data: { ...props.selectedNode.data, ...partial },
+    data: {
+      ...props.selectedNode.data,
+      ...partial,
+    },
   })
 }
 
+/**
+ * 将输入框中的逗号分隔文本转换为节点标签。
+ *
+ * Args:
+ *   rawValue: 用户在标签输入框中输入的原始文本。
+ */
 function updateNodeTags(rawValue: string) {
-  const tags = rawValue.split(',').map((tag) => tag.trim()).filter(Boolean)
+  const tags = rawValue
+    .split(',')
+    .map((tag) => tag.trim())
+    .filter(Boolean)
+
   updateNodeData({ tags })
 }
 
+/**
+ * 请求删除当前节点。
+ *
+ * 删除节点会影响相关连线，因此这里只发出意图事件，级联清理由 AppShell 统一执行。
+ */
 function handleDeleteNode() {
-  if (props.selectedNode) {
-    emit('nodeDeleted', props.selectedNode.id)
+  if (!props.selectedNode) {
+    return
   }
+
+  emit('nodeDeleted', props.selectedNode.id)
 }
 
+/**
+ * 提交连线数据的局部更新。
+ *
+ * 连线标签同时写入 Vue Flow 的顶层 label 和业务 data，保证画布展示与后端 payload
+ * 使用同一份关系文本。
+ *
+ * Args:
+ *   partial: 需要合并到当前连线 data 的字段。
+ */
 function updateEdge(partial: Partial<CreativeFlowEdge['data']>) {
   if (!props.selectedEdge) {
     return
   }
-  const data = { ...props.selectedEdge.data, ...partial }
-  emit('edgeUpdated', { ...props.selectedEdge, label: data.label, data })
+
+  const data = {
+    ...props.selectedEdge.data,
+    ...partial,
+  }
+
+  emit('edgeUpdated', {
+    ...props.selectedEdge,
+    label: data.label,
+    data,
+  })
 }
 
 function updateEdgeRelation(relationType: CreativeRelationType) {
-  updateEdge({ relationType, label: getRelationLabel(relationType) })
+  updateEdge({
+    relationType,
+    label: getRelationLabel(relationType),
+  })
 }
 
 function reverseSelectedEdge() {
   if (!props.selectedEdge) {
     return
   }
+
   emit('edgeUpdated', {
     ...props.selectedEdge,
     source: props.selectedEdge.target,
@@ -162,76 +182,80 @@ function reverseSelectedEdge() {
   })
 }
 
+/**
+ * 生成 Agent 占位结果。
+ *
+ * 当前 mock 只用于确认侧边栏交互和结果展示形态，不自动写入节点正文，保留用户
+ * 手动采纳生成内容的产品边界。
+ *
+ * Args:
+ *   type: 需要预览的 Agent 类型。
+ */
+function runAgentMock(type: 'inspiration' | 'research' | 'structure') {
+  if (type === 'inspiration') {
+    agentResult.value = JSON.stringify(
+      {
+        type: 'inspiration',
+        suggestions: [
+          '这个角色的核心欲望是什么？',
+          '这个设定会和哪个已有世界观节点发生冲突？',
+          '是否需要补充一个事件节点解释其背景？',
+        ],
+      },
+      null,
+      2,
+    )
+    return
+  }
+
+  if (type === 'research') {
+    agentResult.value = JSON.stringify(
+      {
+        type: 'research',
+        summary: '这里将来会展示 RAG 或资料查询结果。',
+        status: 'RAG 尚未接入',
+      },
+      null,
+      2,
+    )
+    return
+  }
+
+  agentResult.value = JSON.stringify(
+    {
+      type: 'structure',
+      summary: '这里将来会把多个节点整理成角色卡、关系图或剧情框架。',
+      status: 'Structure Agent 尚未接入',
+    },
+    null,
+    2,
+  )
+}
+
+/**
+ * 截断长文本用于上下文卡片预览。
+ *
+ * Args:
+ *   content: 原始节点内容。
+ *
+ * Returns:
+ *   适合在侧边栏卡片展示的摘要文本。
+ */
 function summarizeContent(content: string) {
   return content.length > 120 ? `${content.slice(0, 120)}...` : content
 }
 
 /**
- * 调用指定类型的 Agent。
- *
- * inspiration / research 走单节点入口, 必须先选中节点;
- * structure 走多节点入口, 必须先把至少 2 个节点加入选区。
- */
-async function runAgent(type: AgentType) {
-  if (type === 'structure') {
-    if (props.selectedNodeIds.length < 2) {
-      agentError.value = 'Structure Agent 至少需要 2 个选区节点。'
-      return
-    }
-  } else if (!props.selectedNode) {
-    agentError.value = '请先在画布上选择一个节点。'
-    return
-  }
-
-  try {
-    agentLoadingType.value = type
-    agentError.value = ''
-
-    const response = await loadRagContext({
-      node_id: type === 'structure' ? null : props.selectedNode!.id,
-      node_ids: type === 'structure' ? props.selectedNodeIds : [],
-      query: ragQuery.value,
-      agent_type: type,
-      top_k: 5,
-    })
-
-    ragResult.value = response
-    lastAgentType.value = type
-
-    if (type === 'inspiration') {
-      inspirationOutput.value = response.inspiration_output
-    } else if (type === 'research') {
-      researchOutput.value = response.research_output
-    } else {
-      structureOutput.value = response.structure_output
-    }
-
-    /* 结构化输出为空通常意味着 LLM 没成功调用 tool, 给出可读提示而不是静默。 */
-    const empty =
-      (type === 'inspiration' && !response.inspiration_output) ||
-      (type === 'research' && !response.research_output) ||
-      (type === 'structure' && !response.structure_output)
-
-    if (empty) {
-      agentError.value = 'LLM 本次没有返回结构化输出, 请稍后重试或切换模型。'
-    }
-  } catch (error) {
-    agentError.value = error instanceof Error ? error.message : 'Agent 调用失败'
-  } finally {
-    agentLoadingType.value = null
-  }
-}
-
-/**
  * 加载当前节点的 RAG 调试上下文。
  *
- * 该按钮只展示后端检索到的图关系、向量上下文和最终 prompt, 不调用 LLM,
- * 用来验证 RAG 链路, 不影响 Agent 卡片展示。
+ * 该请求只展示后端检索到的图关系、向量上下文和最终 prompt，不调用 LLM，
+ * 也不会把结果写回节点内容。
  */
 async function handleLoadRagContext() {
   if (!props.selectedNode) {
     return
   }
+
   try {
     isRagLoading.value = true
     ragError.value = ''
@@ -249,31 +273,11 @@ async function handleLoadRagContext() {
   }
 }
 
-function handleToggleSelectionForCurrent() {
-  if (!props.selectedNode) {
-    return
-  }
-  if (isCurrentNodeInSelection.value) {
-    emit('selectionRemoved', props.selectedNode.id)
-  } else {
-    emit('selectionAdded', props.selectedNode.id)
-  }
-}
-
-function handleClearSelection() {
-  emit('selectionCleared')
-}
-
-function handleAgentCreateNode(
-  payload: { nodeType: CreativeNodeType; title: string; content: string; tags: string[] },
-) {
-  emit('nodeCreated', payload)
-}
-
-/* 切换选中对象时清空 RAG 调试预览, 但保留 Agent 卡片(用户可能在不同节点间来回查看上次结果)。 */
+/* 切换选中对象时清空临时预览，避免把上一节点的 Agent/RAG 结果误认为当前上下文。 */
 watch(
   () => [props.selectedNode?.id, props.selectedEdge?.id],
   () => {
+    agentResult.value = ''
     ragResult.value = null
     ragError.value = ''
   },
@@ -354,95 +358,27 @@ watch(
       </section>
 
       <section class="detail-panel">
-        <header class="agent-section-header">
-          <h3>Agent Actions</h3>
-          <button
-            v-if="selectedNodeIds.length > 0"
-            type="button"
-            class="text-button"
-            @click="handleClearSelection"
-          >
-            清空选区
-          </button>
-        </header>
-
-        <div class="selection-bar" v-if="selectedNodeIds.length > 0 || selectedNode">
-          <p class="selection-bar__count">
-            当前选区：<strong>{{ selectedNodeIds.length }}</strong> 个节点
-            <span class="selection-bar__hint">（Structure Agent 需要至少 2 个）</span>
-          </p>
-          <ul v-if="selectedNodesPreview.length" class="selection-bar__list">
-            <li v-for="node in selectedNodesPreview" :key="node.id">
-              {{ node.data.icon }} {{ node.data.title }}
-            </li>
-          </ul>
-          <button
-            v-if="selectedNode"
-            type="button"
-            class="selection-bar__toggle"
-            @click="handleToggleSelectionForCurrent"
-          >
-            {{ isCurrentNodeInSelection ? '− 从选区移除当前节点' : '+ 把当前节点加入选区' }}
-          </button>
-        </div>
-
-        <label for="agent-query">附加请求（可选）</label>
-        <div class="input-wrapper">
-          <textarea
-            id="agent-query"
-            rows="2"
-            v-model="ragQuery"
-            placeholder="留空时 Agent 会基于当前节点 / 选区自动推断"
-          />
-        </div>
-
+        <h3>Agent Actions 占位</h3>
         <div class="agent-actions">
-          <button
-            type="button"
-            :disabled="!selectedNode || agentLoadingType !== null"
-            @click="runAgent('inspiration')"
-          >
-            {{ agentLoadingType === 'inspiration' ? '生成中...' : '💡 灵感引导' }}
-          </button>
-          <button
-            type="button"
-            :disabled="!selectedNode || agentLoadingType !== null"
-            @click="runAgent('research')"
-          >
-            {{ agentLoadingType === 'research' ? '检索中...' : '📚 资料查询' }}
-          </button>
-          <button
-            type="button"
-            :disabled="selectedNodeIds.length < 2 || agentLoadingType !== null"
-            @click="runAgent('structure')"
-          >
-            {{ agentLoadingType === 'structure' ? '整理中...' : '🗂 结构整理' }}
-          </button>
+          <button type="button" @click="runAgentMock('inspiration')">灵感引导</button>
+          <button type="button" @click="runAgentMock('research')">资料查询</button>
+          <button type="button" @click="runAgentMock('structure')">结构整理</button>
         </div>
-
-        <p v-if="agentError" class="agent-error">{{ agentError }}</p>
-
-        <div class="agent-output" v-if="lastAgentType">
-          <InspirationCard
-            v-if="lastAgentType === 'inspiration' && inspirationOutput"
-            :output="inspirationOutput"
-            @create-node="handleAgentCreateNode"
-          />
-          <ResearchCard
-            v-else-if="lastAgentType === 'research' && researchOutput"
-            :output="researchOutput"
-          />
-          <StructureCard
-            v-else-if="lastAgentType === 'structure' && structureOutput"
-            :output="structureOutput"
-            @create-node="handleAgentCreateNode"
-          />
-        </div>
+        <pre v-if="agentResult" class="agent-result">{{ agentResult }}</pre>
       </section>
 
       <section class="detail-panel rag-panel">
-        <h3>RAG 检索调试</h3>
-        <p class="rag-hint">仅查看后端检索到的图关系、向量结果和最终 prompt, 不调用 LLM。</p>
+        <h3>RAG / Agent 调试</h3>
+        <label for="rag-query">用户请求</label>
+        <div class="input-wrapper">
+          <textarea
+            id="rag-query"
+            rows="3"
+            v-model="ragQuery"
+            placeholder="留空时使用当前节点标题和内容作为检索 query"
+          />
+        </div>
+        <!-- 当前按钮只查看上下文，不调用 LLM，也不会把结果写入节点正文。 -->
         <button type="button" :disabled="isRagLoading" @click="handleLoadRagContext">
           {{ isRagLoading ? '加载 RAG 上下文...' : '查看 RAG 上下文' }}
         </button>
@@ -484,6 +420,7 @@ watch(
 
           <details>
             <summary>最终 Prompt</summary>
+            <!-- 先让用户看到 AI 将接收的上下文，便于验证检索和拼接是否合理。 -->
             <pre class="prompt-preview">{{ ragResult.prompt }}</pre>
           </details>
         </div>
@@ -1024,115 +961,5 @@ button.secondary-action {
     border-left: none;
     border-top: 1px solid var(--border);
   }
-}
-
-.agent-section-header {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  margin-bottom: 12px;
-}
-
-.agent-section-header h3 {
-  margin: 0;
-}
-
-.text-button {
-  min-height: auto;
-  padding: 4px 10px;
-  border: 1px solid transparent;
-  background: transparent;
-  color: var(--muted);
-  font-size: 0.78rem;
-  cursor: pointer;
-  box-shadow: none;
-}
-
-.text-button:hover {
-  color: var(--text);
-  background: var(--app-bg);
-  border-color: var(--border);
-  transform: none;
-}
-
-.selection-bar {
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
-  margin-bottom: 14px;
-  padding: 10px 12px;
-  border: 1px dashed var(--border);
-  border-radius: 8px;
-  background: var(--panel-strong);
-}
-
-.selection-bar__count {
-  margin: 0;
-  color: var(--text);
-  font-size: 0.82rem;
-}
-
-.selection-bar__count strong {
-  color: var(--accent);
-}
-
-.selection-bar__hint {
-  color: var(--muted);
-  font-size: 0.74rem;
-}
-
-.selection-bar__list {
-  margin: 0;
-  padding: 0;
-  list-style: none;
-  display: flex;
-  flex-wrap: wrap;
-  gap: 6px;
-}
-
-.selection-bar__list li {
-  padding: 3px 8px;
-  border-radius: 6px;
-  background: var(--app-bg);
-  color: var(--text);
-  font-size: 0.76rem;
-}
-
-.selection-bar__toggle {
-  align-self: flex-start;
-  min-height: 32px;
-  padding: 0 12px;
-  border: 1px solid var(--border);
-  border-radius: 6px;
-  background: #ffffff;
-  color: var(--text);
-  font-size: 0.78rem;
-  cursor: pointer;
-  box-shadow: none;
-}
-
-.selection-bar__toggle:hover {
-  background: var(--app-bg);
-}
-
-.agent-error {
-  margin: 8px 0 0;
-  padding: 10px 12px;
-  border: 1px solid #fecaca;
-  border-radius: 8px;
-  background: #fef2f2;
-  color: #b42318;
-  font-size: 0.82rem;
-}
-
-.agent-output {
-  margin-top: 14px;
-}
-
-.rag-hint {
-  margin: 0;
-  color: var(--muted);
-  font-size: 0.78rem;
-  line-height: 1.45;
 }
 </style>

@@ -7,6 +7,7 @@
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
+from app.api.routes.chat import router as chat_router
 from app.api.routes.graph import router as graph_router
 from app.api.routes.rag import router as rag_router
 from app.api.routes.system import router as system_router
@@ -35,3 +36,4 @@ async def startup() -> None:
 app.include_router(system_router)
 app.include_router(graph_router)
 app.include_router(rag_router)
+app.include_router(chat_router)

@@ -60,6 +60,7 @@ export interface CreativeFlowNode {
   }
   sourcePosition?: Position
   targetPosition?: Position
+  class?: string
   data: CreativeNodeData
 }
 

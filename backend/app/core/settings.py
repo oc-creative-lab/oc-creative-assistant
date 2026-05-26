@@ -12,7 +12,7 @@ from pathlib import Path
 
 from dotenv import load_dotenv
 
-from app.core.paths import BACKEND_ROOT
+from app.core.paths import BACKEND_ROOT, DATA_DIR
 
 
 def _load_env() -> None:
@@ -83,20 +83,59 @@ def get_indexing_settings() -> IndexingSettings:
 
 @dataclass(frozen=True)
 class LlmSettings:
-    """对话 LLM 服务配置。"""
+    """对话 LLM 服务配置。
 
+    ``provider`` 决定 Strategy Pattern 的实现选择: ``openai`` 走真实 OpenAI 兼容
+    协议(DeepSeek/通义/官方 OpenAI), ``mock`` 走本地确定性桩, 用于离线开发与单测。
+    """
+
+    provider: str
     base_url: str | None
     api_key: str | None
     model: str
 
     @property
     def is_configured(self) -> bool:
+        if self.provider == "mock":
+            return True
         return bool(self.base_url and self.api_key and self.model)
 
 
 def get_llm_settings() -> LlmSettings:
     return LlmSettings(
+        provider=os.getenv("OC_LLM_PROVIDER", "openai").strip().lower(),
         base_url=os.getenv("OC_LLM_BASE_URL"),
         api_key=os.getenv("OC_LLM_API_KEY"),
         model=os.getenv("OC_LLM_MODEL", "deepseek-chat"),
+    )
+
+
+@dataclass(frozen=True)
+class AgentSettings:
+    """Agent 图运行时配置。
+
+    ``checkpointer_db_path`` 为 LangGraph 的 SqliteSaver 提供持久化路径, 与业务
+    SQLite 分离避免事务冲突; ``context_token_cap`` 控制每轮注入对话的检索上下文
+    上限, 防止长项目把 prompt 顶爆 LLM 的窗口。
+
+    多层记忆相关:
+    - ``recent_message_window``: load_context 取最近 N 条消息原文喂 prompt
+    - ``summary_keep_recent``: 摘要压缩时保留多少条不进入 summary
+    - ``summary_compress_every``: 高水位之外再积累多少条老消息才再次触发压缩
+    """
+
+    checkpointer_db_path: Path
+    context_token_cap: int
+    recent_message_window: int
+    summary_keep_recent: int
+    summary_compress_every: int
+
+
+def get_agent_settings() -> AgentSettings:
+    return AgentSettings(
+        checkpointer_db_path=DATA_DIR / "langgraph_checkpoint.sqlite3",
+        context_token_cap=_get_int("OC_AGENT_CONTEXT_TOKEN_CAP", 2000),
+        recent_message_window=_get_int("OC_AGENT_RECENT_MESSAGE_WINDOW", 10),
+        summary_keep_recent=_get_int("OC_AGENT_SUMMARY_KEEP_RECENT", 10),
+        summary_compress_every=_get_int("OC_AGENT_SUMMARY_COMPRESS_EVERY", 6),
     )
