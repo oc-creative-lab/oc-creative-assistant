@@ -18,7 +18,7 @@ from app.indexing.vector_store import (
 from app.schemas import RagGraphContextItem, RagMergedContextItem, RagVectorContextItem
 
 
-def _build_graph_context(
+def build_graph_context(
     node_id: str,
     nodes: list[NodeORM],
     edges: list[EdgeORM],
@@ -168,7 +168,7 @@ def _hits_to_items(
 
     return items
 
-def _merge_context(
+def merge_context(
     graph_context: list[RagGraphContextItem],
     vector_context: list[RagVectorContextItem],
 ) -> list[RagMergedContextItem]:

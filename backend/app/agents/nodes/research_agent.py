@@ -16,7 +16,6 @@ from langchain_core.messages import HumanMessage, SystemMessage
 from app.agents.memory import build_memory_block
 from app.agents.schemas import ResearchOutput
 from app.agents.state import AgentState
-from app.agents.tool_loop import run_tool_loop
 from app.agents.tools import make_project_tools
 from app.llm.factory import get_llm_provider
 from app.agents.tool_loop import compact_history_for_structured, run_tool_loop

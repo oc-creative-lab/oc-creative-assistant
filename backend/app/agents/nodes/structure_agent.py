@@ -16,7 +16,6 @@ from langchain_core.messages import HumanMessage, SystemMessage
 from app.agents.memory import build_memory_block
 from app.agents.schemas import StructureOutput
 from app.agents.state import AgentState
-from app.agents.tool_loop import run_tool_loop
 from app.agents.tools import make_project_tools
 from app.llm.factory import get_llm_provider
 from app.agents.tool_loop import compact_history_for_structured, run_tool_loop
@@ -30,9 +29,10 @@ _SYSTEM_PROMPT = """\
    名字/类型, 不要再问用户"具体是哪一个"。
 1. 查重策略二选一:
    - 已知节点名 / 大致语义: 用 search_nodes 按语义查 top-K
-   - 想看清当前项目"已经有哪些 X 类型节点": 用 list_nodes(node_type="character"
-     / "worldbuilding" / "plot") 取全名单查重, 避免 search_nodes 漏掉低相关分
-     的同类节点导致重复创建。
+   - 想看清当前项目"已经有哪些 X 类型节点": 用 list_nodes(node_type=
+     "character" / "worldbuilding" / "plot" / "idea" / "research" /
+     "structure") 取全名单查重, 避免 search_nodes 漏掉低相关分的同类节点
+     导致重复创建。
 2. 视情况再用 get_node / list_neighbors 看清现有结构, 决定新建什么、连接到哪里。
 3. 依据用户请求, 提议 0-3 条 proposed_changes, 支持 5 种 change_type:
    - create_node: 填 payload.title / payload.content / payload.node_type;

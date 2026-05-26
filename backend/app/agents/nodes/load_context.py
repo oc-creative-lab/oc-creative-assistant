@@ -19,13 +19,28 @@ from app.db.models import ChatMessageORM, ChatSessionORM, NodeORM, ProjectORM
 from app.indexing.document_loader import node_to_current_payload
 
 
-_EMPTY_CONTEXT: dict[str, Any] = {
-    "world_brief": "",
-    "conversation_summary": "",
-    "recent_messages": [],
-    "current_node": None,
-    "intent": None,
-}
+def _empty_context() -> dict[str, Any]:
+    """返回所有"可能跨轮残留"的 AgentState 字段清零增量。
+
+    两个返回路径 (session 不存在 / 正常加载) 都基于这份零值起步, 防止
+    LangGraph 复用 checkpoint 时上一轮的 *_output 或 boundary_warnings
+    污染本轮装配器的输入。
+    """
+    return {
+        "world_brief": "",
+        "conversation_summary": "",
+        "recent_messages": [],
+        "current_node": None,
+        "intent": None,
+        "inspiration_output": None,
+        "research_output": None,
+        "structure_output": None,
+        "simulation_output": None,
+        "assembler_output": None,
+        "boundary_warnings": [],
+        "staging_batch_id": None,
+        "staging_count": 0,
+    }
 
 
 def load_context_node(state: AgentState) -> dict[str, Any]:
@@ -34,14 +49,14 @@ def load_context_node(state: AgentState) -> dict[str, Any]:
     selected_ids = state.get("selected_node_ids") or []
 
     if not session_id:
-        return _EMPTY_CONTEXT
+        return _empty_context()
 
     window = get_agent_settings().recent_message_window
 
     with SessionLocal() as db:
         session = db.get(ChatSessionORM, session_id)
         if session is None:
-            return _EMPTY_CONTEXT
+            return _empty_context()
 
         project = db.get(ProjectORM, session.project_id)
         world_brief = project.world_brief if project is not None else ""
@@ -64,19 +79,11 @@ def load_context_node(state: AgentState) -> dict[str, Any]:
                 current_node_payload = node_to_current_payload(node)
 
         return {
+            **_empty_context(),
             "world_brief": world_brief,
             "conversation_summary": session.conversation_summary,
             "recent_messages": [
                 {"role": message.role, "content": message.content} for message in recent
             ],
             "current_node": current_node_payload,
-            "intent": None,
-            "inspiration_output": None,
-            "research_output": None,
-            "structure_output": None,
-            "simulation_output": None,
-            "assembler_output": None,
-            "boundary_warnings": [],
-            "staging_batch_id": None,
-            "staging_count": 0,
         }

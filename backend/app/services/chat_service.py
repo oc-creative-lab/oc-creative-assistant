@@ -17,6 +17,7 @@ from app.agents.graph import get_agent_graph
 from app.db.database import SessionLocal
 from app.db.models import AgentStagingORM, ChatMessageORM, ChatSessionORM
 from app.indexing.sync import safe_sync_node_index
+from app.indexing.vector_store import delete_node as delete_node_vectors
 from app.services.canvas_apply import apply_staging_record
 from app.services.graph_repository import read_project_node, require_project
 from app.schemas import (
@@ -45,7 +46,6 @@ from app.services.chat_repository import (
     require_staging,
     transition_staging,
 )
-from app.services.graph_repository import require_project
 
 
 # ---- ORM → DTO ----
@@ -134,7 +134,8 @@ def append_session_message(
     session_id: str,
     payload: ChatMessageCreateRequest,
 ) -> ChatMessagePayload:
-    """追加一条消息; Phase 4 起会在写入后立即触发 agent_graph 推理。"""
+    """追加一条消息到指定会话, 不触发 agent_graph; 仅用于联调和单测,
+    生产对话流由 ``run_chat_turn`` 接管, 它在 graph 节点内部统一写入消息。"""
     with SessionLocal.begin() as db:
         require_session(db, session_id)
         record = append_message(
@@ -195,7 +196,8 @@ def resolve_staging_item(
 ) -> AgentStagingPayload:
     """单条 staging 推进状态机, 接受 / 编辑时同步把变更落到画布。
     """
-    applied: list[tuple[str, str]] = []
+    upserted: list[tuple[str, str]] = []
+    deleted: list[tuple[str, str]] = []
 
     with SessionLocal.begin() as db:
         record = require_staging(db, staging_id)
@@ -230,13 +232,16 @@ def resolve_staging_item(
                 ):
                     pending_id_map[sibling.pending_id] = sibling.target_id
 
-        new_node_id = apply_staging_record(db, record, pending_id_map)
-        if new_node_id:
-            applied.append((record.project_id, new_node_id))
+        upserted_id, deleted_id = apply_staging_record(db, record, pending_id_map)
+        if upserted_id:
+            upserted.append((record.project_id, upserted_id))
+        if deleted_id:
+            deleted.append((record.project_id, deleted_id))
 
         result = _staging_to_payload(record)
 
-    _sync_indices(applied)
+    _sync_indices(upserted)
+    _sync_deletions(deleted)
     return result
 
 
@@ -254,7 +259,8 @@ def resolve_staging_batch(
     pending_id 的边会被 _resolve_endpoint 当成伪 id, 静默跳过整条。
     """
     new_status = "accepted" if payload.action == "accept_all" else "rejected"
-    applied: list[tuple[str, str]] = []
+    upserted: list[tuple[str, str]] = []
+    deleted: list[tuple[str, str]] = []
     pending_id_map: dict[str, str] = {}
 
     with SessionLocal.begin() as db:
@@ -280,13 +286,16 @@ def resolve_staging_batch(
             if record.status != "pending":
                 continue
             transition_staging(record, new_status=new_status)
-            new_node_id = apply_staging_record(db, record, pending_id_map)
-            if new_node_id:
-                applied.append((record.project_id, new_node_id))
+            upserted_id, deleted_id = apply_staging_record(db, record, pending_id_map)
+            if upserted_id:
+                upserted.append((record.project_id, upserted_id))
+            if deleted_id:
+                deleted.append((record.project_id, deleted_id))
 
         results = [_staging_to_payload(r) for r in records]
 
-    _sync_indices(applied)
+    _sync_indices(upserted)
+    _sync_deletions(deleted)
     return results
 
 
@@ -363,3 +372,18 @@ def _sync_indices(items: list[tuple[str, str]]) -> None:
         node = read_project_node(project_id, node_id)
         if node is not None:
             safe_sync_node_index(node)
+
+
+def _sync_deletions(items: list[tuple[str, str]]) -> None:
+    """对刚删的节点逐一从 ChromaDB 移除向量; 事务必须先提交避免脏写。
+
+    Chroma 故障不回滚 SQLite 删除: 主数据源已经移除, 残留向量再调一次
+    delete_node 即可清理, 日志保留排查线索即可。
+    """
+    for project_id, node_id in items:
+        try:
+            delete_node_vectors(project_id, node_id)
+        except Exception as exc:  # noqa: BLE001
+            logger.warning(
+                "delete chroma 失败 project=%s node=%s: %s", project_id, node_id, exc
+            )

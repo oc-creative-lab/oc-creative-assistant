@@ -1,7 +1,7 @@
 """对话与 staging HTTP 路由。
 
-阶段 2 的持久化基建出口, 暴露会话 / 消息 / staging 三张表的 CRUD;
-Phase 4 起由 ``POST /api/sessions/{id}/messages`` 触发 agent_graph 推理。
+暴露会话 / 消息 / staging 的 CRUD 接口; ``POST /api/chat`` 是真正的
+agent 入口, 触发 LangGraph 完整推理链路。
 """
 
 from typing import Literal
@@ -60,7 +60,7 @@ async def append_chat_message(
     session_id: str,
     payload: ChatMessageCreateRequest,
 ) -> ChatMessagePayload:
-    """追加一条消息; Phase 2 用于联调与单测, Phase 4 由 graph 入口替换。"""
+    """追加一条消息 (不触发 agent 推理); 仅用于联调与单测, 正式对话走 POST /api/chat。"""
     return append_session_message(session_id, payload)
 
 

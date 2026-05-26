@@ -14,7 +14,7 @@ from app.db.models import EdgeORM, NodeORM, ProjectORM
 from app.indexing.config import MAX_TOP_K
 from app.indexing.document_loader import node_to_current_payload
 from app.rag.prompts import build_inspiration_prompt
-from app.rag.retrieval import _build_graph_context, _merge_context, build_project_vector_context
+from app.rag.retrieval import build_graph_context, build_project_vector_context, merge_context
 from app.schemas import (
     MemorySearchItem,
     MemorySearchRequest,
@@ -63,12 +63,12 @@ def build_rag_context(request: RagContextRequest) -> RagContextResponse:
 
     current_payload = node_to_current_payload(current_node)
     query_used = request.query.strip() or f"{current_node.title}\n{current_node.content}".strip()
-    graph_context = _build_graph_context(current_node.id, nodes, edges)
+    graph_context = build_graph_context(current_node.id, nodes, edges)
     vector_context, vector_store, vector_error = build_project_vector_context(
         project_id, nodes, query_used, top_k + 1
     )
     vector_context = [item for item in vector_context if item.id != current_node.id][:top_k]
-    merged_context = _merge_context(graph_context, vector_context)
+    merged_context = merge_context(graph_context, vector_context)
     prompt = build_inspiration_prompt(current_payload, graph_context, vector_context, query_used)
 
     return RagContextResponse(

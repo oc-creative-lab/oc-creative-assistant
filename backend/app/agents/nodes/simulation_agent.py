@@ -55,10 +55,7 @@ def simulation_agent_node(state: AgentState) -> dict[str, Any]:
     ]
 
     provider = get_llm_provider()
-    tools = make_project_tools(
-        project_id,
-        search_cache=state.get("tool_search_cache", {}),
-    )
+    tools = make_project_tools(project_id)
 
     history = run_tool_loop(provider, initial_messages, tools)
     output = provider.structured(

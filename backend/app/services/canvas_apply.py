@@ -35,10 +35,19 @@ def apply_staging_record(
     db: Session,
     record: AgentStagingORM,
     pending_id_map: dict[str, str] | None = None,
-) -> str | None:
-    """把单条 staging 落到画布; 仅 create_node 成功时返回新 node_id, 其余 None。"""
+) -> tuple[str | None, str | None]:
+    """把单条 staging 落到画布。
+
+    Returns:
+        (upserted_node_id, deleted_node_id) 两元组:
+        - upserted_node_id: create_node / update_node 落库后的真实 id, 调用方
+          用于在事务关闭后触发 ChromaDB 重新嵌入;
+        - deleted_node_id: delete_node 命中的真实 id, 调用方用于在事务关闭后
+          把对应向量从 ChromaDB 移除, 避免残留。
+        其它 change_type 一律返回 (None, None)。
+    """
     if record.status not in _ACCEPTED_STATUSES:
-        return None
+        return None, None
 
     payload = record.payload_edited or record.payload
 
@@ -46,24 +55,23 @@ def apply_staging_record(
         new_id = _apply_create_node(db, record, payload)
         if pending_id_map is not None and record.pending_id:
             pending_id_map[record.pending_id] = new_id
-        return new_id
+        return new_id, None
 
     if record.change_type == "create_edge":
         _apply_create_edge(db, record, payload, pending_id_map or {})
-        return None
+        return None, None
 
     if record.change_type == "update_node":
-        return _apply_update_node(db, record, payload)
+        return _apply_update_node(db, record, payload), None
 
     if record.change_type == "delete_node":
-        _apply_delete_node(db, record)
-        return None
+        return None, _apply_delete_node(db, record)
 
     if record.change_type == "delete_edge":
         _apply_delete_edge(db, record, payload)
-        return None
+        return None, None
 
-    return None
+    return None, None
 
 
 def _apply_create_node(db: Session, record: AgentStagingORM, payload: dict[str, Any]) -> str:
@@ -186,16 +194,17 @@ def _apply_update_node(
     return target_id
 
 
-def _apply_delete_node(db: Session, record: AgentStagingORM) -> None:
-    """删除节点; 目标节点不存在或越权时静默跳过。
+def _apply_delete_node(db: Session, record: AgentStagingORM) -> str | None:
+    """删除节点; 返回被删 node_id 供调用方同步 ChromaDB, 失败/越权返回 None。
 
-    SQLite 默认不级联, 因此同时把以该节点为 source 或 target 的边一并清掉,
-    避免画布上出现"指向已删除节点"的孤儿边。
+    DB 侧已配 ondelete=CASCADE + PRAGMA foreign_keys=ON, 边会自动级联清除;
+    这里手动 delete 边作为"防止环境忘开 PRAGMA"的双保险, 不依赖外键也能保证
+    画布上不会出现指向已删节点的孤儿边。
     """
     target_id = record.target_id
     if not target_id:
         logger.warning("delete_node 跳过: staging=%s 没有 target_id", record.id)
-        return
+        return None
 
     node = db.get(NodeORM, target_id)
     if node is None or node.project_id != record.project_id:
@@ -203,7 +212,7 @@ def _apply_delete_node(db: Session, record: AgentStagingORM) -> None:
             "delete_node 跳过: staging=%s 节点 %s 不在项目 %s 内",
             record.id, target_id, record.project_id,
         )
-        return
+        return None
 
     db.query(EdgeORM).filter(
         EdgeORM.project_id == record.project_id,
@@ -211,6 +220,7 @@ def _apply_delete_node(db: Session, record: AgentStagingORM) -> None:
     ).delete(synchronize_session=False)
     db.delete(node)
     db.flush()
+    return target_id
 
 
 def _apply_delete_edge(

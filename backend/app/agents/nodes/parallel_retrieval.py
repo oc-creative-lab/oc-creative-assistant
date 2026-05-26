@@ -15,9 +15,9 @@ from app.db.database import SessionLocal
 from app.db.models import EdgeORM, NodeORM
 from app.indexing.config import MAX_TOP_K
 from app.rag.retrieval import (
-    _build_graph_context,
-    _merge_context,
+    build_graph_context,
     build_project_vector_context,
+    merge_context,
 )
 
 
@@ -51,7 +51,7 @@ def parallel_retrieval_node(state: AgentState) -> dict[str, Any]:
 
     graph_context = []
     if current_node is not None:
-        graph_context = _build_graph_context(current_node.id, nodes, edges)
+        graph_context = build_graph_context(current_node.id, nodes, edges)
 
     top_k = min(DEFAULT_TOP_K, MAX_TOP_K)
     vector_context, _, _ = build_project_vector_context(project_id, nodes, user_message, top_k + 1)
@@ -59,7 +59,7 @@ def parallel_retrieval_node(state: AgentState) -> dict[str, Any]:
         vector_context = [item for item in vector_context if item.id != current_node.id]
     vector_context = vector_context[:top_k]
 
-    merged = _merge_context(graph_context, vector_context)
+    merged = merge_context(graph_context, vector_context)
 
     return {
         "graph_context": graph_context,

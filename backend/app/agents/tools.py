@@ -26,25 +26,23 @@ from app.rag.retrieval import build_project_vector_context
 from app.services.graph_repository import read_project_node, read_project_nodes
 
 
-_NODE_TYPE_FILTER = {"character", "worldbuilding", "plot"}
+_NODE_TYPE_FILTER = {
+    "character", "worldbuilding", "plot",
+    "idea", "research", "structure",
+}
 
 
-def make_project_tools(
-    project_id: str,
-    search_cache: dict[str, str] | None = None,
-) -> list[BaseTool]:
+def make_project_tools(project_id: str) -> list[BaseTool]:
     """生成绑定到指定项目的只读工具集。
 
-    search_cache 由调用方注入, 让一次用户 turn 内的多个 agent 共享同一份
-    缓存, 避免 dispatcher 串起来的 research → simulation → structure 各自
-    重复打同一个 query。调用方不传时退化成 per-agent 闭包级 cache。
+    内部维护一个 turn 级 search_cache, 让同一轮 ReAct 循环里 LLM 用变体
+    query 反复调 search_nodes 时命中已有结果, 避免重复打 chroma。
 
     cache key 用"词集合"做归一化 (空白拆词 → 排序 → 拼回字符串), 让 LLM
     用词序调换 ("艾琳 导师" / "导师 艾琳") 或微调 top_k 都吃同一缓存; 不
     归一化时 LLM 在 ReAct 里很容易靠改写关键词绕开缓存把 chroma 打爆。
     """
-    if search_cache is None:
-        search_cache = {}
+    search_cache: dict[str, str] = {}
 
     def _cache_key(query: str) -> str:
         # 词序无关 + 重复词消除 + 大小写无关; top_k 不入 key, 取 max top_k 服务所有调用方
@@ -115,8 +113,9 @@ def make_project_tools(
         会漏掉与查询词相关度低的节点。
 
         Args:
-            node_type: 可选过滤, "character" / "worldbuilding" / "plot" 三选一;
-                空字符串或其它值表示不过滤。
+            node_type: 可选过滤, 六选一: character / worldbuilding / plot
+                / idea / research / structure; 空字符串或不在白名单的值表示
+                不过滤。
             limit: 最多返回的节点数, 默认 100; 项目较大时 LLM 可缩小到 30-50。
 
         Returns:
