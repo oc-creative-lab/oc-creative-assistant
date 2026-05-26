@@ -1,7 +1,7 @@
 """向量索引配置常量。
 
 本模块集中管理 ChromaDB collection 名称、embedding 维度和检索相关默认值。
-路径配置来自 `app.core.paths`，确保源码迁入 `app/` 后仍写入 `backend/data`。
+路径配置来自 `app.core.paths`，开发态默认写入 `backend/data`，打包态跟随 Electron 指定目录。
 """
 
 import os

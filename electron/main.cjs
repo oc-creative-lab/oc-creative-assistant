@@ -103,6 +103,17 @@ function getBundledBackendExecutable() {
   return path.join(process.resourcesPath, 'backend', executableName)
 }
 
+// 解析打包态后端数据目录；portable 跟随 exe，安装版跟随当前用户。
+function resolveBundledBackendDataDir() {
+  const portableExecutableDir = process.env.PORTABLE_EXECUTABLE_DIR
+
+  if (portableExecutableDir) {
+    return path.join(portableExecutableDir, 'data')
+  }
+
+  return app.getPath('userData')
+}
+
 // 在应用退出时停止已启动的后端进程。
 function stopBundledBackend() {
   if (!backendProcess || backendProcess.killed) {
@@ -124,18 +135,24 @@ async function startBundledBackend() {
   const backendUrl = buildHttpUrl(backendHost, selectedBackendPort)
   const backendHealthUrl = buildHealthUrl(backendUrl)
   const executablePath = getBundledBackendExecutable()
+  const backendDataDir = resolveBundledBackendDataDir()
 
   if (!fs.existsSync(executablePath)) {
     throw new Error(`Bundled backend executable not found at ${executablePath}`)
   }
 
   // 后端实际端口可能因占用而后移，最终地址会通过 preload 注入给前端。
+  // 数据目录由 Electron 显式传入，避免后端写进 portable 的临时解包目录。
   backendProcess = spawn(
     executablePath,
     ['--host', backendHost, '--port', String(selectedBackendPort)],
     {
       stdio: 'ignore',
       windowsHide: true,
+      env: {
+        ...process.env,
+        OC_CREATIVE_DATA_DIR: backendDataDir,
+      },
     },
   )
 
