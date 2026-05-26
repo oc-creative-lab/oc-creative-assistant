@@ -48,7 +48,7 @@ class IndexingSyncResult:
 
 def _base_result(status: str, message: str, expected_nodes: int = 0, error: str | None = None) -> IndexingSyncResult:
     """构造统一的索引状态，集中填充当前 embedding 配置。"""
-    from app.indexing.vector_store import embedding_provider
+    from app.indexing.embedding_provider import embedding_provider
 
     return IndexingSyncResult(
         status=status,

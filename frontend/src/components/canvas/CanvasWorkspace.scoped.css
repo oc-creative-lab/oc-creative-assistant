@@ -1,0 +1,266 @@
+.canvas-workspace {
+    min-width: 0;
+    min-height: 0;
+    display: grid;
+    grid-template-rows: auto minmax(0, 1fr);
+    background: var(--canvas-bg);
+  }
+  
+  .canvas-toolbar {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+    padding: 8px 14px;
+    border-bottom: 1px solid var(--border);
+    background: var(--panel-strong);
+  }
+  
+  .mode-actions,
+  .canvas-actions {
+    display: flex;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: 8px;
+  }
+  
+  .mode-actions button,
+  .canvas-actions button {
+    min-height: 30px;
+    padding: 0 12px;
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    background: var(--panel);
+    color: var(--muted);
+    cursor: pointer;
+  }
+  
+  .mode-actions button:hover,
+  .canvas-actions button:hover {
+    border-color: var(--accent-border);
+    background: var(--accent-soft);
+    color: var(--accent);
+  }
+  
+  .interaction-hint {
+    color: var(--muted);
+    font-size: 0.84rem;
+  }
+  
+  .relation-picker {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    color: var(--muted);
+    font-size: 0.84rem;
+  }
+  
+  /* 自定义下拉框组件样式 (与右侧边栏一致) */
+  .custom-select-container {
+    position: relative;
+    width: 120px;
+    user-select: none;
+  }
+  
+  .custom-select-trigger {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    width: 100%;
+    min-height: 30px;
+    padding: 0 10px;
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    background-color: var(--panel);
+    color: var(--muted);
+    font-size: 0.84rem;
+    line-height: 1.5;
+    cursor: pointer;
+    transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+    box-shadow: 0 1px 2px rgba(0, 0, 0, 0.02);
+  }
+  
+  .custom-select-trigger:hover {
+    border-color: var(--accent-border);
+    background: var(--accent-soft);
+    color: var(--accent);
+  }
+  
+  .custom-select-trigger.is-open {
+    border-color: var(--accent);
+    background-color: #ffffff;
+    box-shadow: 0 0 0 3px var(--accent-soft), 0 1px 2px rgba(0, 0, 0, 0.02);
+    color: var(--text);
+  }
+  
+  .custom-select-arrow {
+    width: 10px;
+    height: 6px;
+    background-color: currentColor;
+    clip-path: polygon(100% 0%, 0 0%, 50% 100%);
+    transition: transform 0.2s ease;
+  }
+  
+  .custom-select-trigger.is-open .custom-select-arrow {
+    transform: rotate(180deg);
+  }
+  
+  .custom-select-options {
+    position: absolute;
+    top: calc(100% + 4px);
+    left: 0;
+    right: 0;
+    z-index: 100;
+    max-height: 240px;
+    overflow-y: auto;
+    margin: 0;
+    padding: 6px;
+    list-style: none;
+    background-color: #ffffff;
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.08), 0 2px 4px rgba(0, 0, 0, 0.04);
+    animation: dropdownFadeIn 0.15s ease-out forwards;
+  }
+  
+  @keyframes dropdownFadeIn {
+    from {
+      opacity: 0;
+      transform: translateY(-4px);
+    }
+    to {
+      opacity: 1;
+      transform: translateY(0);
+    }
+  }
+  
+  .custom-select-option {
+    padding: 8px 12px;
+    border-radius: 6px;
+    color: var(--text);
+    font-size: 0.84rem;
+    cursor: pointer;
+    transition: background-color 0.15s ease;
+  }
+  
+  .custom-select-option:hover {
+    background-color: var(--app-bg);
+  }
+  
+  .custom-select-option.is-selected {
+    background-color: var(--accent-soft);
+    color: var(--accent);
+    font-weight: 600;
+  }
+  
+  .canvas-actions button:first-child,
+  .canvas-actions button:nth-child(2) {
+    width: 32px;
+    padding: 0;
+    color: var(--text);
+    font-size: 1.05rem;
+    font-weight: 700;
+  }
+  
+  .canvas-actions button.danger {
+    color: #b42318;
+  }
+  
+  .flow-shell {
+    min-height: 0;
+  }
+  
+  .creative-flow {
+    width: 100%;
+    height: 100%;
+    background-color: var(--canvas-bg);
+    background-image:
+      linear-gradient(var(--grid-line) 1px, transparent 1px),
+      linear-gradient(90deg, var(--grid-line) 1px, transparent 1px);
+    background-size: 28px 28px;
+  }
+  
+  :deep(.vue-flow__edge-path) {
+    stroke-width: 1.8;
+  }
+  
+  :deep(.creative-edge.vue-flow__edge.animated .vue-flow__edge-path) {
+    stroke-dasharray: 8 6;
+  }
+  
+  :deep(.vue-flow__edge-text) {
+    font-size: 12px;
+  }
+  
+  :deep(.vue-flow__handle) {
+    width: 8px;
+    height: 8px;
+    border: 2px solid #ffffff;
+    background: #667085;
+  }
+  
+  :deep(.creative-edge.is-highlighted .vue-flow__edge-path),
+  :deep(.vue-flow__edge.is-highlighted .vue-flow__edge-path) {
+    animation: edgeHighlightPulse 1.4s ease-in-out 2 !important;
+  }
+  
+  @keyframes edgeHighlightPulse {
+    0%, 100% {
+      filter: drop-shadow(0 0 0 rgba(245, 158, 11, 0));
+    }
+    35%, 65% {
+      stroke: #f59e0b !important;
+      stroke-width: 6 !important;
+      filter:
+        drop-shadow(0 0 8px rgba(245, 158, 11, 1))
+        drop-shadow(0 0 18px rgba(245, 158, 11, 0.55));
+    }
+  }
+  
+  :deep(.creative-edge.is-highlighted .vue-flow__edge-textbg),
+  :deep(.vue-flow__edge.is-highlighted .vue-flow__edge-textbg) {
+    animation: edgeLabelBgHighlightPulse 1.4s ease-in-out 2;
+  }
+  
+  @keyframes edgeLabelBgHighlightPulse {
+    0%, 100% {
+    }
+    50% {
+      fill: #fef3c7 !important;
+      stroke: #f59e0b !important;
+      stroke-width: 2;
+    }
+}
+  
+:deep(.vue-flow__node.is-highlighted) {
+  animation: nodeHighlightPulse 1.4s ease-in-out 2;
+}
+
+:deep(.vue-flow__node.is-highlighted .creative-node) {
+  box-shadow:
+    0 0 0 4px rgba(245, 158, 11, 0.85),
+    0 0 18px rgba(245, 158, 11, 0.55) !important;
+}
+
+@keyframes nodeHighlightPulse {
+  0%, 100% {
+    filter: drop-shadow(0 0 0 rgba(245, 158, 11, 0));
+  }
+  35%, 65% {
+    filter:
+      drop-shadow(0 0 6px rgba(245, 158, 11, 1))
+      drop-shadow(0 0 16px rgba(245, 158, 11, 0.55));
+  }
+}
+
+@media (max-width: 640px) {
+    .canvas-toolbar {
+      align-items: stretch;
+      flex-direction: column;
+    }
+  
+    .mode-actions,
+    .canvas-actions {
+      align-items: stretch;
+    }
+  }
