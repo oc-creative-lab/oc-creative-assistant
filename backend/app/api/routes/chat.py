@@ -32,6 +32,8 @@ from app.services.chat_service import (
     resolve_staging_item,
     run_chat_turn,
 )
+from app.services.chat_stream import stream_chat_turn
+from fastapi.responses import StreamingResponse
 
 
 router = APIRouter(prefix="/api", tags=["chat"])
@@ -110,3 +112,19 @@ async def resolve_chat_staging_batch(
 async def post_chat(payload: ChatRequest) -> ChatResponse:
     """触发 agent_graph 完整推理链路; 同步返回对话回复 + staging 批次信息。"""
     return run_chat_turn(payload)
+
+
+@router.post("/chat/stream")
+async def post_chat_stream(payload: ChatRequest) -> StreamingResponse:
+    """SSE 流式 chat 接口; 前端用 fetch + ReadableStream 解析事件流。
+    Cache-Control 关 cache, X-Accel-Buffering 关 nginx 中间缓冲, 让事件
+    能立即推到前端, 避免反代积压成"突发到达"破坏渐进体验。
+    """
+    return StreamingResponse(
+        stream_chat_turn(payload),
+        media_type="text/event-stream",
+        headers={
+            "Cache-Control": "no-cache",
+            "X-Accel-Buffering": "no",
+        },
+    )

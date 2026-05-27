@@ -157,6 +157,18 @@ class ChatAssemblerOutput(_LlmStructuredOutput):
     staging_summary: str = ""
 
 
+class ChatMetadataOutput(_LlmStructuredOutput):
+    """chat_assembler 第二步: 已生成 reply_text 后, 单独抽 metadata。
+
+    分离的目的: reply_text 走 token 流式生成不能用 function_calling, 而
+    cited_node_ids / staging_summary 这类元数据没必要流式, 一次性 structured
+    返回即可。两个调用合起来仍构成完整 ChatAssemblerOutput, 对外契约不变。
+    """
+
+    cited_node_ids: list[str] = Field(default_factory=list)
+    staging_summary: str = ""
+
+    
 class SummaryOutput(_LlmStructuredOutput):
     """摘要压缩节点的结构化输出。
 

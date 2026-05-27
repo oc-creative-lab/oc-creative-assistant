@@ -113,30 +113,23 @@ const {
  *   nodeId: 需要选中的节点 ID。
  *   shouldFocus: 是否将视口移动到该节点附近。
  */
-function selectNode(nodeId: string, shouldFocus = false) {
-  const nextNodes: CreativeFlowNode[] = []
-
+ function selectNode(nodeId: string, shouldFocus = false) {
   for (const node of nodes.value) {
-    nextNodes.push({
-      ...node,
-      data: { ...node.data, isActive: node.id === nodeId },
-    })
+    if (node.data.isActive !== (node.id === nodeId)) {
+      node.data.isActive = node.id === nodeId
+    }
   }
-
-  nodes.value = nextNodes
 
   if (!shouldFocus) return
 
   const target = nodes.value.find((node) => node.id === nodeId)
+  if (!target) return
 
-  if (target) {
-    const centerX = target.position.x + 120
-    const centerY = target.position.y + 70
-    /* 先等待选中态写入 DOM, 避免刚加载时聚焦到 Vue Flow 的旧布局位置; 不传 zoom 让用户当前缩放级别保留。 */
-    void nextTick(() => {
-      void setCenter(centerX, centerY, { duration: 260 })
-    })
-  }
+  const centerX = target.position.x + 120
+  const centerY = target.position.y + 70
+  void nextTick(() => {
+    void setCenter(centerX, centerY, { duration: 260 })
+  })
 }
 
 /** 将 Vue Flow 节点点击事件上抛给 AppShell 维护全局选中对象。 */
@@ -193,17 +186,19 @@ watch(
     const highlightedNodes = new Set(props.highlightedNodeIds)
     const highlightedEdges = new Set(props.highlightedEdgeIds)
 
-    nodes.value = nodes.value.map((node) => ({
-      ...node,
-      class: highlightedNodes.has(node.id) ? 'is-highlighted' : '',
-    }))
-
-    edges.value = edges.value.map((edge) => normalizeEdge(edge, highlightedEdges))
+    for (const node of nodes.value) {
+      const next = highlightedNodes.has(node.id) ? 'is-highlighted' : ''
+      if (node.class !== next) {
+        node.class = next
+      }
+    }
 
     edges.value.forEach((edge) => {
+      const normalized = normalizeEdge(edge, highlightedEdges)
+      edge.class = normalized.class
       const internal = findEdge(edge.id)
       if (internal) {
-        internal.class = edge.class
+        internal.class = normalized.class
       }
     })
   },

@@ -12,6 +12,7 @@ DeepSeek / 通义等 OpenAI 兼容服务普遍不支持 ``response_format=json_s
 from __future__ import annotations
 
 import logging
+from collections.abc import Iterator
 from typing import Any, Protocol, TypeVar
 
 from langchain_core.messages import AIMessage, BaseMessage, HumanMessage
@@ -35,6 +36,8 @@ class LlmProvider(Protocol):
     """
 
     def chat(self, messages: list[BaseMessage]) -> str: ...
+
+    def chat_stream(self, messages: list[BaseMessage]) -> Iterator[str]: ...
 
     def structured(
         self,
@@ -71,6 +74,17 @@ class OpenAICompatibleProvider:
         response = self._client.invoke(messages)
         content = response.content if isinstance(response, AIMessage) else response
         return content if isinstance(content, str) else str(content)
+
+    def chat_stream(self, messages: list[BaseMessage]) -> Iterator[str]:
+        """逐 chunk yield 文本 delta; LangChain ChatOpenAI 原生 .stream() 支持。
+
+        空 chunk (例如 LLM 还在思考还没产 token) 直接跳过, 让上层只看到
+        真有内容的 token, 避免把 None / "" 灌进字符串累加。
+        """
+        for chunk in self._client.stream(messages):
+            content = chunk.content if isinstance(chunk, AIMessage) else chunk
+            if isinstance(content, str) and content:
+                yield content
 
     def structured(
         self,
@@ -147,6 +161,10 @@ _MOCK_SAMPLES: dict[str, dict[str, Any]] = {
         "cited_node_ids": [],
         "staging_summary": "我准备帮你新增 1 处, 等你确认。",
     },
+    "ChatMetadataOutput": {
+        "cited_node_ids": [],
+        "staging_summary": "我准备帮你新增 1 处, 等你确认。",
+    },
         "SummaryOutput": {
         "summary": "[mock] 用户与 agent 围绕主角的过往与族群冲突展开了多轮探讨, 已就主线方向达成基本共识。",
         "key_facts": [
@@ -171,6 +189,11 @@ class MockProvider:
         )
         text = last_user if isinstance(last_user, str) else str(last_user)
         return f"[mock] received: {text[:60]}"
+
+    def chat_stream(self, messages: list[BaseMessage]) -> Iterator[str]:
+        """按字符切分模拟 token stream, 让 mock 模式也能验证前端渐进渲染。"""
+        for ch in self.chat(messages):
+            yield ch
 
     def structured(
         self,

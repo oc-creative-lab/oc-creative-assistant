@@ -132,4 +132,76 @@ export async function resolveStagingBatch(
   })
 }
 
+/** SSE 事件类型, 与后端 chat_stream._sse 的 payload 对齐。 */
+export type ChatStreamEvent =
+  | { type: 'node_end'; node: string; label: string }
+  | { type: 'intent'; primary: string; confidence: number }
+  | { type: 'reply_token'; text: string }
+  | {
+      type: 'reply_ready'
+      reply_text: string
+      cited_node_ids: string[]
+      staging_summary: string
+    }
+  | {
+      type: 'persistence_done'
+      message_id: string
+      batch_id: string | null
+      staging_count: number
+    }
+  | { type: 'done' }
+  | { type: 'error'; message: string }
+
+/**
+ * 流式 chat: 后端 SSE, 前端 fetch + ReadableStream 解析。
+ *
+ * EventSource 不支持 POST + body, 所以走原生 fetch。每收到一个完整 SSE
+ * data 行就调一次 onEvent, 让组件渐进更新 UI。
+ */
+export async function streamChat(
+  sessionId: string,
+  userMessage: string,
+  selectedNodeIds: string[],
+  onEvent: (event: ChatStreamEvent) => void,
+): Promise<void> {
+  const response = await fetch(`${backendBaseUrl}/api/chat/stream`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      session_id: sessionId,
+      user_message: userMessage,
+      selected_node_ids: selectedNodeIds,
+    }),
+  })
+
+  if (!response.ok || !response.body) {
+    throw new Error(`stream failed: HTTP ${response.status}`)
+  }
+
+  const reader = response.body.getReader()
+  const decoder = new TextDecoder()
+  let buffer = ''
+
+  for (;;) {
+    const { done, value } = await reader.read()
+    if (done) break
+    buffer += decoder.decode(value, { stream: true })
+
+    /* SSE 协议: 事件之间用 \n\n 分隔, 不完整的留在 buffer 等下一帧 */
+    const chunks = buffer.split('\n\n')
+    buffer = chunks.pop() ?? ''
+
+    for (const raw of chunks) {
+      const line = raw.trim()
+      if (!line.startsWith('data: ')) continue
+      try {
+        const data = JSON.parse(line.slice(6)) as ChatStreamEvent
+        onEvent(data)
+      } catch {
+        /* 跳过损坏 chunk, 让流继续 */
+      }
+    }
+  }
+}
+
 export { backendBaseUrl }

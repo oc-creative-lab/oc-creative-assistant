@@ -25,24 +25,13 @@ from app.db.database import SessionLocal
 from app.db.models import ChatMessageORM, ChatSessionORM
 from app.llm.factory import get_llm_provider
 from app.services.chat_repository import update_session_summary
+from app.agents.prompts import load_prompt
 
 
 logger = logging.getLogger(__name__)
 
 
-_SYSTEM_PROMPT = """\
-你是创作助手的对话摘要器, 任务是把"老对话"压成一段紧凑的中文 summary, 让后续轮次
-的 prompt 不必再带原始消息也能保持创作语境的连贯。
-
-工作要点:
-- 已有 summary 是历史摘要, 新一段消息是其后用户与助手的对话; 输出要把两部分融合,
-  覆盖最新的世界观、人物、未决冲突、用户偏好
-- 不要罗列每条消息的字面内容, 抓主线; 总长控制在 300 字以内
-- key_facts 列出 3-6 条短句, 每条聚焦一个"接下来仍可能被引用"的设定或决定
-- 不得编造原文未涉及的信息
-
-最终用 SummaryOutput 结构化返回, 字段: summary / key_facts。
-"""
+_SYSTEM_PROMPT = load_prompt("summary_compress")
 
 
 def _format_messages_for_prompt(messages: list[ChatMessageORM]) -> str:

@@ -1,21 +1,28 @@
 """对话装配器节点。
 
-读取当前 intent 对应那个 agent 的结构化输出, 用 LLM 把它翻译成自然语言
-回复; small_talk 走单独的轻量 prompt, 让闲聊不被项目上下文里的角色名
-干扰成"伪装用户名"。
+读取当前 intent 对应那个 agent 的结构化输出, 用 LLM 把它翻译成自然语言回复;
+small_talk 走单独的轻量 prompt, 让闲聊不被项目上下文里的角色名干扰成
+"伪装用户名"。
 
-cited_node_ids 与 staging_summary 由 LLM 一并产出, 让前端能在气泡尾部
-展示"我准备改 N 处"的提示。
+为支持 token 级流式, 主路径拆成两步:
+  Step 1 [流式]: chat_stream 生成 reply_text 纯文本, 每个 token 通过
+                 get_stream_writer 推到 LangGraph custom stream 上
+  Step 2 [非流式]: structured 调用从已生成的 reply_text 抽出
+                   cited_node_ids 与 staging_summary
+
+small_talk 文本极短, 不值得为它额外加 round-trip, 保留一次性 structured。
 """
 
 from __future__ import annotations
 
 from typing import Any
 
-from langchain_core.messages import HumanMessage, SystemMessage
+from langchain_core.messages import BaseMessage, HumanMessage, SystemMessage
+from langgraph.config import get_stream_writer
 
 from app.agents.memory import build_memory_block
-from app.agents.schemas import ChatAssemblerOutput
+from app.agents.prompts import load_prompt
+from app.agents.schemas import ChatAssemblerOutput, ChatMetadataOutput
 from app.agents.state import AgentState
 from app.llm.factory import get_llm_provider
 
@@ -28,41 +35,9 @@ _OUTPUT_KEY_BY_INTENT: dict[str, str] = {
 }
 
 
-_SMALL_TALK_PROMPT = """\
-你是创作助手, 用户在闲聊或寒暄, 给一句温暖、简短 (40 字内) 的中文回应,
-顺手提醒用户你能帮忙做什么 (例如发散灵感、查项目里写过的设定、建角色与关系网),
-让对话能自然进入创作主题。
-
-- reply_text: 一两句话, 不要写编号清单
-- cited_node_ids: 留空数组
-- staging_summary: 留空字符串
-"""
-
-
-_SYSTEM_PROMPT = """\
-你是创作助手的对话装配器, 把内部 agent 的结构化输出翻译成自然、亲切的中文回复,
-让用户感觉自己在和"一个人"对话, 而不是看 JSON 报告。
-
-规则:
-- reply_text: 直接面向用户, 不要用第三人称, 不要复述 reasoning 的字面内容,
-  把推理过程自然融入语气; 整体控制在 280 字以内
-- 输出含 suggestions 时, 用编号列出 (1. 2. 3.)
-- 输出含 branches (推演) 时, 用"如果 X / 那么 Y"的结构逐条展开,
-  每条带一个 likelihood 提示 (高/中/低 可能), 列 1-2 条最关键的后续影响
-- 没有列表时围绕 summary 自然展开
-- cited_node_ids: 取 referenced_node_ids 与 branches[*].affected_node_ids
-  的去重并集
-- staging_summary: 仅当 proposed_changes 非空时填一行
-  "我准备帮你新增 N 处, 等你确认。", 否则留空字符串
-
-重要 - 副作用的措辞:
-- 任何 proposed_changes 都还在 staging 等用户确认, 别用 "我已经把...建好了/挂上了"
-  这种过去完成时, 改用 "我准备帮你..." / "建议你新增..." 这类未落地措辞;
-- 看到【边界检查跳过的项】时, 在 reply_text 里如实说明被跳过的关键原因,
-  不要假装这些项已经做完。
-
-不要编造结构化输出里没有的信息, 也不要省略关键内容。
-"""
+_SMALL_TALK_PROMPT = load_prompt("chat_assembler_small_talk")
+_REPLY_PROMPT = load_prompt("chat_assembler_reply")
+_METADATA_PROMPT = load_prompt("chat_assembler_metadata")
 
 
 def _build_small_talk_brief(state: AgentState) -> str:
@@ -72,8 +47,7 @@ def _build_small_talk_brief(state: AgentState) -> str:
     world_brief = (state.get("world_brief") or "").strip()
     if not world_brief:
         return "(暂无项目背景)"
-    head = world_brief[:120]
-    return f"【项目背景速览】\n{head}"
+    return f"【项目背景速览】\n{world_brief[:120]}"
 
 
 def _assemble_small_talk(state: AgentState) -> ChatAssemblerOutput:
@@ -85,6 +59,63 @@ def _assemble_small_talk(state: AgentState) -> ChatAssemblerOutput:
         ),
     ]
     return get_llm_provider().structured(messages, ChatAssemblerOutput)
+
+
+def _build_reply_messages(
+    state: AgentState, output: Any, primary: str
+) -> list[BaseMessage]:
+    user_message = state.get("user_message", "")
+    warnings = state.get("boundary_warnings") or []
+    warning_block = (
+        "\n\n【边界检查跳过的项】\n" + "\n".join(f"- {item}" for item in warnings)
+        if warnings
+        else ""
+    )
+
+    return [
+        SystemMessage(_REPLY_PROMPT),
+        HumanMessage(
+            f"{build_memory_block(state)}\n\n"
+            f"【用户最新消息】\n{user_message}\n\n"
+            f"【主导意图】\n{primary}\n\n"
+            f"【agent 结构化输出】\n{output.model_dump_json()}"
+            f"{warning_block}\n\n"
+            "请直接输出最终面向用户的回复正文; 注意不要重复【最近对话】里"
+            "你已经说过的话, 让回复有连续感。"
+        ),
+    ]
+
+
+def _stream_reply(messages: list[BaseMessage]) -> str:
+    """边 stream token 边推到 LangGraph custom stream, 返回拼好的整段。
+
+    get_stream_writer 在非流式调用 (例如直接 graph.invoke) 下会抛
+    RuntimeError, 用 try/except 包住让单测和老接口仍可复用本节点。
+    """
+    try:
+        writer = get_stream_writer()
+    except Exception:
+        writer = None
+
+    chunks: list[str] = []
+    for token in get_llm_provider().chat_stream(messages):
+        chunks.append(token)
+        if writer is not None:
+            try:
+                writer({"type": "reply_token", "text": token})
+            except Exception:
+                writer = None
+    return "".join(chunks)
+
+
+def _build_meta_messages(output: Any, reply_text: str) -> list[BaseMessage]:
+    return [
+        SystemMessage(_METADATA_PROMPT),
+        HumanMessage(
+            f"【已生成的回复】\n{reply_text}\n\n"
+            f"【原始 agent 输出】\n{output.model_dump_json()}"
+        ),
+    ]
 
 
 def chat_assembler_node(state: AgentState) -> dict[str, Any]:
@@ -103,26 +134,16 @@ def chat_assembler_node(state: AgentState) -> dict[str, Any]:
             ),
         }
 
-    user_message = state.get("user_message", "")
-    warnings = state.get("boundary_warnings") or []
-    if warnings:
-        joined = "\n".join(f"- {item}" for item in warnings)
-        warning_block = f"\n\n【边界检查跳过的项】\n{joined}"
-    else:
-        warning_block = ""
+    reply_text = _stream_reply(_build_reply_messages(state, output, primary))
 
-    messages = [
-        SystemMessage(_SYSTEM_PROMPT),
-        HumanMessage(
-            f"{build_memory_block(state)}\n\n"
-            f"【用户最新消息】\n{user_message}\n\n"
-            f"【主导意图】\n{primary}\n\n"
-            f"【agent 结构化输出】\n{output.model_dump_json()}"
-            f"{warning_block}\n\n"
-            "请把以上结构化输出装配成一段自然语言回复; 注意不要重复"
-            "【最近对话】里你已经说过的话, 让回复有连续感而不是从头解释。"
-        ),
-    ]
+    metadata = get_llm_provider().structured(
+        _build_meta_messages(output, reply_text), ChatMetadataOutput
+    )
 
-    assembled = get_llm_provider().structured(messages, ChatAssemblerOutput)
-    return {"assembler_output": assembled}
+    return {
+        "assembler_output": ChatAssemblerOutput(
+            reply_text=reply_text,
+            cited_node_ids=metadata.cited_node_ids,
+            staging_summary=metadata.staging_summary,
+        )
+    }

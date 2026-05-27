@@ -8,8 +8,10 @@ import {
   postChat,
   resolveStagingBatch,
   resolveStagingItem,
+  streamChat,
   type AgentStagingBatchDto,
   type ChatMessageDto,
+  type ChatStreamEvent,
 } from '../../api/chatApi'
 import { useDraggableDock } from '../../composables/useDraggableDock'
 import StagingPanel from './StagingPanel.vue'
@@ -57,6 +59,7 @@ const stagingBatches = ref<AgentStagingBatchDto[]>([])
 const streamingReply = ref('')
 const isStreaming = ref(false)
 const lastAgent = ref('')
+const progressLabel = ref('')
 
 let revealTimer: ReturnType<typeof setInterval> | null = null
 
@@ -155,21 +158,63 @@ async function handleSend() {
   errorText.value = ''
   isSending.value = true
   streamingReply.value = ''
+  progressLabel.value = ''
   clearReveal()
 
+  let finalReply = ''
+  let stagingCount = 0
+
   try {
-    const response = await postChat(sessionId.value, text, props.selectedNodeIds)
-    lastAgent.value = response.intent
-    startReveal(response.reply_text)
+    await streamChat(sessionId.value, text, props.selectedNodeIds, (event) => {
+      switch (event.type) {
+        case 'node_end':
+          /* 真 token 流起来后就不再覆盖进度文本, 避免抖动 */
+          if (!streamingReply.value) progressLabel.value = event.label
+          break
+        case 'intent':
+          lastAgent.value = event.primary
+          break
+        case 'reply_token':
+          /* 第一个 token 来到时清掉进度条, 切到回复展示 */
+          if (!streamingReply.value) progressLabel.value = ''
+          streamingReply.value += event.text
+          break
+        case 'reply_ready':
+          /* token 流没跑起来的兜底 */
+          finalReply = event.reply_text
+          if (!streamingReply.value) {
+            progressLabel.value = ''
+            startReveal(finalReply)
+          }
+          break
+        case 'persistence_done':
+          stagingCount = event.staging_count
+          break
+        case 'error':
+          errorText.value = event.message
+          break
+      }
+    })
+
+    /* stream 关闭后再拉一次 staging, 避免 persistence_done 早于 staging 落库的极端时序 */
     await reloadStaging()
-    /* 有新建议自动展开 staging 弹层, 让 HITL 入口对用户显式可见 */
-    if (response.staging_count > 0) {
+    if (stagingCount > 0) {
       showStaging.value = true
     }
   } catch (error) {
-    errorText.value = error instanceof Error ? error.message : '发送失败'
+    try {
+      const response = await postChat(sessionId.value, text, props.selectedNodeIds)
+      lastAgent.value = response.intent
+      startReveal(response.reply_text)
+      await reloadStaging()
+      if (response.staging_count > 0) showStaging.value = true
+    } catch (fallbackError) {
+      errorText.value =
+        fallbackError instanceof Error ? fallbackError.message : '发送失败'
+    }
   } finally {
     isSending.value = false
+    progressLabel.value = ''
   }
 }
 
@@ -256,17 +301,21 @@ onBeforeUnmount(() => {
     @mousedown="onBarMouseDown"
   >
   <transition name="reply">
-      <div v-if="streamingReply" class="bar-dock__reply">
-        <span
-          v-if="agentLabel"
-          class="bar-dock__agent-chip"
-          :class="`bar-dock__agent-chip--${lastAgent}`"
-        >
-        {{ agentLabel }}
-        </span>
-        <div class="bar-dock__reply-body" v-html="renderedReply"></div>
-      </div>
-    </transition>
+  <div v-if="streamingReply || progressLabel" class="bar-dock__reply">
+    <span
+      v-if="agentLabel"
+      class="bar-dock__agent-chip"
+      :class="`bar-dock__agent-chip--${lastAgent}`"
+    >
+      {{ agentLabel }}
+    </span>
+    <div v-if="!streamingReply && progressLabel" class="bar-dock__progress">
+      <span class="bar-dock__progress-dot"></span>
+      <span>{{ progressLabel }}…</span>
+    </div>
+    <div v-else class="bar-dock__reply-body" v-html="renderedReply"></div>
+  </div>
+</transition>
 
     <div class="bar-dock__bar">
       <input
