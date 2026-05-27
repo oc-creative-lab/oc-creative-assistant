@@ -28,7 +28,7 @@ def parallel_retrieval_node(state: AgentState) -> dict[str, Any]:
     """图关系上下文 + 向量上下文一次取齐, 写回合并视图供后续节点使用。"""
     project_id = state.get("project_id", "")
     user_message = state.get("user_message", "").strip()
-    current_node = state.get("current_node")
+    current_nodes = state.get("current_nodes") or []
 
     if not project_id or not user_message:
         return {"graph_context": [], "vector_context": [], "merged_context": []}
@@ -49,14 +49,19 @@ def parallel_retrieval_node(state: AgentState) -> dict[str, Any]:
             )
         )
 
-    graph_context = []
-    if current_node is not None:
-        graph_context = build_graph_context(current_node.id, nodes, edges)
-
+    graph_context: list = []
+    seen_ids: set[str] = set()
+    for current_node in current_nodes:
+        for item in build_graph_context(current_node.id, nodes, edges):
+            if item.id not in seen_ids:
+                seen_ids.add(item.id)
+                graph_context.append(item)
     top_k = min(DEFAULT_TOP_K, MAX_TOP_K)
-    vector_context, _, _ = build_project_vector_context(project_id, nodes, user_message, top_k + 1)
-    if current_node is not None:
-        vector_context = [item for item in vector_context if item.id != current_node.id]
+    vector_context, _, _ = build_project_vector_context(
+        project_id, nodes, user_message, top_k + len(current_nodes)
+    )
+    current_node_ids = {n.id for n in current_nodes}
+    vector_context = [item for item in vector_context if item.id not in current_node_ids]
     vector_context = vector_context[:top_k]
 
     merged = merge_context(graph_context, vector_context)

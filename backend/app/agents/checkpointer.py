@@ -17,13 +17,32 @@ from langgraph.checkpoint.sqlite import SqliteSaver
 from app.core.settings import get_agent_settings
 
 
+_ALLOWED_MSGPACK_MODULES: list[tuple[str, str]] = [
+    ("app.agents.schemas", "IntentClassification"),
+    ("app.agents.schemas", "InspirationOutput"),
+    ("app.agents.schemas", "ResearchOutput"),
+    ("app.agents.schemas", "StructureOutput"),
+    ("app.agents.schemas", "SimulationOutput"),
+    ("app.agents.schemas", "SimulationBranch"),
+    ("app.agents.schemas", "ChatAssemblerOutput"),
+    ("app.agents.schemas", "ProposedChange"),
+    ("app.schemas", "RagCurrentNodePayload"),
+    ("app.schemas", "RagGraphContextItem"),
+    ("app.schemas", "RagVectorContextItem"),
+    ("app.schemas", "RagMergedContextItem"),
+]
+
+
 @lru_cache(maxsize=1)
 def get_checkpointer() -> SqliteSaver:
     """返回 LangGraph Checkpointer 单例。"""
+    from langgraph.checkpoint.serde.jsonplus import JsonPlusSerializer
+
     settings = get_agent_settings()
     settings.checkpointer_db_path.parent.mkdir(parents=True, exist_ok=True)
     conn = sqlite3.connect(
         settings.checkpointer_db_path.as_posix(),
         check_same_thread=False,
     )
-    return SqliteSaver(conn)
+    serde = JsonPlusSerializer(allowed_msgpack_modules=_ALLOWED_MSGPACK_MODULES)
+    return SqliteSaver(conn, serde=serde)

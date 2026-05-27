@@ -117,10 +117,15 @@ class ResearchOutput(_LlmStructuredOutput):
 
 
 class StructureOutput(_LlmStructuredOutput):
-    """结构化 agent 输出, 主要用于产出新节点和新关系。"""
+    """结构化 agent 输出, 主要用于产出新节点和新关系。
+
+    与 InspirationOutput / ResearchOutput 保持同一组字段, 让 chat_assembler
+    在装配 cited_node_ids 时不区分 intent 即可统一处理。
+    """
 
     reasoning: str
     summary: str
+    referenced_node_ids: list[str] = Field(default_factory=list)
     proposed_changes: list[ProposedChange] = Field(default_factory=list)
 
 

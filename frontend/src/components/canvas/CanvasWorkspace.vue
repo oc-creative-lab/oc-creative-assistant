@@ -55,6 +55,7 @@ const emit = defineEmits<{
 const flowShell = ref<HTMLElement | null>(null)
 const selectedRelationType = ref<CreativeRelationType>(DEFAULT_RELATION_TYPE)
 const isRelationSelectOpen = ref(false)
+const skipNextFocus = ref(false)
 
 function closeAllSelects(e: MouseEvent) {
   const target = e.target as HTMLElement
@@ -131,23 +132,22 @@ function selectNode(nodeId: string, shouldFocus = false) {
   if (target) {
     const centerX = target.position.x + 120
     const centerY = target.position.y + 70
-    /* 先等待选中态写入 DOM, 避免刚加载时聚焦到 Vue Flow 的旧布局位置 */
+    /* 先等待选中态写入 DOM, 避免刚加载时聚焦到 Vue Flow 的旧布局位置; 不传 zoom 让用户当前缩放级别保留。 */
     void nextTick(() => {
-      void setCenter(centerX, centerY, {
-        zoom: 1,
-        duration: 260,
-      })
+      void setCenter(centerX, centerY, { duration: 260 })
     })
   }
 }
 
 /** 将 Vue Flow 节点点击事件上抛给 AppShell 维护全局选中对象。 */
 function handleNodeClick(event: NodeMouseEvent) {
+  skipNextFocus.value = true
   emit('nodeSelected', event.node.id)
 }
 
 /** 将 Vue Flow 连线点击事件上抛给 AppShell 维护全局选中对象。 */
 function handleEdgeClick(event: { edge: Edge }) {
+  skipNextFocus.value = true
   emit('edgeSelected', event.edge.id)
 }
 
@@ -167,8 +167,9 @@ function handleZoomOut() {
 watch(
   () => props.selectedNodeId,
   (nodeId, oldNodeId) => {
-    /* 首次 immediate 只同步高亮; 后续外部选择再自动聚焦到节点 */
-    selectNode(nodeId, Boolean(oldNodeId && nodeId))
+    const fromCanvas = skipNextFocus.value
+    skipNextFocus.value = false
+    selectNode(nodeId, !fromCanvas && Boolean(oldNodeId && nodeId))
   },
   { immediate: true },
 )

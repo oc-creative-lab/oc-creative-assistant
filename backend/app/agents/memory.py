@@ -45,11 +45,18 @@ def _format_merged_context(items: list[RagMergedContextItem]) -> str:
     )
 
 
-def _format_current_node(node: RagCurrentNodePayload | None) -> str:
-    if node is None:
+def _format_current_nodes(nodes: list[RagCurrentNodePayload]) -> str:
+    if not nodes:
         return ""
-    body = _truncate(node.content, _CURRENT_NODE_TRUNCATE)
-    return f"【当前节点】\n[{node.id}] {node.title} ({node.type}): {body}"
+    if len(nodes) == 1:
+        node = nodes[0]
+        body = _truncate(node.content, _CURRENT_NODE_TRUNCATE)
+        return f"【当前节点】\n[{node.id}] {node.title} ({node.type}): {body}"
+    lines = [f"【当前节点 (共 {len(nodes)} 个, 用户希望同时关注)】"]
+    for node in nodes:
+        body = _truncate(node.content, _CURRENT_NODE_TRUNCATE)
+        lines.append(f"- [{node.id}] {node.title} ({node.type}): {body}")
+    return "\n".join(lines)
 
 
 def build_memory_block(state: AgentState) -> str:
@@ -58,7 +65,7 @@ def build_memory_block(state: AgentState) -> str:
     summary = (state.get("conversation_summary") or "").strip()
     recent = state.get("recent_messages") or []
     merged = state.get("merged_context") or []
-    current_node_section = _format_current_node(state.get("current_node"))
+    current_node_section = _format_current_nodes(state.get("current_nodes") or [])
 
     sections = [
         f"【世界观纲要】\n{world_brief or '(尚未沉淀)'}",

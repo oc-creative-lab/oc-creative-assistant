@@ -9,6 +9,7 @@ import {
   resolveStagingBatch,
   resolveStagingItem,
   type AgentStagingBatchDto,
+  type ChatMessageDto,
 } from '../../api/chatApi'
 import { useDraggableDock } from '../../composables/useDraggableDock'
 import StagingPanel from './StagingPanel.vue'
@@ -90,8 +91,9 @@ async function ensureSession(projectId: string) {
   const cached = localStorage.getItem(SESSION_KEY)
   if (cached) {
     try {
-      await listSessionMessages(cached)
+      const messages = await listSessionMessages(cached)
       sessionId.value = cached
+      restoreLastAssistantReply(messages)
       return
     } catch {
       localStorage.removeItem(SESSION_KEY)
@@ -100,6 +102,17 @@ async function ensureSession(projectId: string) {
   const session = await createChatSession(projectId, '当前会话')
   localStorage.setItem(SESSION_KEY, session.id)
   sessionId.value = session.id
+}
+
+function restoreLastAssistantReply(messages: ChatMessageDto[]) {
+  for (let index = messages.length - 1; index >= 0; index -= 1) {
+    const message = messages[index]
+    if (message.role === 'assistant') {
+      streamingReply.value = message.content
+      lastAgent.value = message.meta.agent_type ?? ''
+      return
+    }
+  }
 }
 
 async function reloadStaging() {

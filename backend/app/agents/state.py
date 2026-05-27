@@ -41,7 +41,7 @@ class AgentState(TypedDict, total=False):
 
     intent: IntentClassification
 
-    current_node: RagCurrentNodePayload | None
+    current_nodes: list[RagCurrentNodePayload]
     graph_context: list[RagGraphContextItem]
     vector_context: list[RagVectorContextItem]
     merged_context: list[RagMergedContextItem]

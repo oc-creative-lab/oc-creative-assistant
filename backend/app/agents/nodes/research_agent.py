@@ -9,6 +9,7 @@ search_nodes / get_node / list_neighbors 收集证据, 最终给出 ResearchOutp
 
 from __future__ import annotations
 
+import logging
 from typing import Any
 
 from langchain_core.messages import HumanMessage, SystemMessage
@@ -19,6 +20,8 @@ from app.agents.state import AgentState
 from app.agents.tools import make_project_tools
 from app.llm.factory import get_llm_provider
 from app.agents.tool_loop import compact_history_for_structured, run_tool_loop
+
+logger = logging.getLogger(__name__)
 
 _SYSTEM_PROMPT = """\
 你是创作助手的研究模式, 任务是回答用户对当前项目知识库的考据 / 查询 / 对比类问题。
@@ -49,6 +52,7 @@ _SYSTEM_PROMPT = """\
 
 
 def research_agent_node(state: AgentState) -> dict[str, Any]:
+    """ReAct 循环里收集证据后产出 ResearchOutput; LLM 失败时降级到空总结。"""
     project_id = state.get("project_id", "")
     user_message = state.get("user_message", "")
 
@@ -63,8 +67,15 @@ def research_agent_node(state: AgentState) -> dict[str, Any]:
     provider = get_llm_provider()
     tools = make_project_tools(project_id)
 
-    history = run_tool_loop(provider, initial_messages, tools)
-    output = provider.structured(
-        compact_history_for_structured(history), ResearchOutput
-    )
+    try:
+        history = run_tool_loop(provider, initial_messages, tools)
+        output = provider.structured(
+            compact_history_for_structured(history), ResearchOutput
+        )
+    except Exception as error:  # noqa: BLE001
+        logger.warning("research_agent LLM 调用失败, 降级: %s", error)
+        output = ResearchOutput(
+            reasoning=f"调用失败 ({type(error).__name__})。",
+            summary="我这次没能查到相关内容, 你可以换种问法或稍后重试。",
+        )
     return {"research_output": output}

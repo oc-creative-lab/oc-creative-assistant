@@ -1,12 +1,14 @@
 """持久化中枢节点。
 
-每轮把以下副作用一并落库:
-1. 追加 user / assistant 两条 ChatMessage
-2. 如果当轮 agent 输出含 proposed_changes, 写入同一 batch_id 的 AgentStaging,
-   等用户在前端 staging 面板接受 / 编辑 / 拒绝
+每轮把以下副作用分两段独立事务落库:
+1. user_message 独立入库 (单独事务); 即使后续 chat_assembler 失败, 用户消息
+   也已经 commit, 下一轮 recent_messages 不会出现单边断档。
+2. assembler_output 存在时, 在第二段事务里追加 assistant_message; 当轮
+   agent 输出含 proposed_changes 的话, 同事务内写入同一 batch_id 的
+   AgentStaging, 等用户在前端 staging 面板接受 / 编辑 / 拒绝。
 
-写入失败时不让整张图崩溃: session 不存在直接静默跳过, 让 graph.invoke 仍能
-返回一份 in-memory 的 assembler_output 给调用方做兜底。
+session 不存在时整体静默跳过, 让 graph.invoke 仍能返回一份 in-memory 的
+assembler_output 给调用方做兜底。
 """
 
 from __future__ import annotations
@@ -68,19 +70,25 @@ def persistence_hub_node(state: AgentState) -> dict[str, Any]:
     user_message = state.get("user_message", "").strip()
     assembler = state.get("assembler_output")
 
-    if not session_id or assembler is None:
+    if not session_id:
+        return {}
+
+    # 第一段事务: 用户消息独立入库, 与 assembler 成败解耦
+    with SessionLocal.begin() as db:
+        if db.get(ChatSessionORM, session_id) is None:
+            return {}
+        if user_message:
+            append_message(db, session_id=session_id, role="user", content=user_message)
+
+    if assembler is None:
         return {}
 
     proposed_changes, agent_type = _collect_proposed_changes(state)
     staging_items = _to_staging_items(proposed_changes)
 
+    # 第二段事务: assistant_message 与 staging 共享同一事务, 保证消息与
+    # batch 的引用一致性 (staging 行 message_id 必然指向真实存在的消息)
     with SessionLocal.begin() as db:
-        if db.get(ChatSessionORM, session_id) is None:
-            return {}
-
-        if user_message:
-            append_message(db, session_id=session_id, role="user", content=user_message)
-
         meta: dict[str, Any] = {
             "agent_type": agent_type,
             "cited_node_ids": list(assembler.cited_node_ids),

@@ -30,7 +30,7 @@ def _empty_context() -> dict[str, Any]:
         "world_brief": "",
         "conversation_summary": "",
         "recent_messages": [],
-        "current_node": None,
+        "current_nodes": [],
         "intent": None,
         "inspiration_output": None,
         "research_output": None,
@@ -72,11 +72,11 @@ def load_context_node(state: AgentState) -> dict[str, Any]:
         # SQL 取倒序便于 LIMIT, 这里翻回时间正序喂给 prompt
         recent.reverse()
 
-        current_node_payload = None
-        if selected_ids:
-            node = db.get(NodeORM, selected_ids[0])
+        current_node_payloads: list[Any] = []
+        for node_id in selected_ids:
+            node = db.get(NodeORM, node_id)
             if node is not None:
-                current_node_payload = node_to_current_payload(node)
+                current_node_payloads.append(node_to_current_payload(node))
 
         return {
             **_empty_context(),
@@ -85,5 +85,5 @@ def load_context_node(state: AgentState) -> dict[str, Any]:
             "recent_messages": [
                 {"role": message.role, "content": message.content} for message in recent
             ],
-            "current_node": current_node_payload,
+            "current_nodes": current_node_payloads,
         }
