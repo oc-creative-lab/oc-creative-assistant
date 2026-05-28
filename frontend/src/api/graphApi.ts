@@ -26,6 +26,14 @@ export interface GraphNodeDto {
   status?: CreativeNodeStatus
 }
 
+/** 后端边 waypoint DTO; 跟前端 CreativeEdgeWaypoint 同构。 */
+export interface GraphEdgeWaypointDto {
+  orientation: 'horizontal' | 'vertical'
+  middle: number
+  nearSource?: number | null
+  nearTarget?: number | null
+}
+
 /** 后端边 DTO；handle 字段用于恢复从哪个连接点拉出的边。 */
 export interface GraphEdgeDto {
   id: string
@@ -37,6 +45,7 @@ export interface GraphEdgeDto {
   targetHandle?: string | null
   type: string
   animated: boolean
+  waypoint?: GraphEdgeWaypointDto | null
 }
 
 /** 后端向量索引状态；SQLite 保存成功不代表 embedding 一定成功，因此需要单独展示。 */

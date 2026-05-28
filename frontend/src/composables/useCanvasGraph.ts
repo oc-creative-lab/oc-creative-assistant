@@ -2,6 +2,7 @@ import { nextTick, ref, type Ref } from 'vue'
 import { addEdge } from '@vue-flow/core'
 import type { Connection, Edge } from '@vue-flow/core'
 import type {
+  CreativeEdgeWaypoint,
   CreativeFlowEdge,
   CreativeFlowNode,
   CreativeGraphSnapshot,
@@ -261,11 +262,28 @@ export function useCanvasGraph(options: Options) {
     emitGraphChanged()
   }
 
+  /**
+   * 写入用户拖拽得到的边 waypoint, 并触发自动保存。
+   *
+   * 由 OrthogonalEdge 通过 provide/inject 调用, 走和 handleConnect /
+   * handleNodeDragStop 一致的"先改 edges.value 再 emit"通路, 让自动保存的
+   * 触发口径保持单一。
+   */
+  function applyEdgeWaypoint(edgeId: string, waypoint: CreativeEdgeWaypoint) {
+    options.edges.value = options.edges.value.map((edge) =>
+      edge.id === edgeId
+        ? { ...edge, data: { ...(edge.data ?? {}), waypoint } }
+        : edge,
+    )
+    emitGraphChanged()
+  }
+
   return {
     handleAutoLayout,
     handleCreateNode,
     handleClearCanvas,
     handleConnect,
     handleNodeDragStop,
+    applyEdgeWaypoint,
   }
 }

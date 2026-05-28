@@ -67,10 +67,8 @@ def summary_compress_node(state: AgentState) -> dict[str, Any]:
         total = len(ordered_messages)
         new_high_water = total - keep_recent
         if new_high_water <= session.summary_message_count:
-            # 老消息没新增, 不必再压缩
             return {}
         if new_high_water - session.summary_message_count < compress_every:
-            # 增量没攒够节流阈值
             return {}
 
         previous_summary = session.conversation_summary or ""
@@ -94,7 +92,11 @@ def summary_compress_node(state: AgentState) -> dict[str, Any]:
             db,
             session_id=session_id,
             summary=output.summary,
+            key_facts=list(output.key_facts),
             message_count=new_high_water,
         )
 
-    return {"conversation_summary": output.summary}
+    return {
+        "conversation_summary": output.summary,
+        "key_facts": list(output.key_facts),
+    }

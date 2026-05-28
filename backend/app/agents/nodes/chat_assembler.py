@@ -75,7 +75,7 @@ def _build_reply_messages(
     return [
         SystemMessage(_REPLY_PROMPT),
         HumanMessage(
-            f"{build_memory_block(state)}\n\n"
+            f"{build_memory_block(state, primary)}\n\n"
             f"【用户最新消息】\n{user_message}\n\n"
             f"【主导意图】\n{primary}\n\n"
             f"【agent 结构化输出】\n{output.model_dump_json()}"

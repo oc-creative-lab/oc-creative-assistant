@@ -190,11 +190,27 @@ def update_session_summary(
     *,
     session_id: str,
     summary: str,
+    key_facts: list[str],
     message_count: int,
 ) -> None:
-    """写回会话摘要与高水位; 不存在则静默跳过, 避免摘要节点拖垮整张图。"""
+    """写回会话摘要 + 核心事实层 + 高水位; 不存在则静默跳过。
+
+    key_facts 设计为"累积合并": 新 facts 跟旧的去重后拼接, 让早期沉淀的
+    关键设定不会被本轮覆盖。重复 fact 用大小写不敏感 + 去空白来粗判,
+    LLM 大概率重复表述会被吸收。
+    """
     record = db.get(ChatSessionORM, session_id)
     if record is None:
         return
     record.conversation_summary = summary
+
+    existing = list(record.key_facts or [])
+    seen = {fact.strip().lower() for fact in existing}
+    for fact in key_facts:
+        normalized = fact.strip()
+        if normalized and normalized.lower() not in seen:
+            existing.append(normalized)
+            seen.add(normalized.lower())
+    record.key_facts = existing
+
     record.summary_message_count = message_count

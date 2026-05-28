@@ -204,4 +204,23 @@ export async function streamChat(
   }
 }
 
+/** 后端健康检查返回; boot_id 用于识别后端进程是否被重启过。 */
+export interface HealthDto {
+  status: string
+  service: string
+  boot_id: string
+}
+
+/**
+ * 拉取后端 boot_id, 失败返回空串表示"无法识别"; 由调用方决定降级策略。
+ */
+export async function fetchBackendBootId(): Promise<string> {
+  try {
+    const data = await requestJson<HealthDto>('/health')
+    return data.boot_id ?? ''
+  } catch {
+    return ''
+  }
+}
+
 export { backendBaseUrl }

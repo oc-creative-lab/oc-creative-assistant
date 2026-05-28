@@ -43,6 +43,18 @@ class NodePayload(BaseModel):
     status: str = "draft"
 
 
+class EdgeWaypointPayload(BaseModel):
+    """用户拖拽产生的边中段 perp 坐标。
+
+    跟前端 ``CreativeEdgeWaypoint`` 一致, 字段保留 camelCase 避免 DTO 转换噪声。
+    """
+
+    orientation: str  # "horizontal" | "vertical"
+    middle: float
+    nearSource: float | None = None
+    nearTarget: float | None = None
+
+
 class EdgePayload(BaseModel):
     """Vue Flow 边 DTO。
 
@@ -58,6 +70,7 @@ class EdgePayload(BaseModel):
     targetHandle: str | None = None
     type: str = "smoothstep"
     animated: bool = False
+    waypoint: EdgeWaypointPayload | None = None
 
 
 class IndexingStatusPayload(BaseModel):

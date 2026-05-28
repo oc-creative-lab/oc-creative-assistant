@@ -1,9 +1,13 @@
 """多层记忆 prompt 拼装器。
 
-把 AgentState 里 world_brief / conversation_summary / recent_messages /
-current_node / merged_context 五块上下文按固定结构拼成一段中文文本, 让三个
-agent 节点的 HumanMessage 都用同一种"看起来像简报"的格式注入背景信息, 避免
-每个节点各自拼字符串导致风格漂移。
+把 AgentState 里 world_brief / key_facts / conversation_summary /
+recent_messages / current_nodes / merged_context 六块上下文按固定结构
+拼成中文简报, 让所有 agent 节点的 HumanMessage 都用同一种格式注入背景信息。
+
+升级点 (v2):
+- 新增"核心事实层": 由 summary_compress 累积抽取的 key_facts, 跨轮不丢失,
+  避免长对话后早期关键设定被滚动摘要覆盖
+- intent-aware 装配: small_talk 走精简版省 token, 其余 intent 走全套
 """
 
 from __future__ import annotations
@@ -15,6 +19,7 @@ from app.schemas import RagCurrentNodePayload, RagMergedContextItem
 _RECENT_TRUNCATE = 200
 _MERGED_TRUNCATE = 120
 _CURRENT_NODE_TRUNCATE = 200
+_KEY_FACTS_MAX = 12
 
 
 def _truncate(text: str, limit: int) -> str:
@@ -59,16 +64,38 @@ def _format_current_nodes(nodes: list[RagCurrentNodePayload]) -> str:
     return "\n".join(lines)
 
 
-def build_memory_block(state: AgentState) -> str:
-    """生成插入 HumanMessage 头部的多层记忆段落; 没有 current_node 时该段省略。"""
+def _format_key_facts(facts: list[str]) -> str:
+    """累积式核心事实, 只取最近 _KEY_FACTS_MAX 条, 避免无限膨胀。"""
+    if not facts:
+        return "(尚无沉淀)"
+    tail = facts[-_KEY_FACTS_MAX:]
+    return "\n".join(f"- {fact}" for fact in tail)
+
+
+def build_memory_block(state: AgentState, intent: str | None = None) -> str:
+    """按 intent 选择性装配多层记忆段落。
+
+    small_talk 只需要世界观纲要 + 最近对话, 不需要画布检索结果与核心事实层,
+    省 token 也避免 LLM 把项目里的角色名误用进闲聊回复。其它 intent 走全套。
+    """
     world_brief = (state.get("world_brief") or "").strip()
+    key_facts = state.get("key_facts") or []
     summary = (state.get("conversation_summary") or "").strip()
     recent = state.get("recent_messages") or []
     merged = state.get("merged_context") or []
     current_node_section = _format_current_nodes(state.get("current_nodes") or [])
 
+    if intent == "small_talk":
+        return "\n\n".join(
+            [
+                f"【世界观纲要】\n{world_brief or '(尚未沉淀)'}",
+                f"【最近对话】\n{_format_recent_messages(recent)}",
+            ]
+        )
+
     sections = [
         f"【世界观纲要】\n{world_brief or '(尚未沉淀)'}",
+        f"【核心事实层 (跨轮沉淀, 不会被摘要覆盖)】\n{_format_key_facts(key_facts)}",
         f"【过往对话摘要】\n{summary or '(尚无)'}",
         f"【最近对话】\n{_format_recent_messages(recent)}",
         f"【画布相关节点】\n{_format_merged_context(merged)}",

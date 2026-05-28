@@ -29,6 +29,7 @@ def _empty_context() -> dict[str, Any]:
     return {
         "world_brief": "",
         "conversation_summary": "",
+        "key_facts": [],
         "recent_messages": [],
         "current_nodes": [],
         "intent": None,
@@ -82,6 +83,7 @@ def load_context_node(state: AgentState) -> dict[str, Any]:
             **_empty_context(),
             "world_brief": world_brief,
             "conversation_summary": session.conversation_summary,
+            "key_facts": list(session.key_facts or []),
             "recent_messages": [
                 {"role": message.role, "content": message.content} for message in recent
             ],

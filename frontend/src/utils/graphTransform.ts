@@ -131,6 +131,14 @@ function graphNodeDtoToFlowNode(node: GraphNodeDto): CreativeFlowNode {
 function graphEdgeDtoToFlowEdge(edge: GraphEdgeDto): CreativeFlowEdge {
   const relationType = edge.relationType ?? DEFAULT_RELATION_TYPE
   const label = edge.label || getRelationLabel(relationType)
+  const waypoint = edge.waypoint
+    ? {
+        orientation: edge.waypoint.orientation,
+        middle: edge.waypoint.middle,
+        nearSource: edge.waypoint.nearSource ?? undefined,
+        nearTarget: edge.waypoint.nearTarget ?? undefined,
+      }
+    : undefined
 
   return {
     id: edge.id,
@@ -145,6 +153,7 @@ function graphEdgeDtoToFlowEdge(edge: GraphEdgeDto): CreativeFlowEdge {
     data: {
       label,
       relationType,
+      waypoint,
     },
   }
 }
@@ -190,6 +199,7 @@ function flowNodeToGraphNodeDto(node: CreativeFlowNode): GraphNodeDto {
 function flowEdgeToGraphEdgeDto(edge: CreativeFlowEdge): GraphEdgeDto {
   const relationType = edge.data?.relationType ?? DEFAULT_RELATION_TYPE
   const label = edge.data?.label || edge.label || getRelationLabel(relationType)
+  const wp = edge.data?.waypoint
 
   return {
     id: edge.id,
@@ -199,7 +209,15 @@ function flowEdgeToGraphEdgeDto(edge: CreativeFlowEdge): GraphEdgeDto {
     relationType,
     sourceHandle: edge.sourceHandle,
     targetHandle: edge.targetHandle,
-    type: edge.type ?? 'smoothstep',
+    type: edge.type ?? 'orthogonal',
     animated: Boolean(edge.animated),
+    waypoint: wp
+      ? {
+          orientation: wp.orientation,
+          middle: wp.middle,
+          nearSource: wp.nearSource ?? null,
+          nearTarget: wp.nearTarget ?? null,
+        }
+      : null,
   }
 }

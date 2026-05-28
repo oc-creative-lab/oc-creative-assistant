@@ -34,7 +34,7 @@ def simulation_agent_node(state: AgentState) -> dict[str, Any]:
 
     initial_messages = [
         SystemMessage(_SYSTEM_PROMPT),
-        HumanMessage(f"{build_memory_block(state)}\n\n【用户假设】\n{user_message}"),
+        HumanMessage(f"{build_memory_block(state, 'simulation')}\n\n【用户假设】\n{user_message}"),
     ]
 
     provider = get_llm_provider()

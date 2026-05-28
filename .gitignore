@@ -215,3 +215,17 @@ backend/dist/
 backend/data/
 electron/dist/
 electron/.bundle/
+
+# === 本地草稿 / 一次性脚本 / 编辑器残留 ===
+/proposal.md
+/graph.json
+backend/scripts/
+backend/test_main.http
+.vscode/
+
+# === 兜底: 数据库 / 临时文件 ===
+*.sqlite3
+*.sqlite3-journal
+*.db
+*.tmp
+.DS_Store

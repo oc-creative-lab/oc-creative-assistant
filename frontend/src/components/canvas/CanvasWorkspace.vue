@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { nextTick, onMounted, onUnmounted, ref, watch } from 'vue'
+import { nextTick, onMounted, onUnmounted, provide, ref, watch } from 'vue'
 import { ConnectionMode, VueFlow, useVueFlow } from '@vue-flow/core'
 import type { Edge, NodeMouseEvent } from '@vue-flow/core'
 import type {
@@ -23,6 +23,7 @@ import PlotNode from '../nodes/PlotNode.vue'
 import ResearchNode from '../nodes/ResearchNode.vue'
 import StructureNode from '../nodes/StructureNode.vue'
 import WorldNode from '../nodes/WorldNode.vue'
+import OrthogonalEdge from './edges/OrthogonalEdge.vue'
 
 const FLOW_ID = 'oc-main-flow'
 
@@ -90,6 +91,7 @@ const {
   handleClearCanvas,
   handleConnect,
   handleNodeDragStop,
+  applyEdgeWaypoint,
 } = useCanvasGraph({
   nodes,
   edges,
@@ -102,6 +104,8 @@ const {
   onNodeSelected: (id) => emit('nodeSelected', id),
   onEdgeSelected: (id) => emit('edgeSelected', id),
 })
+
+provide('applyEdgeWaypoint', applyEdgeWaypoint)
 
 /**
  * 更新画布节点选中态, 并按需聚焦视口。
@@ -298,6 +302,10 @@ watch(
 
         <template #node-structure="nodeProps">
           <StructureNode v-bind="nodeProps" />
+        </template>
+
+        <template #edge-orthogonal="edgeProps">
+          <OrthogonalEdge v-bind="edgeProps" />
         </template>
       </VueFlow>
     </div>

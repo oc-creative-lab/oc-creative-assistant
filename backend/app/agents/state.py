@@ -37,6 +37,7 @@ class AgentState(TypedDict, total=False):
 
     world_brief: str
     conversation_summary: str
+    key_facts: list[str]
     recent_messages: list[dict]
 
     intent: IntentClassification

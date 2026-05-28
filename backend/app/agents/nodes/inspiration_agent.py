@@ -42,7 +42,7 @@ def inspiration_agent_node(state: AgentState) -> dict[str, Any]:
     initial_messages = [
         SystemMessage(_SYSTEM_PROMPT),
         HumanMessage(
-            f"{build_memory_block(state)}\n\n"
+            f"{build_memory_block(state, 'inspiration')}\n\n"
             f"【用户问题】\n{user_message}"
         ),
     ]

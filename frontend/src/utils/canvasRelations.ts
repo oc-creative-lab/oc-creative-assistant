@@ -97,7 +97,7 @@ export function normalizeEdge(
     label,
     sourceHandle: edge.sourceHandle ?? DEFAULT_SOURCE_HANDLE,
     targetHandle: edge.targetHandle ?? DEFAULT_TARGET_HANDLE,
-    type: edge.type ?? 'smoothstep',
+    type: 'orthogonal',
     markerEnd: {
       type: MarkerType.ArrowClosed,
       color: relationStyle.color,
@@ -115,8 +115,9 @@ export function normalizeEdge(
       fill: relationStyle.labelBg,
       stroke: relationStyle.color,
     },
-    interactionWidth: 18,
+    interactionWidth: 0,
     data: {
+      ...(edge.data ?? {}),
       label,
       relationType,
     },

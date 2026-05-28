@@ -10,7 +10,13 @@ from typing import Any
 
 from app.db.models import EdgeORM, NodeORM, ProjectORM
 from app.indexing.config import DEFAULT_NODE_STATUS
-from app.schemas import EdgePayload, NodePayload, PositionPayload, ProjectPayload
+from app.schemas import (
+    EdgePayload,
+    EdgeWaypointPayload,
+    NodePayload,
+    PositionPayload,
+    ProjectPayload,
+)
 
 
 META_TEXT_KEY = "text"
@@ -57,14 +63,10 @@ def node_to_payload(node: NodeORM) -> NodePayload:
 
 
 def edge_to_payload(edge: EdgeORM) -> EdgePayload:
-    """将边 ORM 转换为 API payload。
-
-    Args:
-        edge: 数据库中的边记录。
-
-    Returns:
-        保留 Vue Flow handle 和样式信息的边 DTO。
-    """
+    """将边 ORM 转换为 API payload。"""
+    waypoint = (
+        EdgeWaypointPayload.model_validate(edge.waypoint) if edge.waypoint else None
+    )
     return EdgePayload(
         id=edge.id,
         source=edge.source,
@@ -75,6 +77,7 @@ def edge_to_payload(edge: EdgeORM) -> EdgePayload:
         targetHandle=edge.target_handle,
         type=edge.edge_type,
         animated=edge.animated,
+        waypoint=waypoint,
     )
 
 
@@ -104,16 +107,7 @@ def node_to_orm(project_id: str, node: NodePayload, sort_order: int) -> NodeORM:
 
 
 def edge_to_orm(project_id: str, edge: EdgePayload, sort_order: int) -> EdgeORM:
-    """将边 payload 转换为 ORM。
-
-    Args:
-        project_id: 边所属项目 ID。
-        edge: 前端提交的边 DTO。
-        sort_order: 边在当前 graph 快照中的顺序。
-
-    Returns:
-        可写入数据库的边 ORM 对象。
-    """
+    """将边 payload 转换为 ORM。"""
     return EdgeORM(
         id=edge.id,
         project_id=project_id,
@@ -125,6 +119,7 @@ def edge_to_orm(project_id: str, edge: EdgePayload, sort_order: int) -> EdgeORM:
         edge_type=edge.type,
         relation_type=edge.relationType,
         animated=edge.animated,
+        waypoint=edge.waypoint.model_dump() if edge.waypoint else None,
         sort_order=sort_order,
     )
 

@@ -9,9 +9,9 @@ import {
   resolveStagingBatch,
   resolveStagingItem,
   streamChat,
+  fetchBackendBootId,
   type AgentStagingBatchDto,
   type ChatMessageDto,
-  type ChatStreamEvent,
 } from '../../api/chatApi'
 import { useDraggableDock } from '../../composables/useDraggableDock'
 import StagingPanel from './StagingPanel.vue'
@@ -37,6 +37,7 @@ const emit = defineEmits<{
 
 const SESSION_KEY = 'oc-creative.chat-session-id'
 const OPEN_KEY = 'oc-creative.chat-dock-open'
+const BOOT_KEY = 'oc-creative.backend-boot-id'
 /* 25ms/字符 ≈ 40 字符/秒, 接近自然阅读速度 */
 const REVEAL_INTERVAL_MS = 25
 
@@ -91,12 +92,22 @@ const renderedReply = computed(() => {
 /* ---------- session / 消息 ---------- */
 
 async function ensureSession(projectId: string) {
+  const cachedBootId = localStorage.getItem(BOOT_KEY) ?? ''
+  const currentBootId = await fetchBackendBootId()
+  const isFreshBoot =
+    currentBootId !== '' && cachedBootId !== '' && currentBootId !== cachedBootId
+  if (currentBootId) {
+    localStorage.setItem(BOOT_KEY, currentBootId)
+  }
+
   const cached = localStorage.getItem(SESSION_KEY)
   if (cached) {
     try {
       const messages = await listSessionMessages(cached)
       sessionId.value = cached
-      restoreLastAssistantReply(messages)
+      if (!isFreshBoot) {
+        restoreLastAssistantReply(messages)
+      }
       return
     } catch {
       localStorage.removeItem(SESSION_KEY)
@@ -187,8 +198,13 @@ async function handleSend() {
             startReveal(finalReply)
           }
           break
-        case 'persistence_done':
+          case 'persistence_done':
           stagingCount = event.staging_count
+          if (event.staging_count > 0) {
+            void reloadStaging().then(() => {
+              showStaging.value = true
+            })
+          }
           break
         case 'error':
           errorText.value = event.message
@@ -196,10 +212,9 @@ async function handleSend() {
       }
     })
 
-    /* stream 关闭后再拉一次 staging, 避免 persistence_done 早于 staging 落库的极端时序 */
-    await reloadStaging()
-    if (stagingCount > 0) {
-      showStaging.value = true
+    /* stream 关闭后再兜一次 staging, 防 persistence_done 因故没送达 */
+    if (stagingCount === 0) {
+      await reloadStaging()
     }
   } catch (error) {
     try {

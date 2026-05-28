@@ -236,20 +236,12 @@
   animation: nodeHighlightPulse 1.4s ease-in-out 2;
 }
 
-:deep(.vue-flow__node.is-highlighted .creative-node) {
-  box-shadow:
-    0 0 0 4px rgba(245, 158, 11, 0.85),
-    0 0 18px rgba(245, 158, 11, 0.55) !important;
-}
-
 @keyframes nodeHighlightPulse {
   0%, 100% {
     filter: drop-shadow(0 0 0 rgba(245, 158, 11, 0));
   }
   35%, 65% {
-    filter:
-      drop-shadow(0 0 6px rgba(245, 158, 11, 1))
-      drop-shadow(0 0 16px rgba(245, 158, 11, 0.55));
+    filter: drop-shadow(0 0 6px rgba(245, 158, 11, 0.45));
   }
 }
 

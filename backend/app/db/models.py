@@ -140,6 +140,7 @@ class EdgeORM(Base):
         default="relates_to",
         server_default="relates_to",
     )
+    waypoint: Mapped[dict[str, Any] | None] = mapped_column(JSON, nullable=True)
     animated: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False, server_default=false())
     sort_order: Mapped[int] = mapped_column(Integer, nullable=False, default=0, server_default=text("0"))
     created_at: Mapped[datetime] = mapped_column(
@@ -191,6 +192,11 @@ class ChatSessionORM(Base):
     title: Mapped[str] = mapped_column(String, nullable=False, default="", server_default="")
     conversation_summary: Mapped[str] = mapped_column(
         Text, nullable=False, default="", server_default=""
+    )
+    # 核心事实层: summary_compress 每轮抽取的关键设定 / 决定, 跨轮累积, 不会被
+    # conversation_summary 的重压所覆盖, 解决"长对话后早期事实被忘"的核心痛点
+    key_facts: Mapped[list[str]] = mapped_column(
+        JSON, nullable=False, default=list, server_default="[]"
     )
     # summary 已涵盖前 N 条消息的高水位; 用来做摘要压缩的增量节流, 避免每轮都重压
     summary_message_count: Mapped[int] = mapped_column(
