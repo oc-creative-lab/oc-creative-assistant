@@ -24,6 +24,11 @@ from app.db.database import SessionLocal
 from app.db.models import EdgeORM, NodeORM
 from app.rag.retrieval import build_project_vector_context
 from app.services.graph_repository import read_project_node, read_project_nodes
+from app.services.web_search_client import (
+    WebSearchError,
+    WebSearchUnavailable,
+    search_web,
+)
 
 
 _NODE_TYPE_FILTER = {
@@ -167,6 +172,9 @@ def make_project_tools(project_id: str) -> list[BaseTool]:
     def list_neighbors(node_id: str) -> str:
         """列出某节点画布上一跳直接相连的邻居。
 
+        只回一跳; 若需要"X 的导师的家族"这类跨多跳的链式追问, 改用
+        multi_hop_neighbors, 否则会要连续调用本工具自己拼路径。
+
         Args:
             node_id: 节点 ID。
 
@@ -213,4 +221,170 @@ def make_project_tools(project_id: str) -> list[BaseTool]:
             ]
         return json.dumps(payload, ensure_ascii=False)
 
-    return [search_nodes, list_nodes, get_node, list_neighbors]
+    @tool
+    def multi_hop_neighbors(
+        node_id: str, depth: int = 2, max_nodes: int = 20
+    ) -> str:
+        """以 node_id 为中心展开 N 跳可达节点, 带最短关系路径回溯。
+
+        适合链式关系问答 ("艾琳的导师的家族" / "A 与 B 之间通过哪些节点相连");
+        一跳问题用 list_neighbors 更省 token。
+
+        实现走一次 BFS, 内存中跑完即返; 同 turn 不缓存 (画布关系变化频繁,
+        缓存收益不抵失效成本)。
+
+        Args:
+            node_id: 起点节点 ID。
+            depth: BFS 跳数, 1-3 (默认 2); 超过 3 自动截断, 防止结果爆炸。
+            max_nodes: 返回节点数上限, 默认 20, 硬上限 50;
+                超过时按 distance 升序保留靠近起点的节点。
+
+        Returns:
+            JSON 列表, 每项含 id / title / type / content_preview /
+            distance / path; path 形如 "起点 → [关系] → 中间 → [关系] → 终点"。
+            起点本身不在结果里; 起点不存在或不属于本项目时返回 "[]"。
+        """
+        bounded_depth = max(1, min(int(depth), 3))
+        bounded_max = max(1, min(int(max_nodes), 50))
+
+        with SessionLocal() as db:
+            origin = db.get(NodeORM, node_id)
+            if origin is None or origin.project_id != project_id:
+                return "[]"
+            edges = (
+                db.query(EdgeORM)
+                .filter(EdgeORM.project_id == project_id)
+                .all()
+            )
+            nodes_by_id = {
+                n.id: n
+                for n in db.query(NodeORM)
+                .filter(NodeORM.project_id == project_id)
+                .all()
+            }
+
+        # 双向邻接表; relation 优先用 label, 缺失退到 relation_type
+        adjacency: dict[str, list[tuple[str, str]]] = {}
+        for edge in edges:
+            relation = edge.label or edge.relation_type or "关联"
+            adjacency.setdefault(edge.source, []).append((edge.target, relation))
+            adjacency.setdefault(edge.target, []).append((edge.source, relation))
+
+        # BFS: visited[id] = (distance, prev_id, relation_to_prev)
+        visited: dict[str, tuple[int, str | None, str | None]] = {
+            node_id: (0, None, None)
+        }
+        frontier: list[str] = [node_id]
+        while frontier:
+            current = frontier.pop(0)
+            current_dist = visited[current][0]
+            if current_dist >= bounded_depth:
+                continue
+            for neighbor_id, relation in adjacency.get(current, []):
+                if neighbor_id in visited:
+                    continue
+                visited[neighbor_id] = (current_dist + 1, current, relation)
+                frontier.append(neighbor_id)
+
+        def _trace_path(end_id: str) -> str:
+            """从终点回溯起点, 拼成 "起点 → [关系] → ... → 终点" 字符串。"""
+            chain: list[str] = []
+            cursor: str | None = end_id
+            while cursor is not None:
+                node = nodes_by_id.get(cursor)
+                chain.append(node.title if node else cursor)
+                _, prev, relation = visited[cursor]
+                if prev is not None and relation:
+                    chain.append(f"[{relation}]")
+                cursor = prev
+            return " → ".join(reversed(chain))
+
+        result_ids = sorted(
+            (vid for vid in visited if vid != node_id and vid in nodes_by_id),
+            key=lambda vid: visited[vid][0],
+        )[:bounded_max]
+
+        payload = [
+            {
+                "id": vid,
+                "title": nodes_by_id[vid].title,
+                "type": nodes_by_id[vid].node_type,
+                "content_preview": (nodes_by_id[vid].content or "")[:120],
+                "distance": visited[vid][0],
+                "path": _trace_path(vid),
+            }
+            for vid in result_ids
+        ]
+
+        return json.dumps(payload, ensure_ascii=False)
+
+    @tool
+    def web_search(query: str, top_k: int = 5) -> str:
+        """在互联网上检索外部事实, 仅用于项目知识库无法回答的"现实参考"问题。
+
+        典型用途:
+        - 现实考据 (中世纪盔甲形制 / 真实历史事件 / 物理常识 / 武器名称)
+        - 实时信息 (天气 / 新闻 / 当前日期附近的事实)
+        - 第三方知识 (某个外部模型 / 框架 / 库的规格)
+
+        不要用于:
+        - 项目内剧情 / 角色 / 设定问题 — 改用 search_nodes / list_nodes
+        - 询问 Agent 自身 (你用什么模型 / 你叫什么) — 这是系统信息, web 无法回答
+
+        本 turn 内同关键词组合 (词序无关) 会命中缓存; 不要刻意改写关键词重打,
+        没有新信息。
+
+        Args:
+            query: 检索关键词或自然语言问句。
+            top_k: 返回最多结果数, 推荐 3-6。
+
+        Returns:
+            JSON 字符串, 含 answer (Tavily 合成的简短答案) 与 hits 列表
+            (每项含 title / url / snippet / score)。web 不可用时返回
+            "[ERROR] ..." 字符串, 让 LLM 立刻收口。
+        """
+        key = _cache_key(query)
+        cached = search_cache.get(f"web::{key}")
+        if cached is not None:
+            return cached
+
+        try:
+            response = search_web(query, top_k)
+        except WebSearchUnavailable as exc:
+            error_payload = (
+                f"[ERROR] {exc}。本轮请基于已有上下文与项目知识库作答, "
+                f"不要再调用 web_search 重试。"
+            )
+            search_cache[f"web::{key}"] = error_payload
+            return error_payload
+        except WebSearchError as exc:
+            error_payload = f"[ERROR] web_search 调用失败: {exc}"
+            search_cache[f"web::{key}"] = error_payload
+            return error_payload
+
+        result = json.dumps(
+            {
+                "answer": response.answer,
+                "hits": [
+                    {
+                        "title": hit.title,
+                        "url": hit.url,
+                        "snippet": hit.snippet,
+                        "score": round(hit.score, 3),
+                    }
+                    for hit in response.hits
+                ],
+            },
+            ensure_ascii=False,
+        )
+        search_cache[f"web::{key}"] = result
+        return result
+
+    return [
+        search_nodes,
+        list_nodes,
+        get_node,
+        list_neighbors,
+        multi_hop_neighbors,
+        web_search,
+    ]

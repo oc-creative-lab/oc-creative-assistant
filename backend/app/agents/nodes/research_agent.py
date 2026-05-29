@@ -21,6 +21,7 @@ from app.agents.tools import make_project_tools
 from app.llm.factory import get_llm_provider
 from app.agents.tool_loop import compact_history_for_structured, run_tool_loop
 from app.agents.prompts import load_prompt
+from datetime import datetime
 
 
 logger = logging.getLogger(__name__)
@@ -33,9 +34,12 @@ def research_agent_node(state: AgentState) -> dict[str, Any]:
     project_id = state.get("project_id", "")
     user_message = state.get("user_message", "")
 
+    now_str = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
     initial_messages = [
         SystemMessage(_SYSTEM_PROMPT),
         HumanMessage(
+            f"【运行时信息】\n当前时间: {now_str}\n"
+            f"Agent 模型: 由后端 OC_LLM_MODEL 配置决定 (用户问起请直接说明)\n\n"
             f"{build_memory_block(state, 'research')}\n\n"
             f"【用户问题】\n{user_message}"
         ),

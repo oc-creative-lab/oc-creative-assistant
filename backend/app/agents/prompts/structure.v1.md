@@ -126,3 +126,19 @@
   "proposed_changes": []
 }
 ```
+
+### 关于多跳关系问题
+
+当用户问题里出现下列信号:
+- 跳数关键词: "N 跳之内 / 间接相连 / 远距离关系"
+- 路径关键词: "从 X 到 Y / 之间通过哪些 / 怎么连接"
+- 圈层关键词: "周围一圈 / 附近设定 / 围绕 X 的节点"
+
+→ 必须调用 multi_hop_neighbors, 不要用 search_nodes 或 list_neighbors 凑数。
+即便上游 RAG 上下文已经提供了多个节点, 你也必须显式调一次 multi_hop_neighbors
+拿到 distance 和 path 字段, 才能正确回答"几跳"这个问题。
+
+例:
+用户: "艾琳节点三跳之内都有哪些设定节点"
+你应该: 先 search_nodes 找到 "艾琳" 的 node_id, 再调用
+       multi_hop_neighbors(node_id=<id>, depth=3, max_nodes=30)。

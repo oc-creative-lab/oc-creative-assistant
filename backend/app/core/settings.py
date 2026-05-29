@@ -111,6 +111,31 @@ def get_llm_settings() -> LlmSettings:
 
 
 @dataclass(frozen=True)
+class WebSearchSettings:
+    """Web search 工具配置。
+
+    api_key 留空时 ``web_search`` 工具直接返回降级提示而不报错, 保证离线开发
+    和未配置 key 的 CI/单测仍能跑通整条 Agent 链路。
+    """
+
+    provider: str
+    api_key: str | None
+    timeout_seconds: int
+
+    @property
+    def is_configured(self) -> bool:
+        return bool(self.api_key)
+
+
+def get_web_search_settings() -> WebSearchSettings:
+    return WebSearchSettings(
+        provider=os.getenv("OC_WEB_SEARCH_PROVIDER", "tavily").strip().lower(),
+        api_key=os.getenv("OC_WEB_SEARCH_API_KEY") or None,
+        timeout_seconds=_get_int("OC_WEB_SEARCH_TIMEOUT", 10),
+    )
+
+
+@dataclass(frozen=True)
 class AgentSettings:
     """Agent 图运行时配置。
 

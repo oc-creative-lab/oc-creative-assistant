@@ -15,6 +15,7 @@ small_talk 文本极短, 不值得为它额外加 round-trip, 保留一次性 st
 
 from __future__ import annotations
 
+from datetime import datetime
 from typing import Any
 
 from langchain_core.messages import BaseMessage, HumanMessage, SystemMessage
@@ -24,6 +25,7 @@ from app.agents.memory import build_memory_block
 from app.agents.prompts import load_prompt
 from app.agents.schemas import ChatAssemblerOutput, ChatMetadataOutput
 from app.agents.state import AgentState
+from app.core.settings import get_llm_settings
 from app.llm.factory import get_llm_provider
 
 
@@ -52,10 +54,18 @@ def _build_small_talk_brief(state: AgentState) -> str:
 
 def _assemble_small_talk(state: AgentState) -> ChatAssemblerOutput:
     user_message = state.get("user_message", "")
+    now_str = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+    llm_model = get_llm_settings().model
+    runtime_block = (
+        f"【运行时信息】\n"
+        f"当前时间: {now_str}\n"
+        f"Agent 模型: {llm_model}\n"
+    )
     messages = [
         SystemMessage(_SMALL_TALK_PROMPT),
         HumanMessage(
-            f"{_build_small_talk_brief(state)}\n\n【用户最新消息】\n{user_message}"
+            f"{runtime_block}\n{_build_small_talk_brief(state)}\n\n"
+            f"【用户最新消息】\n{user_message}"
         ),
     ]
     return get_llm_provider().structured(messages, ChatAssemblerOutput)
