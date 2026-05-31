@@ -197,17 +197,50 @@ export function useCanvasGraph(options: Options) {
     }
   }
 
-  function handleCreateNode(type: CreativeNodeType) {
+  function handleCreateNode(type: CreativeNodeType, position?: { x: number; y: number }) {
     addNodeCount.value += 1
-    const node = createCreativeNode(type, addNodeCount.value, getNextNodePosition())
+    const node = createCreativeNode(type, addNodeCount.value, position ?? getNextNodePosition())
     options.nodes.value = [...options.nodes.value, node]
     options.onNodeAdded(node)
     emitGraphChanged()
     options.onNodeSelected(node.id)
   }
 
+  /**
+   * 就地更新某节点的展示数据（second_revision 改点 A：inline edit）。
+   *
+   * 节点组件里 InlineEditableText 保存时调用本函数，更新 nodes.value 对应节点的
+   * data 字段并触发自动保存，走和拖拽 / 连线一致的"改 nodes.value 再 emit"通路。
+   */
+  function updateNodeData(nodeId: string, patch: { title?: string; content?: string }) {
+    let changed = false
+    options.nodes.value = options.nodes.value.map((node) => {
+      if (node.id !== nodeId) return node
+      const nextData = { ...node.data }
+      if (patch.title !== undefined && patch.title !== nextData.title) {
+        nextData.title = patch.title
+        changed = true
+      }
+      if (patch.content !== undefined && patch.content !== nextData.content) {
+        nextData.content = patch.content
+        changed = true
+      }
+      return { ...node, data: nextData }
+    })
+    if (changed) emitGraphChanged()
+  }
+
+  /** 删除单个节点及其相关边（右键菜单删除，second_revision 改点 A）。 */
+  function removeNode(nodeId: string) {
+    options.edges.value = options.edges.value.filter(
+      (edge) => edge.source !== nodeId && edge.target !== nodeId,
+    )
+    options.nodes.value = options.nodes.value.filter((node) => node.id !== nodeId)
+    emitGraphChanged()
+  }
+
   function handleClearCanvas() {
-    const confirmed = window.confirm('确定要清空当前画布吗？此操作会删除所有节点和连线。')
+    const confirmed = window.confirm('Clear the whole canvas? This removes every node and edge.')
     if (!confirmed) return
 
     options.nodes.value = []
@@ -285,5 +318,7 @@ export function useCanvasGraph(options: Options) {
     handleConnect,
     handleNodeDragStop,
     applyEdgeWaypoint,
+    updateNodeData,
+    removeNode,
   }
 }

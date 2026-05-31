@@ -37,11 +37,29 @@ class ProjectORM(Base):
     world_brief: Mapped[str] = mapped_column(
         Text, nullable=False, default="", server_default=""
     )
+    # first_revision 决策 1：项目简介，供项目库卡片 / 工作台概览编辑与种子拼装使用。
+    description: Mapped[str] = mapped_column(
+        Text, nullable=False, default="", server_default=""
+    )
+    # 一个 Project 下三个独立 sub-graph。这里刻意不加 DB 级 ForeignKey：
+    # projects↔graphs 互相引用会形成建表环，且 SQLite 不支持 ALTER ADD CONSTRAINT；
+    # 沿用本表对 EdgeORM 端点的处理方式，由服务层校验一致性（见 graph_validation）。
+    plot_graph_id: Mapped[str | None] = mapped_column(String, nullable=True)
+    character_graph_id: Mapped[str | None] = mapped_column(String, nullable=True)
+    world_graph_id: Mapped[str | None] = mapped_column(String, nullable=True)
     nodes: Mapped[list["NodeORM"]] = relationship(
         back_populates="project",
         cascade="all, delete-orphan",
     )
     edges: Mapped[list["EdgeORM"]] = relationship(
+        back_populates="project",
+        cascade="all, delete-orphan",
+    )
+    graphs: Mapped[list["GraphORM"]] = relationship(
+        back_populates="project",
+        cascade="all, delete-orphan",
+    )
+    seeds: Mapped[list["ProjectSeedORM"]] = relationship(
         back_populates="project",
         cascade="all, delete-orphan",
     )
@@ -63,6 +81,14 @@ class NodeORM(Base):
         String,
         ForeignKey("projects.id", ondelete="CASCADE"),
         nullable=False,
+        index=True,
+    )
+    # first_revision 决策 1：节点归属到具体 sub-graph。迁移期对旧库 nullable，
+    # 由 backfill 按 node_type 回填；新建节点必须带 graph_id。
+    graph_id: Mapped[str | None] = mapped_column(
+        String,
+        ForeignKey("graphs.id", ondelete="CASCADE"),
+        nullable=True,
         index=True,
     )
     node_type: Mapped[str] = mapped_column("type", String, nullable=False)
@@ -323,3 +349,64 @@ class AgentStagingORM(Base):
 
     session: Mapped[ChatSessionORM] = relationship(back_populates="staging_items")
     message: Mapped[ChatMessageORM] = relationship(back_populates="staging_items")
+
+
+class GraphORM(Base):
+    """Sub-graph 表（first_revision 决策 1）。
+
+    一个 Project 下含三个独立 sub-graph：故事线(plot) / 角色卡(character) /
+    世界观(world)。节点通过 ``NodeORM.graph_id`` 归属到具体 sub-graph；
+    ``section`` 用字符串而非 DB Enum，与 ``NodeORM.node_type`` 的处理保持一致，
+    迁移更简单。
+    """
+
+    __tablename__ = "graphs"
+    __table_args__ = (
+        Index("ix_graphs_project_section", "project_id", "section"),
+    )
+
+    id: Mapped[str] = mapped_column(String, primary_key=True)
+    project_id: Mapped[str] = mapped_column(
+        String,
+        ForeignKey("projects.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
+    )
+    # section ∈ {'plot', 'character', 'world'}
+    section: Mapped[str] = mapped_column(String, nullable=False)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, server_default=func.now()
+    )
+
+    project: Mapped[ProjectORM] = relationship(back_populates="graphs")
+
+
+class ProjectSeedORM(Base):
+    """项目种子表（first_revision 决策 3）。
+
+    种子是对项目当前状态的压缩快照（worldview / characters / plot / style），
+    供 Chat Agent 启动注入。版本随每次重建自增，``source`` 记录触发来源。
+    seed_compressor 写入（阶段 5），这里先建表为阶段 1 的数据模型升级铺路。
+    """
+
+    __tablename__ = "project_seeds"
+    __table_args__ = (
+        Index("ix_project_seeds_project_version", "project_id", "version"),
+    )
+
+    id: Mapped[str] = mapped_column(String, primary_key=True)
+    project_id: Mapped[str] = mapped_column(
+        String,
+        ForeignKey("projects.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
+    )
+    version: Mapped[int] = mapped_column(Integer, nullable=False, default=1, server_default=text("1"))
+    seed_json: Mapped[str] = mapped_column(Text, nullable=False, default="", server_default="")
+    # source ∈ {'chat_end', 'user_edit'}
+    source: Mapped[str] = mapped_column(String, nullable=False, default="user_edit", server_default="user_edit")
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, server_default=func.now()
+    )
+
+    project: Mapped[ProjectORM] = relationship(back_populates="seeds")

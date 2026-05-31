@@ -1,6 +1,6 @@
 <script setup lang="ts">
-import { nextTick, onMounted, onUnmounted, provide, ref, watch } from 'vue'
-import { ConnectionMode, VueFlow, useVueFlow } from '@vue-flow/core'
+import { computed, nextTick, onMounted, onUnmounted, provide, ref, watch } from 'vue'
+import { ConnectionMode, SelectionMode, VueFlow, useVueFlow } from '@vue-flow/core'
 import type { Edge, NodeMouseEvent } from '@vue-flow/core'
 import type {
   CreativeFlowEdge,
@@ -17,6 +17,9 @@ import {
   normalizeEdge,
 } from '../../utils/canvasRelations'
 import { useCanvasGraph } from '../../composables/useCanvasGraph'
+import { useComposerStore } from '../../stores/useComposerStore'
+import { useCenterStageStore } from '../../stores/useCenterStageStore'
+import CanvasContextMenu from './CanvasContextMenu.vue'
 import CharacterNode from '../nodes/CharacterNode.vue'
 import IdeaNode from '../nodes/IdeaNode.vue'
 import PlotNode from '../nodes/PlotNode.vue'
@@ -44,6 +47,8 @@ const props = defineProps<{
   /* 由 AppShell 在 staging 接受后做差集计算的"刚出现"的 ID; 跑完动画后会清空 */
   highlightedNodeIds: string[]
   highlightedEdgeIds: string[]
+  /* 右键空白处可新建的节点类型；SubgraphCanvas 按 sub-graph 传入，未传则给全部类型 */
+  createTypes?: CreativeNodeType[]
 }>()
 
 const emit = defineEmits<{
@@ -63,14 +68,19 @@ function closeAllSelects(e: MouseEvent) {
   if (!target.closest('.custom-select-container')) {
     isRelationSelectOpen.value = false
   }
+  if (!target.closest('.ctx-menu')) {
+    contextMenu.value.show = false
+  }
 }
 
 onMounted(() => {
   document.addEventListener('click', closeAllSelects)
+  window.addEventListener('keydown', handleCopyKey, true)
 })
 
 onUnmounted(() => {
   document.removeEventListener('click', closeAllSelects)
+  window.removeEventListener('keydown', handleCopyKey, true)
 })
 
 const nodes = ref<CreativeFlowNode[]>(
@@ -83,7 +93,19 @@ const edges = ref<CreativeFlowEdge[]>(
 )
 
 /* 固定 flow id 确保工具栏操作绑定到当前画布实例, 不被页面上其他 Vue Flow 抢走 */
-const { fitView, getViewport, setCenter, zoomIn, zoomOut, findEdge } = useVueFlow({ id: FLOW_ID })
+const {
+  fitView,
+  getViewport,
+  setCenter,
+  zoomIn,
+  zoomOut,
+  findEdge,
+  onPaneContextMenu,
+  onNodeContextMenu,
+  onNodeDoubleClick,
+  screenToFlowCoordinate,
+  getSelectedNodes,
+} = useVueFlow({ id: FLOW_ID })
 
 const {
   handleAutoLayout,
@@ -92,6 +114,8 @@ const {
   handleConnect,
   handleNodeDragStop,
   applyEdgeWaypoint,
+  updateNodeData,
+  removeNode,
 } = useCanvasGraph({
   nodes,
   edges,
@@ -106,6 +130,130 @@ const {
 })
 
 provide('applyEdgeWaypoint', applyEdgeWaypoint)
+// 节点组件 inline edit 时调用，写回数据并触发自动保存（second_revision 改点 A）。
+provide('updateNodeData', updateNodeData)
+
+const composer = useComposerStore()
+const centerStage = useCenterStageStore()
+
+const ALL_NODE_TYPES: CreativeNodeType[] = [
+  'idea',
+  'character',
+  'worldbuilding',
+  'plot',
+  'research',
+  'structure',
+]
+const blankCreateTypes = computed(() => props.createTypes ?? ALL_NODE_TYPES)
+
+const contextMenu = ref<{
+  show: boolean
+  x: number
+  y: number
+  type: 'blank' | 'node'
+  nodeId: string
+}>({ show: false, x: 0, y: 0, type: 'blank', nodeId: '' })
+
+function closeContextMenu() {
+  contextMenu.value.show = false
+}
+
+onPaneContextMenu((event) => {
+  const mouse = event as MouseEvent
+  mouse.preventDefault()
+  contextMenu.value = { show: true, x: mouse.clientX, y: mouse.clientY, type: 'blank', nodeId: '' }
+})
+
+onNodeContextMenu(({ event, node }) => {
+  const mouse = event as MouseEvent
+  mouse.preventDefault()
+  contextMenu.value = {
+    show: true,
+    x: mouse.clientX,
+    y: mouse.clientY,
+    type: 'node',
+    nodeId: node.id,
+  }
+})
+
+// 双击节点 → 进入节点详情（中栏 NodeDetailView），带上当前数据快照。
+onNodeDoubleClick(({ node }) => {
+  centerStage.openDetail(node.id, {
+    id: node.id,
+    title: node.data?.title ?? '',
+    content: node.data?.content ?? '',
+    nodeType: (node.data?.nodeType ?? node.type ?? 'idea') as string,
+    typeLabel: node.data?.typeLabel ?? '',
+    icon: node.data?.icon ?? '',
+    tags: [...(node.data?.tags ?? [])],
+    status: node.data?.status ?? 'draft',
+  })
+})
+
+function nodeRef(nodeId: string) {
+  return nodes.value.find((node) => node.id === nodeId)
+}
+
+function handleMenuCreate(type: CreativeNodeType) {
+  const pos = screenToFlowCoordinate({ x: contextMenu.value.x, y: contextMenu.value.y })
+  handleCreateNode(type, { x: pos.x, y: pos.y })
+  closeContextMenu()
+}
+
+function handleMenuEdit() {
+  if (contextMenu.value.nodeId) centerStage.openDetail(contextMenu.value.nodeId)
+  closeContextMenu()
+}
+
+function handleMenuDuplicate() {
+  const src = nodeRef(contextMenu.value.nodeId)
+  if (src) {
+    handleCreateNode(src.data.nodeType ?? (src.type as CreativeNodeType), {
+      x: src.position.x + 40,
+      y: src.position.y + 40,
+    })
+    const created = nodes.value[nodes.value.length - 1]
+    if (created) {
+      updateNodeData(created.id, {
+        title: `${src.data.title} 副本`,
+        content: src.data.content,
+      })
+    }
+  }
+  closeContextMenu()
+}
+
+function handleMenuRemove() {
+  if (contextMenu.value.nodeId) removeNode(contextMenu.value.nodeId)
+  closeContextMenu()
+}
+
+function quoteNodes(refs: { id: string; type: string; title: string }[]) {
+  if (refs.length) composer.addReferences(refs)
+}
+
+function handleMenuQuote() {
+  const src = nodeRef(contextMenu.value.nodeId)
+  if (src) {
+    quoteNodes([{ id: src.id, type: src.data.nodeType ?? src.type ?? 'idea', title: src.data.title }])
+  }
+  closeContextMenu()
+}
+
+/** Ctrl/Cmd+C：把当前多选的节点复制成引用卡片到底部对话框（改点 C）。 */
+function handleCopyKey(event: KeyboardEvent) {
+  if (!((event.ctrlKey || event.metaKey) && event.key === 'c')) return
+  const selected = getSelectedNodes.value
+  if (selected.length === 0) return
+  event.preventDefault()
+  quoteNodes(
+    selected.map((node) => ({
+      id: node.id,
+      type: (node.data?.nodeType ?? node.type ?? 'idea') as string,
+      title: node.data?.title || '未命名',
+    })),
+  )
+}
 
 /**
  * 更新画布节点选中态, 并按需聚焦视口。
@@ -221,10 +369,10 @@ watch(
   <section class="canvas-workspace">
     <!-- 画布工具栏：只处理画布相关操作 -->
     <header class="canvas-toolbar">
-      <div class="mode-actions" aria-label="画布模式">
-        <span class="interaction-hint">点击节点选择，拖拽端点连线</span>
+      <div class="mode-actions" aria-label="canvas mode">
+        <span class="interaction-hint">Click to select · drag handles to connect · double-click to open</span>
         <label class="relation-picker" for="new-edge-relation">
-          新连线关系
+          Relation
           <div class="custom-select-container">
             <div
               class="custom-select-trigger"
@@ -247,14 +395,14 @@ watch(
             </ul>
           </div>
         </label>
-        <button type="button" @click="handleAutoLayout">自动布局</button>
+        <button type="button" @click="handleAutoLayout">Auto layout</button>
       </div>
 
-      <div class="canvas-actions" aria-label="画布工具">
-        <button type="button" title="放大" @click="handleZoomIn">+</button>
-        <button type="button" title="缩小" @click="handleZoomOut">-</button>
-        <button type="button" @click="handleFitView">适配视图</button>
-        <button type="button" class="danger" @click="handleClearCanvas">清空画布</button>
+      <div class="canvas-actions" aria-label="canvas tools">
+        <button type="button" title="Zoom in" @click="handleZoomIn">+</button>
+        <button type="button" title="Zoom out" @click="handleZoomOut">-</button>
+        <button type="button" @click="handleFitView">Fit</button>
+        <button type="button" class="danger" @click="handleClearCanvas">Clear</button>
       </div>
     </header>
 
@@ -275,6 +423,9 @@ watch(
         :connect-on-click="false"
         :connection-radius="24"
         :fit-view-on-init="true"
+        :selection-key-code="'Shift'"
+        :multi-selection-key-code="['Shift', 'Meta', 'Control']"
+        :selection-mode="SelectionMode.Partial"
         @connect="handleConnect"
         @node-click="handleNodeClick"
         @edge-click="handleEdgeClick"
@@ -309,6 +460,20 @@ watch(
         </template>
       </VueFlow>
     </div>
+
+    <CanvasContextMenu
+      :show="contextMenu.show"
+      :x="contextMenu.x"
+      :y="contextMenu.y"
+      :menu-type="contextMenu.type"
+      :create-types="blankCreateTypes"
+      @create="handleMenuCreate"
+      @edit="handleMenuEdit"
+      @duplicate="handleMenuDuplicate"
+      @remove="handleMenuRemove"
+      @quote="handleMenuQuote"
+      @close="closeContextMenu"
+    />
   </section>
 </template>
 

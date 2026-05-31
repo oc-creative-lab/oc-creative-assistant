@@ -1,0 +1,69 @@
+# 项目规格说明 — OC Creative Assistant System（第 8 组，JC3510）
+真实来源：我们已通过的项目 proposal。以下每一项都视为【固定要求】。
+未经我明确许可，不得偏离这里规定的架构、模块、设计模式或约束。
+
+## 0. 核心命题（不可妥协）
+本系统【辅助】创作过程，【绝不生成】叙事内容。
+所有 AI 输出都是引导、提问、摘要或结构化建议——永远不生成故事/角色正文。
+
+## 1. 产品
+一个 Electron 桌面端 PoC：面向 OC（原创角色）创作者的节点式创作工作台。
+用户以节点形式组织碎片化想法；AI 智能体在严格边界内提供辅助；RAG 将建议
+锚定在用户自己导入的设定（lore）上。桌面优先——所有用户创作数据均保存在
+本地设备上。
+
+## 2. 架构（三层——不得重构）
+- 接口层（Interface Layer）：Electron + Vue + Vue Flow。包含节点编辑器、
+  可视化面板、智能体侧栏。通过 REST API 与后端通信。
+- 服务层（Service Layer）：FastAPI 后端。通过 LangGraph 进行智能体编排，
+  组织为带【条件边路由】（而非线性调用）的 StateGraph。使用 LangChain。
+- 数据层（Data Layer）：SQLite 存储结构化项目数据；ChromaDB 维护【恰好三个】
+  向量集合——worldbuilding、characters、plot；一个可插拔的 LLM API 层，
+  支持 OpenAI / DeepSeek 切换。
+
+## 3. 核心模块（恰好这四个）
+1. 节点编辑器（Node-based Editor）—— 基于 Vue Flow 的工作台。节点 = 创作碎片
+   （角色 / 设定 / 剧情）。边 = 逻辑关系。支持非线性、碎片化的构思。
+2. 受限自主智能体（Constrained Autonomous AI Agents）—— 【恰好三个】，每个能力
+   都被限定为仅做创作辅助：
+   - Inspiration Agent（灵感）：提问 / 给出提示以拓展想法。
+   - Research Agent（检索）：结构化知识检索。
+   - Structure Agent（结构）：把节点重新整理成角色卡 / 关系图 / 剧情框架。
+   所有输出 = 引导 / 摘要 / 结构化建议。绝不生成叙事正文。
+3. RAG 记忆模块（RAG-based Memory Module）—— 用户导入的设定存入上述三个 ChromaDB
+   集合；通过基础相似度检索取出；在调用智能体时注入 LangGraph 共享状态。节点内容
+   变更时增量重建索引。
+4. 结构可视化（Structural Visualization）—— 直接从已有的节点 + 边数据派生关系图 /
+   剧情结构视图。直接读取 SQLite 的节点/边数据。不含独立业务逻辑。
+
+## 4. “辅助而非生成”约束 —— 在【全部三个层级】强制执行
+1. 系统提示词（system prompt）限制输出形式。
+2. .with_structured_output() 对每一次智能体响应强制套用预定义的 JSON schema。
+3. UI 仅渲染【结构化卡片】（绝不渲染自由生成的正文）。
+
+## 5. 设计模式（强制——严格在指定位置实现）
+- 组件化设计（Component-Based Design）：每种节点类型是一个独立的 Vue 组件。
+- 工厂模式（Factory Pattern）：节点实例化。
+- 开闭原则（Open/Closed Principle）：新增节点类型时【不修改】既有逻辑。
+- 策略模式（Strategy Pattern）：(a) 各智能体共享统一接口，由 LangGraph 动态路由；
+  (b) 在 API 层切换 LLM 模型（OpenAI / DeepSeek）。
+- 观察者模式（Observer Pattern）：节点内容变更 → 增量重建 ChromaDB 索引；
+  状态变更时可视化重绘。
+
+## 6. 技术栈（固定）
+- 前端：Vue + TypeScript、Vue Flow、Electron
+- 后端：Python、FastAPI、LangGraph、LangChain
+- 数据：SQLite、ChromaDB、OpenAI / DeepSeek API
+- 工具链：Electron Builder、Pandoc
+- 导出目标：Markdown + PDF
+
+## 7. 架构层面的风险缓解（需内建到系统中）
+- LLM API 不可用：通过策略模式做多模型热插拔 + 指数退避。
+- ChromaDB 索引损坏：事务化写入 + 启动时完整性检查 + 从 SQLite 自动重建。
+- 节点—索引失同步：基于哈希的一致性校验 + 强制重建索引。
+- LangGraph 状态膨胀：2000-token 的 RAG 上限 + 摘要压缩。
+
+## 8. 明确【超出范围】（不要构建）
+- 高级 RAG：无多索引结构、无语义路由、无长期记忆。
+- 无自动化工作流执行（不做自动节点触发 / 流水线执行）。
+- 无协作创作（不做多用户、不做版本控制、不做冲突解决）。

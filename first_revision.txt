@@ -1,0 +1,370 @@
+# Claude Code Task: OC Creative Suite — 重构为多页架构 + 引入聊天驱动的创作流程
+
+## 一、上下文
+
+我正在开发一个基于 Electron + Vue 3 + FastAPI + LangGraph 的创作辅助桌面应用 (OC Creative Suite),目前已有完整的单页架构。需要对其进行**架构重构**,引入聊天驱动的创作流程,并把现有"单一画布"演化为"一个项目内含三个子模块(故事大纲 / 角色卡 / 世界观)"的多视图工作台。
+
+### 现有技术栈与已实现模块
+
+**前端 frontend/src/** (Vue 3 + TypeScript + Vite + @vue-flow/core):
+- `components/workspace/AppShell.vue` — 当前唯一的页面,三栏 grid 布局
+- `components/workspace/{TopToolbar,StatusBar,ProjectSidebar,AgentSidebar}.vue`
+- `components/canvas/CanvasWorkspace.vue` — Vue Flow 画布
+- `components/canvas/edges/OrthogonalEdge.vue`
+- `components/canvas/nodes/{Character,World,Plot,Idea,Research,Structure}Node.vue` + `NodeHandles.vue`
+- `components/chat/{FloatingChatDock,StagingPanel,StagingItemCard}.vue`
+- `composables/{useCanvasGraph,useGraphMutations,useGraphPersistence,useIndexingStatus,useDraggableDock}.ts`
+- `utils/{nodeFactory,graphTransform,canvasRelations}.ts`
+- `api/{http,graphApi,chatApi}.ts` (REST + SSE)
+- 状态管理:目前用 composables + ref,**无 Pinia**
+
+**后端 backend/app/** (FastAPI + LangGraph):
+- `main.py` + `core/{settings,paths}.py`
+- `api/routes/{system,graph,chat,rag}.py` + `schemas.py`
+- `llm/{provider,factory}.py` (策略模式, OpenAI/DeepSeek/Mock)
+- `agents/graph.py` (StateGraph) + `agents/state.py` + `agents/schemas.py`
+- `agents/nodes/{intent_router,load_context,parallel_retrieval,context_compress,inspiration_agent,research_agent,structure_agent,simulation_agent,boundary_check,chat_assembler,persistence_hub,summary_compress}.py`
+- `agents/{tools,memory,tool_loop,checkpointer}.py`
+- `agents/prompts/*.v1.md`
+- `rag/{service,retrieval,chunking,config,prompts}.py` (Hybrid: 图邻居+向量)
+- `indexing/{sync,vector_store,embedding_provider,document_loader,config}.py`
+- `services/{chat_service,chat_stream,chat_repository,graph_repository,graph_store,graph_seed,graph_validation,graph_mappers,canvas_apply,rag_service,web_search_client}.py`
+
+**数据层**:
+- SQLite (`backend/data/oc_creative.sqlite3`): ProjectORM, NodeORM, EdgeORM, ChatSessionORM, ChatMessageORM, AgentStagingORM
+- ChromaDB (`backend/data/chroma/`): 集合 `oc_characters` / `oc_worldbuilding` / `oc_plot` + `oc_misc`
+- LangGraph checkpoint: `langgraph-checkpoint-sqlite`
+
+---
+
+## 二、目标产品形态
+启动应用
+↓
+HomeLanding (首页,只有两个大按钮)
+├─ [💬 聊天] → ChatEntry(选已有项目 / 新建项目) → ChatWorkspace
+└─ [📚 项目库] → ProjectLibrary(项目卡片列表) → Workspace
+ChatWorkspace 功能:
+
+Chat Agent A 主动抛问题(由 Question Planner 反向指导)
+用户自由说想法
+Structured Agent B 后台异步抽实体/关系/字段
+抽出的内容 → AgentStagingORM(暂存) → 工作台审阅落库
+用户可随时退出 → 回首页
+
+Workspace (工作台,/workspace/:projectId/...):
+左栏 (WorkspaceSidebar):
+- 项目名 / 简介
+- 故事线        ──→ PlotCanvas (Vue Flow,只渲染 PlotNode)
+- 角色卡        ──→ CharacterCardList (Notion 风格卡片网格)
+└─ /:charId → CharacterCardDetail (自由字段编辑)
+- 世界观        ──→ WorldCanvas (Vue Flow,只渲染 WorldNode)
+三类内容之间自动建立关联(跨 sub-graph edge)
+可召唤 agent 协助(FloatingChatDock 在工作台保留)
+
+---
+
+## 三、关键架构决策(必须严格遵守)
+
+### 决策 1:一个 Project 下三个独立 sub-graph
+ProjectORM:
+id, name, description
+plot_graph_id     (FK → GraphORM)
+character_graph_id (FK → GraphORM)
+world_graph_id    (FK → GraphORM)
+GraphORM (新增):
+id, project_id, section enum('plot'|'character'|'world')
+NodeORM:
+graph_id (FK,强化) — 节点归属到具体 sub-graph
+
+### 决策 2:角色卡复用 CharacterNode 数据,新视图渲染
+
+- CharacterGraph 在数据层仍是 graph(有 nodes + edges)
+- 前端**不用 Vue Flow**,改用 CharacterCardList(Notion 风格网格)
+- 角色卡"自由字段"放进 CharacterNode 的 metadata JSON
+- 角色之间的关系边(师父/敌人/阵营)用卡片上的标签可视化,**不画线**
+
+### 决策 3:独立 ProjectSeedORM 表
+ProjectSeedORM (新增):
+id, project_id (FK), version (int),
+seed_json (text),
+source enum('chat_end' | 'user_edit'),
+created_at
+
+### 决策 4:Chat Agent 启动注入 = Seed + RAG + 最近 N 轮
+
+- 不喂完整历史对话(成本不可控)
+- 启动时拼装:Project Seed (~500 tokens) + RAG top-3 (~1k tokens) + 最近 10 轮短期记忆 (~1k tokens)
+- 总 context 控制在 2.5-3k tokens
+
+### 决策 5:两个 LLM Agent 协作模式
+
+- **Chat Agent A**(对用户):流式回复 + 自然抛问题
+- **Structured Agent B**(后台):
+  - `structured_extractor`:抽实体/关系/字段建议 → AgentStagingORM
+  - `question_planner`:反向指导 A 下一步该问什么(注入 A 的 prompt)
+- A 和 B 在 LangGraph 中**并行执行**,B 的结果不阻塞 A 的回复
+
+### 决策 6:引入 Pinia(替换跨路由的 composables 共享)
+
+- 现有 composables 不删,继续负责单画布内细粒度操作
+- Pinia 新增:`useProjectStore` / `useGraphStore` / `useChatStore` / `useLibraryStore`
+
+---
+
+## 四、分阶段任务清单(严格按顺序执行)
+
+### 阶段 0:准备工作(0.5 天)
+
+- [ ] 安装 vue-router 4 和 pinia
+- [ ] `frontend/src/main.ts` 注册 router 和 pinia
+- [ ] 创建 `frontend/src/router/index.ts` 骨架(占位路由,所有页面先空)
+- [ ] 创建 `frontend/src/stores/` 目录
+- [ ] **验收**:`npm run dev` 启动正常,访问 `/` 看到占位页
+
+### 阶段 1:数据模型升级(1-2 天)
+
+**后端改动**:
+
+- [ ] `app/db/models.py`:
+  - 新增 `GraphORM`(id, project_id FK, section enum, created_at)
+  - `ProjectORM` 加 `plot_graph_id` / `character_graph_id` / `world_graph_id` 三个 FK 字段
+  - `NodeORM` 强化 `graph_id` FK(若已有则确认外键级联)
+  - 新增 `ProjectSeedORM`(id, project_id FK, version, seed_json text, source enum, created_at)
+- [ ] 写 Alembic / 手写 migration 脚本:
+  - 创建新表 GraphORM, ProjectSeedORM
+  - 为现有 Project 自动创建 3 个空 sub-graph 并回填 FK
+  - 现有 Node 按 type 字段自动分配到对应 sub-graph(PlotNode → plot_graph,CharacterNode → character_graph,以此类推;其他类型节点暂归入 plot_graph)
+- [ ] 更新 `app/services/graph_repository.py` 和 `graph_store.py`,所有 graph 操作加 `graph_id` 维度
+- [ ] 更新 `app/api/routes/graph.py`,GET/POST 路径改为 `/api/graphs/{graph_id}`
+- [ ] 新增 `app/api/routes/projects.py`:
+  - `POST /api/projects` 创建项目(自动创建 3 个 sub-graph)
+  - `GET /api/projects` 列表
+  - `GET /api/projects/{id}` 详情(含三个 graph_id 和最新 seed)
+  - `DELETE /api/projects/{id}` 级联删除
+  - `GET /api/projects/{id}/seed` 当前种子
+  - `POST /api/projects/{id}/seed/rebuild` 强制重建种子
+
+**前端改动**:
+
+- [ ] 更新 `frontend/src/types/` 加 Project / Graph / ProjectSeed 类型
+- [ ] 新增 `frontend/src/api/projectApi.ts`
+- [ ] 更新 `frontend/src/api/graphApi.ts` 适配新路径
+
+**验收**:
+- 旧项目能正常加载(migration 后)
+- 通过 `/api/projects/{id}` 能拿到三个 graph_id
+- 通过 `/api/graphs/{graph_id}` 能分别加载 plot / character / world 节点
+
+### 阶段 2:路由 + 首页 + 项目库(1-2 天)
+
+**新建组件**:
+- [ ] `views/HomeLanding.vue` — 两个大按钮(聊天 / 项目库),纯居中布局
+- [ ] `views/ChatEntry.vue` — 选已有项目下拉 + "新建项目"按钮,确认后跳 `/chat/:projectId`
+- [ ] `views/ProjectLibrary.vue` — 项目卡片网格,每卡显示 name/description/updated_at,点击跳工作台
+
+**路由配置** (`router/index.ts`):
+```typescript
+{ path: '/', component: HomeLanding, name: 'home' },
+{ path: '/chat', component: ChatEntry, name: 'chat-entry' },
+{ path: '/chat/:projectId', component: ChatWorkspace, name: 'chat-workspace', props: true },
+{ path: '/library', component: ProjectLibrary, name: 'library' },
+{ path: '/workspace/:projectId', component: WorkspaceShell, props: true, children: [...] }  // 阶段 3 实现
+```
+
+**Pinia 初始化**:
+- [ ] `stores/useLibraryStore.ts` — 项目列表 CRUD
+- [ ] `stores/useProjectStore.ts` — 当前 project 元数据(name, description, 三个 graph_id, 最新 seed)
+
+**验收**:
+- 三个页面可互相跳转
+- ProjectLibrary 能列出后端所有项目
+- 新建项目能自动创建 3 个 sub-graph
+
+### 阶段 3:工作台 Shell + 三视图(2-3 天)
+
+**新建组件**:
+- [ ] `views/WorkspaceShell.vue` — 左栏(WorkspaceSidebar) + 右侧 `<router-view>`,顶部 TopToolbar
+- [ ] `components/workspace/WorkspaceSidebar.vue` — 从上到下:项目名、简介(可编辑)、故事线、角色卡、世界观四个导航项
+- [ ] `views/workspace/ProjectOverview.vue` — 项目简介编辑页
+- [ ] `views/workspace/PlotCanvas.vue` — 包装 `<CanvasWorkspace :graph-id="project.plot_graph_id" />`
+- [ ] `views/workspace/WorldCanvas.vue` — 同上,绑 world_graph_id
+- [ ] `views/workspace/CharacterCardList.vue` — Notion 风格卡片网格
+  - 数据源:`graphApi.getGraph(project.character_graph_id).nodes`
+  - 每卡显示:头像(可选)、name、一句话简介、关键标签(阵营、年龄等)
+  - 点击卡片 → `/workspace/:projectId/characters/:charId`
+- [ ] `views/workspace/CharacterCardDetail.vue` — 单卡详情
+  - 顶部:头像 + 名字
+  - 自由字段编辑(从 node.metadata 读取所有 key,支持新增/删除字段)
+  - 底部:"关系"区(显示 CharacterGraph 里此 node 的所有 outgoing edges,以标签形式)
+
+**路由子路径**:
+```typescript
+children: [
+  { path: '', redirect: 'overview' },
+  { path: 'overview', component: ProjectOverview },
+  { path: 'plot', component: PlotCanvas },
+  { path: 'characters', component: CharacterCardList },
+  { path: 'characters/:charId', component: CharacterCardDetail, props: true },
+  { path: 'world', component: WorldCanvas }
+]
+```
+
+**Pinia 扩展**:
+- [ ] `stores/useGraphStore.ts` — 当前打开的 sub-graph(nodes / edges / 选中状态)
+
+**关键约束**:
+- `CanvasWorkspace.vue` 重构为接收 `:graph-id` prop,内部根据 graph_id 调 API
+- 旧 `AppShell.vue` 仅在 `/workspace/:projectId/*` 路径下使用部分子组件,作为新 WorkspaceShell 的一部分
+
+**验收**:
+- 一个项目能切换三个视图,各自数据完全分离
+- CharacterCardDetail 能编辑自由字段并持久化到 node.metadata
+- 项目简介页能编辑 ProjectORM.description
+
+### 阶段 4:Chat Workspace + 后台结构化(3-4 天,核心创新)
+
+**新建组件**:
+- [ ] `views/ChatWorkspace.vue` — 全屏聊天页
+  - 左侧:对话流(沿用 FloatingChatDock 的消息渲染逻辑,但全屏)
+  - 右侧(可折叠):StagingPanel(实时显示后台抽出的待审实体)
+  - 顶部:退出按钮 → 跳 `/`
+  - 底部:输入框
+
+**后端 LangGraph 节点新增** (`app/agents/nodes/`):
+
+- [ ] `structured_extractor.py` — Agent B 之一
+  - 输入:state.last_user_turn + state.recent_messages
+  - 输出:`{entities: [{type, name, attributes}], relations: [{from, to, label}], deferred_fields: [{entity, field}]}`
+  - 写入 AgentStagingORM(沿用现有暂存机制)
+  - 用 `with_structured_output` 强约束 JSON
+  - prompt 文件:`prompts/structured_extractor.v1.md`
+
+- [ ] `question_planner.py` — Agent B 之二
+  - 输入:state.seed_context + state.recent_messages + state.deferred_fields(从上次抽取累积)
+  - 输出:`{next_question: str, target_field: str, reason: str}`
+  - 结果注入 `state.next_question_hint`,供 chat_assembler 拼 prompt 用
+  - prompt 文件:`prompts/question_planner.v1.md`
+
+- [ ] 修改 `app/agents/graph.py`:
+  - 在 chat_assembler 节点**之前**并行调用 question_planner(让 A 知道下个问题方向)
+  - 在 chat_assembler 节点**之后**并行触发 structured_extractor(异步,不阻塞回复返回)
+  - 修改 StateGraph 的边
+
+**后端 API 扩展**:
+- [ ] 新增 `GET /api/projects/{id}/staging` — 列出该项目所有 pending staging
+- [ ] 复用现有 `canvas_apply` 把 staging → 落库到对应 sub-graph
+
+**前端 Pinia**:
+- [ ] `stores/useChatStore.ts` — 当前会话消息流 + staging 列表 + SSE 连接状态
+
+**验收**:
+- 用户在 ChatWorkspace 说"我有个主角叫小明,会火系魔法,属于火焰王国" → 后台异步抽出:Character(name=小明, magic=火系, faction=火焰王国) + World(name=火焰王国)
+- 抽出的实体显示在右侧 StagingPanel 待审
+- 用户审阅后落库,切到工作台 `/workspace/:projectId/characters` 能看到"小明"卡片
+- Chat Agent 会自然抛出后续问题(例如"小明的火系魔法有什么独特之处?")
+
+### 阶段 5:种子机制(1-2 天)
+
+**后端**:
+- [ ] 新增节点 `app/agents/nodes/seed_compressor.py`(**独立 entrypoint,不在主对话 StateGraph 内**)
+  - 输入:project_id
+  - 步骤:加载该项目所有节点 + 最近 RAG 召回的关键对话片段
+  - 输出:`{worldview_summary, main_characters, plot_outline, style_notes}` JSON
+  - 写入 ProjectSeedORM,version 自增
+
+- [ ] 触发器:
+  - 聊天会话关闭事件(`ChatSessionORM` 状态变为 closed)→ 调用 seed_compressor
+  - 工作台保存事件(任意 sub-graph 的 nodes/edges 变更后 debounce 30s)→ 调用 seed_compressor
+  - 手动 API `POST /api/projects/{id}/seed/rebuild`
+
+- [ ] 修改 `app/agents/nodes/load_context.py`:
+  - 启动时读取 ProjectSeedORM 最新版本 → `state.seed_context`
+  - RAG 检索 → `state.rag_context`
+  - 最近 10 条 ChatMessageORM → `state.recent_messages`
+  - 三者均填好后才进入 chat_assembler
+
+- [ ] 修改 `app/agents/prompts/chat_assembler.v1.md`,prompt 模板加入:
+[Project Seed v{version}]
+{seed_json}
+[Relevant Memory from Past Conversations]
+{rag_chunks}
+[Recent Dialog]
+{recent_messages}
+[Suggested Next Direction]
+{next_question_hint}
+[User Latest]
+{user_input}
+
+**前端**:
+- [ ] 在 WorkspaceShell 顶部状态栏显示"种子版本 v{n} · 最后更新 {time}"
+
+**验收**:
+- 第一次聊天结束后,ProjectSeedORM 出现 v1 记录
+- 用户在工作台编辑了节点,30 秒后种子自动更新到 v2
+- 退出再进入聊天,Agent 开场白能体现对项目当前状态的认知(例如"上次我们聊到小明掌握了火系魔法,你想接下来探讨他的对手吗?")
+
+### 阶段 6:关联与索引(2-3 天)
+
+**后端**:
+- [ ] EdgeORM 支持**跨 graph 的 edge**(from_node_id 和 to_node_id 可属于不同 graph,前提同一 project)
+- [ ] `graph_validation.py` 校验跨 graph edge 时确认 project 一致
+- [ ] structured_extractor 输出 relations 时,自动判断关联类型并创建跨 graph edge
+  例如抽出"小明属于火焰王国",在 Character→World 之间建一条 `belongs_to` 边
+- [ ] 新增 API `GET /api/nodes/{node_id}/cross_references` — 返回该 node 在其他 sub-graph 中被引用的所有位置
+
+**前端**:
+- [ ] CharacterCardDetail 底部"关联"区:
+  - 显示"出现在故事线节点:"(列表 + 点击跳转到 PlotCanvas 并高亮)
+  - 显示"所属世界观:"(从跨 graph edge 反推)
+- [ ] PlotCanvas 节点上 hover 显示提及的角色头像
+- [ ] WorldCanvas 节点上显示"相关角色"标签
+
+**验收**:
+- 角色卡上能看到反向引用("小明 出现在 plot:第一章相遇 ")
+- 修改世界观节点后,所有引用此世界观的角色卡显示提醒
+- 创作流程闭环:聊天提到 → 自动建实体 + 关系 → 三个视图自动联动
+
+---
+
+## 五、严格执行约束
+
+1. **复用优先**:能复用现有组件/服务/ORM 的绝不新建。新建前先确认现有方案不行。
+2. **现有 chat 流程保留**:`FloatingChatDock` 在工作台仍可用作"召唤 agent",ChatWorkspace 是新增的全屏模式,两者不冲突。
+3. **AgentStagingORM + canvas_apply 是核心资产**:阶段 4 的结构化抽取必须走这条链路,不要另起炉灶。
+4. **RAG 三集合不动**:`oc_characters` / `oc_worldbuilding` / `oc_plot` 与新的三个 sub-graph 天然对齐,structured_extractor 写入 staging 时同步触发 indexing。
+5. **migration 不能破坏旧数据**:阶段 1 的 migration 必须保证旧 project 完整可用,所有现有节点按类型回填到对应 sub-graph。
+6. **每个阶段独立可验收**:不允许跨阶段欠债。完成一个阶段就跑通验收用例再进入下一个。
+7. **现有 4 个 agent (intent_router / inspiration / research / structure / simulation) 保留**:新增的 structured_extractor 和 question_planner 是辅助节点,不是替代。
+8. **prompt 文件统一放 `agents/prompts/*.v1.md`**:新 prompt 也遵守此约定,版本号 v1 起。
+9. **TypeScript 严格模式**:所有新代码 strict mode,新增类型放 `types/` 目录。
+10. **后端 schemas.py 同步更新**:任何新 API 都要先在 `app/schemas.py` 定义 DTO。
+
+---
+
+## 六、首批要交付的产物(阶段 0 + 阶段 1)
+
+请按以下顺序执行,每完成一项产出 diff + 简短说明:
+
+1. 阶段 0 的 router 骨架 + Pinia 注册(`main.ts`, `router/index.ts`, `stores/` 目录)
+2. 阶段 1 后端数据模型升级(`models.py` 改动 + migration 脚本)
+3. 阶段 1 后端 API 新增(`projects.py` 路由 + schemas)
+4. 阶段 1 前端 API 客户端更新(`projectApi.ts`, `graphApi.ts`)
+5. 阶段 1 验收测试(写一个 pytest 验证旧项目 migration 后能正常加载、新项目能创建三个 sub-graph)
+
+完成阶段 0 和阶段 1 后停下来等我确认,再进入阶段 2。
+
+---
+
+## 七、不要做的事
+
+- ❌ 不要删除现有的 AppShell.vue / FloatingChatDock.vue / 任何现有 agent 节点
+- ❌ 不要新增 ORM 表来"扩展"现有功能,优先在现有表加字段或用 metadata JSON
+- ❌ 不要改 RAG 的 chunking / retrieval 策略,Hybrid 已经够用
+- ❌ 不要在 Chat Agent A 的 prompt 里塞完整对话历史(成本不可控,严格按 Seed + RAG + 短期记忆三层)
+- ❌ 不要绕过 AgentStagingORM 直接把 agent 输出写进 NodeORM
+- ❌ 不要在阶段 4 之前就动 LangGraph 的主流程
+- ❌ 不要忘记保留 LangGraph checkpoint,新加的 structured_extractor / question_planner 也要纳入 checkpoint
+
+---
+
+开始执行,首先做阶段 0 + 阶段 1,完成后等我反馈。

@@ -1,21 +1,49 @@
+/* ============================================================
+   OC Creative Suite — Design System v3
+   Editorial minimal. Neutral black / white / grey base,
+   with restrained violet + amber accents. Calm, high-end,
+   built for writing — not flashy.
+   ============================================================ */
+
+@import url('https://fonts.googleapis.com/css2?family=Fraunces:ital,opsz,wght@0,9..144,400;0,9..144,500;0,9..144,600;1,9..144,400;1,9..144,500&family=Inter:wght@400;500;600;700&display=swap');
+
 :root {
-  --app-bg: #eef1f4;
-  --canvas-bg: #f7f8fa;
-  --panel: #fbfcfd;
+  /* —— Neutral base (the主色: black / white / grey) —— */
+  --app-bg: #f5f5f3;
+  --canvas-bg: #fafaf9;
+  --panel: #ffffff;
   --panel-strong: #ffffff;
-  --border: #d9dee7;
-  --grid-line: rgba(106, 118, 135, 0.12);
-  --text: #1f2933;
-  --muted: #667085;
-  --accent: #2764c5;
-  --accent-soft: rgba(39, 100, 197, 0.1);
-  --accent-border: rgba(39, 100, 197, 0.34);
-  font-family:
-    'Segoe UI',
-    'Microsoft YaHei',
-    'PingFang SC',
-    'Hiragino Sans GB',
-    sans-serif;
+  --paper: #fbfaf6; /* warm stationery tone */
+  --border: #e8e6e1;
+  --border-strong: #d8d5ce;
+  --grid-line: rgba(28, 25, 23, 0.045);
+  --text: #1c1917;
+  --text-soft: #44403c;
+  --muted: #8a857d;
+
+  /* —— Accents (点缀 only) —— */
+  --accent: #7c5cff; /* violet */
+  --accent-deep: #6743ff;
+  --accent-soft: rgba(124, 92, 255, 0.1);
+  --accent-border: rgba(124, 92, 255, 0.38);
+  --warm: #e9824a; /* amber */
+  --warm-soft: rgba(233, 130, 74, 0.12);
+
+  /* —— Shadows: soft & quiet —— */
+  --shadow-sm: 0 1px 2px rgba(28, 25, 23, 0.05);
+  --shadow-md: 0 4px 16px rgba(28, 25, 23, 0.07);
+  --shadow-lg: 0 16px 40px rgba(28, 25, 23, 0.1);
+
+  --radius: 12px;
+  --radius-sm: 8px;
+  --radius-lg: 18px;
+
+  /* —— Type —— */
+  --font-ui: 'Inter', system-ui, 'PingFang SC', 'Microsoft YaHei', sans-serif;
+  --font-serif: 'Fraunces', Georgia, 'Songti SC', serif;
+  --font-display: var(--font-serif);
+
+  font-family: var(--font-ui);
   color: var(--text);
   background: var(--app-bg);
   font-synthesis: none;
@@ -37,6 +65,24 @@ body,
   margin: 0;
 }
 
+h1,
+h2,
+h3 {
+  font-family: var(--font-display);
+  font-weight: 500;
+  letter-spacing: -0.01em;
+}
+
+/* small all-caps labels — editorial detail */
+.eyebrow {
+  font-family: var(--font-ui);
+  font-size: 0.66rem;
+  font-weight: 600;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+
 button,
 input,
 select,
@@ -46,9 +92,11 @@ textarea {
 
 button {
   transition:
-    background-color 140ms ease,
-    border-color 140ms ease,
-    color 140ms ease;
+    background-color 160ms ease,
+    border-color 160ms ease,
+    color 160ms ease,
+    transform 140ms cubic-bezier(0.34, 1.4, 0.64, 1),
+    box-shadow 160ms ease;
 }
 
 button:focus-visible,
@@ -57,4 +105,180 @@ select:focus-visible,
 textarea:focus-visible {
   outline: 2px solid var(--accent);
   outline-offset: 2px;
+}
+
+/* —— Slim neutral scrollbar —— */
+*::-webkit-scrollbar {
+  width: 10px;
+  height: 10px;
+}
+*::-webkit-scrollbar-thumb {
+  background: rgba(28, 25, 23, 0.16);
+  border: 3px solid transparent;
+  background-clip: padding-box;
+  border-radius: 999px;
+}
+*::-webkit-scrollbar-thumb:hover {
+  background: rgba(28, 25, 23, 0.3);
+  background-clip: padding-box;
+}
+*::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+/* ============================================================
+   Canvas node cards (global; node components carry no styles)
+   Quiet white cards, one thin accent tick as the only colour.
+   ============================================================ */
+.creative-node {
+  --node-accent: #7c5cff;
+  position: relative;
+  width: 236px;
+  padding: 15px 16px 16px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--panel-strong);
+  box-shadow: var(--shadow-sm);
+  transition:
+    transform 0.2s cubic-bezier(0.34, 1.4, 0.64, 1),
+    box-shadow 0.2s ease,
+    border-color 0.2s ease;
+}
+/* a single short accent tick — the only spot of colour at rest */
+.creative-node::before {
+  content: '';
+  position: absolute;
+  top: 16px;
+  left: 0;
+  width: 3px;
+  height: 18px;
+  border-radius: 0 3px 3px 0;
+  background: var(--node-accent);
+}
+.creative-node:hover {
+  transform: translateY(-3px);
+  box-shadow: var(--shadow-md);
+  border-color: var(--border-strong);
+}
+.creative-node.selected {
+  border-color: var(--node-accent);
+  box-shadow: 0 0 0 3px var(--accent-soft), var(--shadow-md);
+}
+
+.creative-node .node-type,
+.creative-node h3,
+.creative-node .node-summary {
+  margin: 0;
+}
+.creative-node .node-type {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  color: var(--muted);
+  font-size: 0.64rem;
+  font-weight: 600;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+}
+.creative-node .node-type span {
+  font-size: 0.95rem;
+  letter-spacing: 0;
+}
+.creative-node h3 {
+  margin-top: 8px;
+  color: var(--text);
+  font-family: var(--font-display);
+  font-size: 1.12rem;
+  font-weight: 500;
+}
+.creative-node .node-summary {
+  display: -webkit-box;
+  margin-top: 8px;
+  overflow: hidden;
+  color: var(--text-soft);
+  font-size: 0.83rem;
+  line-height: 1.55;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 3;
+}
+
+/* Type accents — violet / amber / neutral greys only */
+.creative-node.character {
+  --node-accent: #7c5cff;
+}
+.creative-node.worldbuilding,
+.creative-node.world {
+  --node-accent: #e9824a;
+}
+.creative-node.plot {
+  --node-accent: #9b7cff;
+}
+.creative-node.idea {
+  --node-accent: #f0a868;
+}
+.creative-node.research {
+  --node-accent: #6b6f76;
+}
+.creative-node.structure {
+  --node-accent: #9b958c;
+}
+
+/* ============================================================
+   Motion — subtle, calm
+   ============================================================ */
+@keyframes floatIn {
+  from {
+    opacity: 0;
+    transform: translateY(8px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+@keyframes popIn {
+  0% {
+    opacity: 0;
+    transform: scale(0.96);
+  }
+  100% {
+    opacity: 1;
+    transform: scale(1);
+  }
+}
+
+/* route page transition — gentle cross-fade + lift */
+.page-enter-active {
+  transition:
+    opacity 0.3s ease,
+    transform 0.3s cubic-bezier(0.22, 1, 0.36, 1);
+}
+.page-leave-active {
+  transition: opacity 0.16s ease;
+}
+.page-enter-from {
+  opacity: 0;
+  transform: translateY(10px);
+}
+.page-leave-to {
+  opacity: 0;
+}
+
+/* center stage canvas⇄detail */
+.stage-enter-active {
+  transition:
+    opacity 0.26s ease,
+    transform 0.26s cubic-bezier(0.22, 1, 0.36, 1);
+}
+.stage-leave-active {
+  transition: opacity 0.14s ease;
+  position: absolute;
+  inset: 0;
+}
+.stage-enter-from {
+  opacity: 0;
+  transform: scale(0.99);
+}
+.stage-leave-to {
+  opacity: 0;
 }

@@ -79,22 +79,28 @@ def build_memory_block(state: AgentState, intent: str | None = None) -> str:
     省 token 也避免 LLM 把项目里的角色名误用进闲聊回复。其它 intent 走全套。
     """
     world_brief = (state.get("world_brief") or "").strip()
+    seed_context = (state.get("seed_context") or "").strip()
     key_facts = state.get("key_facts") or []
     summary = (state.get("conversation_summary") or "").strip()
     recent = state.get("recent_messages") or []
     merged = state.get("merged_context") or []
     current_node_section = _format_current_nodes(state.get("current_nodes") or [])
 
+    seed_section = f"【项目种子 (当前全貌快照)】\n{seed_context}" if seed_context else ""
+
     if intent == "small_talk":
-        return "\n\n".join(
-            [
-                f"【世界观纲要】\n{world_brief or '(尚未沉淀)'}",
-                f"【最近对话】\n{_format_recent_messages(recent)}",
-            ]
-        )
+        sections = [f"【世界观纲要】\n{world_brief or '(尚未沉淀)'}"]
+        if seed_section:
+            sections.append(seed_section)
+        sections.append(f"【最近对话】\n{_format_recent_messages(recent)}")
+        return "\n\n".join(sections)
 
     sections = [
         f"【世界观纲要】\n{world_brief or '(尚未沉淀)'}",
+    ]
+    if seed_section:
+        sections.append(seed_section)
+    sections += [
         f"【核心事实层 (跨轮沉淀, 不会被摘要覆盖)】\n{_format_key_facts(key_facts)}",
         f"【过往对话摘要】\n{summary or '(尚无)'}",
         f"【最近对话】\n{_format_recent_messages(recent)}",

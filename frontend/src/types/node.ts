@@ -18,12 +18,12 @@ export type CreativeRelationType =
 
 /** 连线关系类型的展示选项。 */
 export const RELATION_TYPE_OPTIONS: Array<{ value: CreativeRelationType; label: string }> = [
-  { value: 'relates_to', label: '关联' },
-  { value: 'causes', label: '导致' },
-  { value: 'belongs_to', label: '属于' },
-  { value: 'conflicts_with', label: '冲突' },
-  { value: 'references', label: '参考' },
-  { value: 'develops_into', label: '发展为' },
+  { value: 'relates_to', label: 'relates to' },
+  { value: 'causes', label: 'causes' },
+  { value: 'belongs_to', label: 'belongs to' },
+  { value: 'conflicts_with', label: 'conflicts with' },
+  { value: 'references', label: 'references' },
+  { value: 'develops_into', label: 'develops into' },
 ]
 
 /**

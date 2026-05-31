@@ -15,14 +15,14 @@ const emit = defineEmits<{
 }>()
 
 const toolbarActions = [
-  { id: 'refresh', label: '刷新' },
-  { id: 'save', label: '保存' },
-  { id: 'import', label: '导入资料' },
-  { id: 'export', label: '导出' },
-  { id: 'settings', label: '设置' },
+  { id: 'refresh', label: 'Refresh' },
+  { id: 'save', label: 'Save' },
+  { id: 'import', label: 'Import' },
+  { id: 'export', label: 'Export' },
+  { id: 'settings', label: 'Settings' },
 ]
 
-const savingLabel = '保存中...'
+const savingLabel = 'Saving…'
 
 function handleActionClick(actionId: string) {
   if (actionId === 'save') {

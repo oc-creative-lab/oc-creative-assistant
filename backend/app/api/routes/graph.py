@@ -18,9 +18,12 @@ from app.schemas import (
 from app.services.graph_store import (
     create_edge,
     create_node,
+    delete_node,
     ensure_default_project,
     get_project_graph,
+    get_subgraph,
     save_project_graph,
+    save_subgraph,
     update_node,
 )
 from app.services.rag_service import search_project_memory
@@ -33,6 +36,22 @@ router = APIRouter(prefix="/api", tags=["graph"])
 async def read_default_project() -> ProjectPayload:
     """返回默认项目；首次调用会自动创建项目和示例 graph。"""
     return ensure_default_project()
+
+
+@router.get("/graphs/{graph_id}", response_model=GraphPayload)
+async def read_subgraph(graph_id: str) -> GraphPayload:
+    """读取单个 sub-graph 的快照（first_revision 决策 1）。
+
+    与按项目读取的 ``/projects/{id}/graph`` 并存：旧的单画布工作台继续用项目维度，
+    新的三视图工作台按 graph_id 分别加载 plot / character / world。
+    """
+    return get_subgraph(graph_id)
+
+
+@router.put("/graphs/{graph_id}", response_model=GraphPayload)
+async def replace_subgraph_route(graph_id: str, payload: SaveGraphRequest) -> GraphPayload:
+    """保存单个 sub-graph 快照，整体替换该 sub-graph 的节点与内部边。"""
+    return save_subgraph(graph_id, payload)
 
 
 @router.get("/projects/{project_id}/graph", response_model=GraphPayload)
@@ -63,6 +82,12 @@ async def add_node(project_id: str, payload: NodePayload) -> NodePayload:
 async def patch_node(project_id: str, node_id: str, payload: UpdateNodeRequest) -> NodePayload:
     """更新 node 的基础字段或位置。"""
     return update_node(project_id, node_id, payload)
+
+
+@router.delete("/projects/{project_id}/nodes/{node_id}", status_code=204)
+async def remove_node(project_id: str, node_id: str) -> None:
+    """删除单个节点及其相关边（对话内联卡片"撤销/拒绝"用）。"""
+    delete_node(project_id, node_id)
 
 
 @router.post("/projects/{project_id}/edges", response_model=EdgePayload)

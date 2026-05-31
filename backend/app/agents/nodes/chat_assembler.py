@@ -42,6 +42,19 @@ _REPLY_PROMPT = load_prompt("chat_assembler_reply")
 _METADATA_PROMPT = load_prompt("chat_assembler_metadata")
 
 
+def _hint_block(state: AgentState) -> str:
+    """把 question_planner 规划的追问方向拼成提示块（gate 关时为空）。
+
+    只作为“建议方向”交给装配器自然融入，不强制照搬，避免回复变成机械追问。
+    """
+    hint = (state.get("next_question_hint") or "").strip()
+    if not hint:
+        return ""
+    return (
+        f"\n\n【建议下一步追问方向（自然融入回复, 不要生硬照抄）】\n{hint}"
+    )
+
+
 def _build_small_talk_brief(state: AgentState) -> str:
     """只暴露世界观纲要的最高层信息, 屏蔽节点级和对话级的具体人名,
     避免 LLM 在闲聊时把项目角色当成用户的名字。
@@ -66,6 +79,7 @@ def _assemble_small_talk(state: AgentState) -> ChatAssemblerOutput:
         HumanMessage(
             f"{runtime_block}\n{_build_small_talk_brief(state)}\n\n"
             f"【用户最新消息】\n{user_message}"
+            f"{_hint_block(state)}"
         ),
     ]
     return get_llm_provider().structured(messages, ChatAssemblerOutput)
@@ -89,7 +103,8 @@ def _build_reply_messages(
             f"【用户最新消息】\n{user_message}\n\n"
             f"【主导意图】\n{primary}\n\n"
             f"【agent 结构化输出】\n{output.model_dump_json()}"
-            f"{warning_block}\n\n"
+            f"{warning_block}"
+            f"{_hint_block(state)}\n\n"
             "请直接输出最终面向用户的回复正文; 注意不要重复【最近对话】里"
             "你已经说过的话, 让回复有连续感。"
         ),

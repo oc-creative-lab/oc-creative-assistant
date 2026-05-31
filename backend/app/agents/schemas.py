@@ -178,3 +178,77 @@ class SummaryOutput(_LlmStructuredOutput):
 
     summary: str
     key_facts: list[str] = Field(default_factory=list)
+
+
+# --- first_revision 阶段 4：后台 B-agent 输出契约 ---
+
+EntityTypeLiteral = Literal["character", "world", "plot"]
+"""structured_extractor 抽出的实体类型; 映射到 sub-graph 分区与 node_type。"""
+
+
+class StructuredEntity(_LlmStructuredOutput):
+    """从自由对话里抽出的一个实体（角色 / 世界观 / 剧情）。"""
+
+    type: EntityTypeLiteral
+    name: str
+    attributes: dict[str, str] = Field(default_factory=dict)
+
+
+class StructuredRelation(_LlmStructuredOutput):
+    """实体之间的关系；source_name / target_name 引用本轮抽出的实体名。"""
+
+    source_name: str
+    target_name: str
+    label: str = ""
+
+
+class DeferredField(_LlmStructuredOutput):
+    """尚未补全、值得后续追问的字段（喂给 question_planner）。"""
+
+    entity: str
+    field: str
+
+
+class StructuredExtractionOutput(_LlmStructuredOutput):
+    """structured_extractor 的结构化输出（Agent B 之一）。"""
+
+    reasoning: str = ""
+    entities: list[StructuredEntity] = Field(default_factory=list)
+    relations: list[StructuredRelation] = Field(default_factory=list)
+    deferred_fields: list[DeferredField] = Field(default_factory=list)
+
+
+class QuestionPlannerOutput(_LlmStructuredOutput):
+    """question_planner 的结构化输出（Agent B 之二）。"""
+
+    reasoning: str = ""
+    next_question: str = ""
+    target_field: str = ""
+
+
+WorkspaceOutputLiteral = Literal["search", "rag", "question", "feedback"]
+"""工作台被动 agent 的输出类型，前端按此分发到不同卡片。"""
+
+
+class WorkspaceInspirationOutput(_LlmStructuredOutput):
+    """工作台轻量灵感 agent 的结构化输出（second_revision 改点 B / W5）。
+
+    被动响应：用户在底部对话框发消息（可带引用节点）时才产出一条卡片。
+    """
+
+    reasoning: str = ""
+    type: WorkspaceOutputLiteral = "feedback"
+    content: str = ""
+
+
+class SeedOutput(_LlmStructuredOutput):
+    """项目种子压缩输出（first_revision 阶段 5）。
+
+    seed_compressor 把项目当前状态压成这份结构化快照，落到 ProjectSeedORM，
+    供 Chat Agent 启动注入（~500 tokens 量级）。
+    """
+
+    worldview_summary: str = ""
+    main_characters: list[str] = Field(default_factory=list)
+    plot_outline: str = ""
+    style_notes: str = ""

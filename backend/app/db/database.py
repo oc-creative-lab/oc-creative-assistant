@@ -74,12 +74,15 @@ def init_db() -> None:
         ChatMessageORM,
         ChatSessionORM,
         EdgeORM,
+        GraphORM,
         NodeORM,
         ProjectORM,
+        ProjectSeedORM,
     )
 
     Base.metadata.create_all(bind=engine)
     _ensure_sqlite_schema_compatibility()
+    _ensure_subgraph_backfill()
 
 
 def _ensure_sqlite_schema_compatibility() -> None:
@@ -97,6 +100,9 @@ def _ensure_sqlite_schema_compatibility() -> None:
             connection.exec_driver_sql(
                 "ALTER TABLE edges ADD COLUMN relation_type VARCHAR NOT NULL DEFAULT 'relates_to'"
             )
+
+        if "waypoint" not in edge_columns:
+            connection.exec_driver_sql("ALTER TABLE edges ADD COLUMN waypoint TEXT")
 
         project_columns = {
             row[1]
@@ -117,3 +123,64 @@ def _ensure_sqlite_schema_compatibility() -> None:
             connection.exec_driver_sql(
                 "ALTER TABLE chat_sessions ADD COLUMN summary_message_count INTEGER NOT NULL DEFAULT 0"
             )
+
+        # first_revision 阶段 1：多 sub-graph 架构需要的新增列。
+        # create_all 只建新表(graphs / project_seeds)，不会给旧表补列，这里手动补。
+        if "description" not in project_columns:
+            connection.exec_driver_sql(
+                "ALTER TABLE projects ADD COLUMN description TEXT NOT NULL DEFAULT ''"
+            )
+        for column in ("plot_graph_id", "character_graph_id", "world_graph_id"):
+            if column not in project_columns:
+                connection.exec_driver_sql(
+                    f"ALTER TABLE projects ADD COLUMN {column} VARCHAR"
+                )
+
+        node_columns = {
+            row[1]
+            for row in connection.exec_driver_sql("PRAGMA table_info(nodes)").fetchall()
+        }
+        if "graph_id" not in node_columns:
+            connection.exec_driver_sql("ALTER TABLE nodes ADD COLUMN graph_id VARCHAR")
+
+
+# node_type → sub-graph section 的归属规则。
+# 决策：plot/character/world 各归本类；idea/research/structure 等其余类型暂归 plot。
+_SECTION_BY_NODE_TYPE: dict[str, str] = {
+    "character": "character",
+    "worldbuilding": "world",
+    "plot": "plot",
+}
+_DEFAULT_SECTION = "plot"
+
+
+def _ensure_subgraph_backfill() -> None:
+    """为没有 sub-graph 的旧项目回填三个 sub-graph，并把现有节点归位。
+
+    幂等：只处理 ``plot_graph_id`` 仍为空的项目；已迁移项目跳过。
+    迁移不破坏旧数据——节点 / 边记录原样保留，仅补 ``graph_id`` 维度。
+    """
+    import uuid
+
+    from app.db.models import GraphORM, NodeORM, ProjectORM
+
+    with SessionLocal.begin() as session:
+        projects = session.query(ProjectORM).all()
+        for project in projects:
+            if project.plot_graph_id:
+                continue  # 已迁移
+
+            graph_ids: dict[str, str] = {}
+            for section in ("plot", "character", "world"):
+                graph_id = uuid.uuid4().hex
+                session.add(GraphORM(id=graph_id, project_id=project.id, section=section))
+                graph_ids[section] = graph_id
+
+            project.plot_graph_id = graph_ids["plot"]
+            project.character_graph_id = graph_ids["character"]
+            project.world_graph_id = graph_ids["world"]
+
+            nodes = session.query(NodeORM).filter(NodeORM.project_id == project.id).all()
+            for node in nodes:
+                section = _SECTION_BY_NODE_TYPE.get(node.node_type, _DEFAULT_SECTION)
+                node.graph_id = graph_ids[section]

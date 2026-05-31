@@ -111,6 +111,7 @@ async def stream_chat_turn(payload: ChatRequest) -> AsyncIterator[str]:
         "project_id": project_id,
         "user_message": payload.user_message,
         "selected_node_ids": list(payload.selected_node_ids),
+        "extraction_enabled": payload.extraction_enabled,
     }
 
     loop = asyncio.get_running_loop()

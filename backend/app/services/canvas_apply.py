@@ -23,12 +23,32 @@ from typing import Any
 
 from sqlalchemy.orm import Session
 
-from app.db.models import AgentStagingORM, EdgeORM, NodeORM
+from app.db.database import _SECTION_BY_NODE_TYPE, _DEFAULT_SECTION
+from app.db.models import AgentStagingORM, EdgeORM, NodeORM, ProjectORM
 
 logger = logging.getLogger(__name__)
 
 
 _ACCEPTED_STATUSES = {"accepted", "edited"}
+
+# section → ProjectORM 上对应的 graph_id 字段名。
+_GRAPH_ID_ATTR_BY_SECTION = {
+    "plot": "plot_graph_id",
+    "character": "character_graph_id",
+    "world": "world_graph_id",
+}
+
+
+def _resolve_graph_id(db: Session, project_id: str, node_type: str) -> str | None:
+    """按 node_type 找出该节点应归属的 sub-graph id（first_revision 决策 1）。
+
+    项目尚未迁移出 sub-graph（理论上不会发生）时返回 None，节点退化为无 graph_id。
+    """
+    project = db.get(ProjectORM, project_id)
+    if project is None:
+        return None
+    section = _SECTION_BY_NODE_TYPE.get(node_type, _DEFAULT_SECTION)
+    return getattr(project, _GRAPH_ID_ATTR_BY_SECTION[section], None)
 
 
 def apply_staging_record(
@@ -91,6 +111,7 @@ def _apply_create_node(db: Session, record: AgentStagingORM, payload: dict[str, 
         NodeORM(
             id=node_id,
             project_id=record.project_id,
+            graph_id=_resolve_graph_id(db, record.project_id, node_type),
             node_type=node_type,
             title=title,
             content=content,

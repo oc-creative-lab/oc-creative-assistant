@@ -31,5 +31,10 @@ if (!response.ok) {
     throw new Error(`HTTP ${response.status}`)
 }
 
+// 204 No Content（如 DELETE）没有响应体，直接解析 JSON 会抛错。
+if (response.status === 204) {
+    return undefined as T
+}
+
 return (await response.json()) as T
 }

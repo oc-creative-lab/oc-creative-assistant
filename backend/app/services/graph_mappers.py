@@ -22,6 +22,26 @@ from app.schemas import (
 META_TEXT_KEY = "text"
 META_TAGS_KEY = "tags"
 META_STATUS_KEY = "status"
+# first_revision 决策 2：角色卡“自由字段”存进 node.meta JSON 的保留键，不污染
+# 既有的 text / tags / status。
+META_FIELDS_KEY = "fields"
+
+
+def db_fields_to_api(meta: Any) -> dict[str, str]:
+    """从数据库 meta 读取自由字段（key→value，均为字符串）。"""
+    if isinstance(meta, dict):
+        fields = meta.get(META_FIELDS_KEY, {})
+        if isinstance(fields, dict):
+            return {str(k): str(v) for k, v in fields.items()}
+    return {}
+
+
+def merge_fields_into_meta(meta: Any, fields: dict[str, str]) -> dict[str, Any]:
+    """把自由字段整体写回 meta JSON，保留其它保留键。"""
+    stored_meta: dict[str, Any] = meta if isinstance(meta, dict) else {}
+    next_meta = dict(stored_meta)
+    next_meta[META_FIELDS_KEY] = {str(k): str(v) for k, v in fields.items()}
+    return next_meta
 
 
 def project_to_payload(project: ProjectORM) -> ProjectPayload:
@@ -81,13 +101,20 @@ def edge_to_payload(edge: EdgeORM) -> EdgePayload:
     )
 
 
-def node_to_orm(project_id: str, node: NodePayload, sort_order: int) -> NodeORM:
+def node_to_orm(
+    project_id: str,
+    node: NodePayload,
+    sort_order: int,
+    graph_id: str | None = None,
+) -> NodeORM:
     """将节点 payload 转换为 ORM。
 
     Args:
         project_id: 节点所属项目 ID。
         node: 前端提交的节点 DTO。
         sort_order: 节点在当前 graph 快照中的顺序。
+        graph_id: 节点归属的 sub-graph；按项目维度保存时为 None，按 sub-graph
+            维度保存时由调用方传入（first_revision 决策 1）。
 
     Returns:
         可写入数据库的节点 ORM 对象。
@@ -95,6 +122,7 @@ def node_to_orm(project_id: str, node: NodePayload, sort_order: int) -> NodeORM:
     return NodeORM(
         id=node.id,
         project_id=project_id,
+        graph_id=graph_id,
         node_type=node.nodeType or node.type,
         title=node.title,
         content=node.content,

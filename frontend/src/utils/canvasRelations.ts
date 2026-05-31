@@ -22,13 +22,14 @@ interface RelationEdgeStyle {
  * 颜色 / 浅底色 / 是否流动动画对应 stroke、label 背景和 animated 属性。
  * 用 record 而非 switch 是为了后续新增关系类型时只改这一个地方。
  */
+// 配色统一落在 紫 / 橙 / 玫(张力) / 灰 家族，呼应整体梦幻调性。
 const relationEdgeStyles: Record<CreativeRelationType, RelationEdgeStyle> = {
-  relates_to: { color: '#64748b', labelBg: '#f8fafc' },
-  causes: { color: '#d97706', labelBg: '#fffbeb' },
-  belongs_to: { color: '#059669', labelBg: '#ecfdf5' },
-  conflicts_with: { color: '#dc2626', labelBg: '#fef2f2', animated: true },
-  references: { color: '#2563eb', labelBg: '#eff6ff' },
-  develops_into: { color: '#7c3aed', labelBg: '#f5f3ff' },
+  relates_to: { color: '#a29bc4', labelBg: '#f6f4fb' },
+  causes: { color: '#f59e0b', labelBg: '#fff7ed' },
+  belongs_to: { color: '#8b5cf6', labelBg: '#f5f3ff' },
+  conflicts_with: { color: '#fb7185', labelBg: '#fff1f3', animated: true },
+  references: { color: '#6366f1', labelBg: '#eef2ff' },
+  develops_into: { color: '#a855f7', labelBg: '#faf5ff' },
 }
 
 export function getRelationLabel(relationType: CreativeRelationType): string {

@@ -17,6 +17,98 @@ class ProjectPayload(BaseModel):
     name: str
 
 
+class ProjectSeedPayload(BaseModel):
+    """项目种子 DTO（first_revision 决策 3）。"""
+
+    id: str
+    project_id: str
+    version: int
+    seed_json: str = ""
+    source: str = "user_edit"
+    created_at: datetime | None = None
+
+
+class GraphInfoPayload(BaseModel):
+    """sub-graph 元信息 DTO。"""
+
+    id: str
+    project_id: str
+    section: Literal["plot", "character", "world"]
+
+
+class ProjectSummaryPayload(BaseModel):
+    """项目库卡片所需的概览信息。"""
+
+    id: str
+    name: str
+    description: str = ""
+    created_at: datetime | None = None
+    updated_at: datetime | None = None
+
+
+class ProjectDetailPayload(BaseModel):
+    """项目详情：含三个 sub-graph id 与最新种子（first_revision 阶段 1）。"""
+
+    id: str
+    name: str
+    description: str = ""
+    plot_graph_id: str | None = None
+    character_graph_id: str | None = None
+    world_graph_id: str | None = None
+    latest_seed: ProjectSeedPayload | None = None
+    created_at: datetime | None = None
+    updated_at: datetime | None = None
+
+
+class ProjectCreateRequest(BaseModel):
+    """创建项目请求体；后端会自动创建三个 sub-graph。"""
+
+    name: str
+    description: str = ""
+
+
+class ProjectUpdateRequest(BaseModel):
+    """项目局部更新请求体；None 表示不修改该字段。"""
+
+    name: str | None = None
+    description: str | None = None
+
+
+class NodeFieldsPayload(BaseModel):
+    """节点自由字段 DTO（first_revision 决策 2）。"""
+
+    node_id: str
+    fields: dict[str, str] = Field(default_factory=dict)
+
+
+class WorkspaceChatRequest(BaseModel):
+    """工作台底部对话框请求体（second_revision 改点 B / W5）。"""
+
+    message: str = ""
+    quoted_node_ids: list[str] = Field(default_factory=list)
+
+
+class CrossReferenceItem(BaseModel):
+    """一条跨 sub-graph 引用（first_revision 阶段 6）。"""
+
+    edge_id: str
+    other_node_id: str
+    other_title: str
+    other_section: Literal["plot", "character", "world"]
+    relation_type: str
+    relation_label: str
+    # 'outgoing': 本节点 → 对方; 'incoming': 对方 → 本节点
+    direction: Literal["outgoing", "incoming"]
+
+
+class CrossReferenceResponse(BaseModel):
+    """某节点在其它 sub-graph 中的全部引用。"""
+
+    node_id: str
+    section: Literal["plot", "character", "world"] | None = None
+    references: list[CrossReferenceItem] = Field(default_factory=list)
+
+
 class PositionPayload(BaseModel):
     """Vue Flow 使用的二维节点坐标。"""
 
@@ -339,6 +431,9 @@ class ChatRequest(BaseModel):
     session_id: str
     user_message: str
     selected_node_ids: list[str] = Field(default_factory=list)
+    # first_revision 阶段 4：ChatWorkspace 全屏聊天置 True 开启后台 B-agent；
+    # FloatingChatDock 不传，保持旧流程（无 question_planner / structured_extractor 副作用）。
+    extraction_enabled: bool = False
 
 
 class ChatResponse(BaseModel):

@@ -109,6 +109,15 @@ export async function listSessionStaging(
   return requestJson<AgentStagingBatchDto[]>(`/api/sessions/${sessionId}/staging${query}`)
 }
 
+/** 列出整个项目的 staging（first_revision 阶段 4：ChatWorkspace 跨会话待审）。 */
+export async function listProjectStaging(
+  projectId: string,
+  status: AgentStagingItemDto['status'] | null = 'pending',
+): Promise<AgentStagingBatchDto[]> {
+  const query = status ? `?status=${status}` : ''
+  return requestJson<AgentStagingBatchDto[]>(`/api/projects/${projectId}/staging${query}`)
+}
+
 /** 单条 staging 的 accept / edit / reject; 已结案再次操作返回 409。 */
 export async function resolveStagingItem(
   stagingId: string,
@@ -149,8 +158,21 @@ export type ChatStreamEvent =
       batch_id: string | null
       staging_count: number
     }
+  | {
+      type: 'extraction_applied'
+      items: AppliedEntityDto[]
+    }
   | { type: 'done' }
   | { type: 'error'; message: string }
+
+/** 后台抽取并【自动落库】的卡片（改造 1：对话内联展示，默认已加入）。 */
+export interface AppliedEntityDto {
+  node_id: string
+  title: string
+  node_type: string
+  content: string
+  change_type: 'create_node' | 'update_node'
+}
 
 /**
  * 流式 chat: 后端 SSE, 前端 fetch + ReadableStream 解析。
@@ -163,6 +185,7 @@ export async function streamChat(
   userMessage: string,
   selectedNodeIds: string[],
   onEvent: (event: ChatStreamEvent) => void,
+  extractionEnabled = false,
 ): Promise<void> {
   const response = await fetch(`${backendBaseUrl}/api/chat/stream`, {
     method: 'POST',
@@ -171,6 +194,7 @@ export async function streamChat(
       session_id: sessionId,
       user_message: userMessage,
       selected_node_ids: selectedNodeIds,
+      extraction_enabled: extractionEnabled,
     }),
   })
 

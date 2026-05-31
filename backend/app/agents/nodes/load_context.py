@@ -15,7 +15,7 @@ from sqlalchemy import select
 from app.agents.state import AgentState
 from app.core.settings import get_agent_settings
 from app.db.database import SessionLocal
-from app.db.models import ChatMessageORM, ChatSessionORM, NodeORM, ProjectORM
+from app.db.models import ChatMessageORM, ChatSessionORM, NodeORM, ProjectORM, ProjectSeedORM
 from app.indexing.document_loader import node_to_current_payload
 
 
@@ -28,6 +28,7 @@ def _empty_context() -> dict[str, Any]:
     """
     return {
         "world_brief": "",
+        "seed_context": "",
         "conversation_summary": "",
         "key_facts": [],
         "recent_messages": [],
@@ -62,6 +63,15 @@ def load_context_node(state: AgentState) -> dict[str, Any]:
         project = db.get(ProjectORM, session.project_id)
         world_brief = project.world_brief if project is not None else ""
 
+        # 最新项目种子（决策 4）：启动注入的低成本项目全貌快照。
+        latest_seed = (
+            db.query(ProjectSeedORM)
+            .filter(ProjectSeedORM.project_id == session.project_id)
+            .order_by(ProjectSeedORM.version.desc())
+            .first()
+        )
+        seed_context = latest_seed.seed_json if latest_seed is not None else ""
+
         recent = list(
             db.scalars(
                 select(ChatMessageORM)
@@ -82,6 +92,7 @@ def load_context_node(state: AgentState) -> dict[str, Any]:
         return {
             **_empty_context(),
             "world_brief": world_brief,
+            "seed_context": seed_context,
             "conversation_summary": session.conversation_summary,
             "key_facts": list(session.key_facts or []),
             "recent_messages": [

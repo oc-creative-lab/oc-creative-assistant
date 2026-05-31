@@ -53,9 +53,11 @@ from app.agents.nodes.intent_router import intent_router_node
 from app.agents.nodes.load_context import load_context_node
 from app.agents.nodes.parallel_retrieval import parallel_retrieval_node
 from app.agents.nodes.persistence_hub import persistence_hub_node
+from app.agents.nodes.question_planner import question_planner_node
 from app.agents.nodes.research_agent import research_agent_node
 from app.agents.nodes.simulation_agent import simulation_agent_node
 from app.agents.nodes.structure_agent import structure_agent_node
+from app.agents.nodes.structured_extractor import structured_extractor_node
 from app.agents.nodes.summary_compress import summary_compress_node
 from app.agents.state import AgentState
 
@@ -76,10 +78,11 @@ def _route_after_intent(state: AgentState) -> str:
     """intent_router 之后的首次路由: small_talk 跳过 retrieval / agent。
 
     intent 缺失同样按 small_talk 兜底, 让闲聊型回复在 graph 内全程不打 chroma。
+    无论哪条路径都先经过 question_planner（gate 关时它 no-op），再进 chat_assembler。
     """
     intent = state.get("intent")
     if intent is None or intent.primary == "small_talk":
-        return "chat_assembler"
+        return "question_planner"
     return "parallel_retrieval"
 
 
@@ -105,19 +108,23 @@ def _build_graph() -> StateGraph:
     builder.add_node("structure_agent", structure_agent_node)
     builder.add_node("simulation_agent", simulation_agent_node)
     builder.add_node("boundary_check", boundary_check_node)
+    # 后台 B-agent（first_revision 决策 5）：question_planner 在装配前规划追问，
+    # structured_extractor 在持久化后抽实体；extraction_enabled 关时两者 no-op。
+    builder.add_node("question_planner", question_planner_node)
     builder.add_node("chat_assembler", chat_assembler_node)
     builder.add_node("persistence_hub", persistence_hub_node)
+    builder.add_node("structured_extractor", structured_extractor_node)
     builder.add_node("summary_compress", summary_compress_node)
 
     builder.add_edge(START, "load_context")
     builder.add_edge("load_context", "intent_router")
 
-    # 第一段路由: small_talk 跳过 retrieval / agent 直接进装配器
+    # 第一段路由: small_talk 跳过 retrieval / agent, 但仍先过 question_planner
     builder.add_conditional_edges(
         "intent_router",
         _route_after_intent,
         {
-            "chat_assembler": "chat_assembler",
+            "question_planner": "question_planner",
             "parallel_retrieval": "parallel_retrieval",
         },
     )
@@ -134,9 +141,13 @@ def _build_graph() -> StateGraph:
     for agent in _AGENT_NODES:
         builder.add_edge(agent, "boundary_check")
 
-    builder.add_edge("boundary_check", "chat_assembler")
+    # 实质意图: boundary_check → question_planner → chat_assembler
+    builder.add_edge("boundary_check", "question_planner")
+    builder.add_edge("question_planner", "chat_assembler")
     builder.add_edge("chat_assembler", "persistence_hub")
-    builder.add_edge("persistence_hub", "summary_compress")
+    # 持久化后再后台抽取（不阻塞已流式的回复），最后压缩摘要。
+    builder.add_edge("persistence_hub", "structured_extractor")
+    builder.add_edge("structured_extractor", "summary_compress")
     builder.add_edge("summary_compress", END)
 
     return builder

@@ -174,14 +174,17 @@
     width: 100%;
     height: 100%;
     background-color: var(--canvas-bg);
+    /* 梦幻点阵 + 两团柔光，像素感的点 + 极简的留白 */
     background-image:
-      linear-gradient(var(--grid-line) 1px, transparent 1px),
-      linear-gradient(90deg, var(--grid-line) 1px, transparent 1px);
-    background-size: 28px 28px;
+      radial-gradient(circle at 18% 22%, rgba(167, 139, 250, 0.12), transparent 42%),
+      radial-gradient(circle at 82% 78%, rgba(251, 191, 36, 0.1), transparent 42%),
+      radial-gradient(var(--grid-line) 1.6px, transparent 1.6px);
+    background-size: 100% 100%, 100% 100%, 24px 24px;
   }
-  
+
   :deep(.vue-flow__edge-path) {
-    stroke-width: 1.8;
+    stroke-width: 2.2;
+    stroke-linecap: round;
   }
   
   :deep(.creative-edge.vue-flow__edge.animated .vue-flow__edge-path) {
@@ -193,10 +196,17 @@
   }
   
   :deep(.vue-flow__handle) {
-    width: 8px;
-    height: 8px;
+    width: 9px;
+    height: 9px;
     border: 2px solid #ffffff;
-    background: #667085;
+    background: var(--accent);
+    box-shadow: 0 0 0 1px var(--accent-border);
+    transition: transform 0.14s ease, background 0.14s ease;
+  }
+
+  :deep(.vue-flow__handle:hover) {
+    background: var(--warm);
+    transform: scale(1.25);
   }
   
   :deep(.creative-edge.is-highlighted .vue-flow__edge-path),

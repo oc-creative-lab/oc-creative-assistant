@@ -172,6 +172,33 @@ _MOCK_SAMPLES: dict[str, dict[str, Any]] = {
             "用户倾向于让冲突来自族群内部",
         ],
     },
+    "StructuredExtractionOutput": {
+        "reasoning": "[mock] 从对话抽出一个角色与一个世界观设定。",
+        "entities": [
+            {"type": "character", "name": "暮岩", "attributes": {"身份": "矮人铁匠"}},
+            {"type": "world", "name": "铁炉部族", "attributes": {}},
+        ],
+        "relations": [
+            {"source_name": "暮岩", "target_name": "铁炉部族", "label": "属于"},
+        ],
+        "deferred_fields": [{"entity": "暮岩", "field": "外貌"}],
+    },
+    "QuestionPlannerOutput": {
+        "reasoning": "[mock] 角色已有身份, 缺动机, 追问动机。",
+        "next_question": "暮岩为什么离开铁炉部族?",
+        "target_field": "动机",
+    },
+    "SeedOutput": {
+        "worldview_summary": "[mock] 一个以矮人铁匠部族为核心的奇幻世界。",
+        "main_characters": ["暮岩"],
+        "plot_outline": "[mock] 主角因身世之谜与族群产生冲突。",
+        "style_notes": "厚重、内省的低魔奇幻基调。",
+    },
+    "WorkspaceInspirationOutput": {
+        "reasoning": "[mock] 用户在分享想法，给正向反馈。",
+        "type": "feedback",
+        "content": "[mock] 这个方向很有意思，尤其是冲突来自内部，张力会很足。",
+    },
 }
 
 

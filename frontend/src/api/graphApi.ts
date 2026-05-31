@@ -203,6 +203,39 @@ export async function saveProjectGraph(projectId: string, graph: SaveGraphDto): 
 }
 
 /**
+ * 按 graph_id 加载单个 sub-graph（first_revision 决策 1）。
+ *
+ * 与 loadDefaultGraph / saveProjectGraph 的项目维度并存：新的三视图工作台
+ * （PlotCanvas / CharacterCardList / WorldCanvas）分别按各自 graph_id 加载。
+ *
+ * Args:
+ *   graphId: sub-graph ID（来自 ProjectDetail 的 plot/character/world_graph_id）。
+ *
+ * Returns:
+ *   该 sub-graph 的节点 + 内部边快照。
+ */
+export async function loadSubgraph(graphId: string): Promise<GraphDto> {
+  return requestJson<GraphDto>(`/api/graphs/${graphId}`)
+}
+
+/**
+ * 按 graph_id 保存单个 sub-graph 快照（整体替换该 sub-graph 的节点与内部边）。
+ *
+ * Args:
+ *   graphId: sub-graph ID。
+ *   graph: 需要保存的节点和边快照。
+ *
+ * Returns:
+ *   后端落库后的 sub-graph DTO。
+ */
+export async function saveSubgraph(graphId: string, graph: SaveGraphDto): Promise<GraphDto> {
+  return requestJson<GraphDto>(`/api/graphs/${graphId}`, {
+    method: 'PUT',
+    body: JSON.stringify(graph),
+  })
+}
+
+/**
  * 加载 RAG 上下文预览。
  *
  * 当前接口只用于调试图关系、向量结果和 prompt，不会调用真正 LLM。

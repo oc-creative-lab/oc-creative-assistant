@@ -7,8 +7,9 @@
 
 from fastapi import HTTPException
 
-from app.db.database import SessionLocal
-from app.db.models import NodeORM, ProjectORM
+from app.db.database import SessionLocal, _ensure_subgraph_backfill
+from app.db.models import EdgeORM, NodeORM, ProjectORM
+from app.indexing.vector_store import delete_node as delete_node_vectors
 from app.indexing.sync import (
     IndexingSyncResult,
     build_node_fingerprint,
@@ -36,11 +37,15 @@ from app.services.graph_mappers import (
     project_to_payload,
 )
 from app.services.graph_repository import (
+    read_intra_graph_edges,
     read_ordered_edges,
     read_ordered_nodes,
+    read_ordered_nodes_by_graph,
     read_project_node,
     read_project_nodes,
     replace_graph,
+    replace_subgraph,
+    require_graph,
     require_project,
 )
 from app.services.graph_seed import (
@@ -90,14 +95,17 @@ def ensure_default_project() -> ProjectPayload:
             session.add(project)
             session.flush()
             replace_graph(session, DEFAULT_PROJECT_ID, DEFAULT_NODES, DEFAULT_EDGES)
-            return project_to_payload(project)
+            payload = project_to_payload(project)
+        else:
+            has_nodes = read_ordered_nodes(session, DEFAULT_PROJECT_ID)
+            if not has_nodes:
+                replace_graph(session, DEFAULT_PROJECT_ID, DEFAULT_NODES, DEFAULT_EDGES)
+            payload = project_to_payload(project)
 
-        has_nodes = read_ordered_nodes(session, DEFAULT_PROJECT_ID)
-
-        if not has_nodes:
-            replace_graph(session, DEFAULT_PROJECT_ID, DEFAULT_NODES, DEFAULT_EDGES)
-
-        return project_to_payload(project)
+    # 默认项目的示例节点经 replace_graph 写入时不带 graph_id；这里复用迁移 backfill
+    # 为其建立三个 sub-graph 并按类型归位，保证全新安装的默认项目也符合多 sub-graph 架构。
+    _ensure_subgraph_backfill()
+    return payload
 
 
 def get_project(project_id: str) -> ProjectPayload:
@@ -165,6 +173,53 @@ def save_project_graph(project_id: str, payload: SaveGraphRequest) -> GraphPaylo
     indexing_result = safe_sync_project_index_incremental(project_id, old_nodes, new_nodes)
 
     return get_project_graph(project_id, _indexing_result_to_payload(indexing_result))
+
+
+def get_subgraph(graph_id: str, indexing: IndexingStatusPayload | None = None) -> GraphPayload:
+    """读取单个 sub-graph 的快照（节点 + 内部边），转换为前端 DTO。
+
+    复用 GraphPayload 结构：project 字段填该 sub-graph 所属项目，nodes 仅含本
+    sub-graph 节点，edges 仅含两端都在本 sub-graph 内的边。
+
+    Raises:
+        HTTPException: 当 sub-graph 不存在时抛出 404。
+    """
+    with SessionLocal() as session:
+        graph = require_graph(session, graph_id)
+        project = require_project(session, graph.project_id)
+        nodes = read_ordered_nodes_by_graph(session, graph_id)
+        edges = read_intra_graph_edges(session, graph_id)
+
+        return GraphPayload(
+            project=project_to_payload(project),
+            nodes=[node_to_payload(node) for node in nodes],
+            edges=[edge_to_payload(edge) for edge in edges],
+            indexing=indexing or IndexingStatusPayload(),
+        )
+
+
+def save_subgraph(graph_id: str, payload: SaveGraphRequest) -> GraphPayload:
+    """整体替换单个 sub-graph 的节点与内部边，并在事务提交后增量同步索引。
+
+    索引仍按项目维度增量同步（ChromaDB 集合是项目级），保证与单画布保存一致。
+
+    Raises:
+        HTTPException: 当 sub-graph 不存在或边引用非法节点时抛出。
+    """
+    with SessionLocal() as session:
+        graph = require_graph(session, graph_id)
+        project_id = graph.project_id
+
+    old_nodes = read_project_nodes(project_id)
+
+    with SessionLocal.begin() as session:
+        graph = require_graph(session, graph_id)
+        replace_subgraph(session, graph, payload.nodes, payload.edges)
+
+    new_nodes = read_project_nodes(project_id)
+    indexing_result = safe_sync_project_index_incremental(project_id, old_nodes, new_nodes)
+
+    return get_subgraph(graph_id, _indexing_result_to_payload(indexing_result))
 
 
 def create_node(project_id: str, node: NodePayload) -> NodePayload:
@@ -254,6 +309,31 @@ def update_node(project_id: str, node_id: str, payload: UpdateNodeRequest) -> No
         safe_sync_node_index(latest_node, old_fingerprint)
 
     return updated
+
+
+def delete_node(project_id: str, node_id: str) -> None:
+    """删除单个节点及其相关边，并清理向量索引（改造 1：对话内联卡片"撤销/拒绝"）。
+
+    Raises:
+        HTTPException: 当项目或节点不存在时抛出 404。
+    """
+    with SessionLocal.begin() as session:
+        require_project(session, project_id)
+        node = session.get(NodeORM, node_id)
+        if node is None or node.project_id != project_id:
+            raise HTTPException(status_code=404, detail="Node not found")
+
+        session.query(EdgeORM).filter(
+            EdgeORM.project_id == project_id,
+            (EdgeORM.source == node_id) | (EdgeORM.target == node_id),
+        ).delete(synchronize_session=False)
+        session.delete(node)
+
+    # 索引清理放在事务提交后，与既有 _sync_deletions 语义一致。
+    try:
+        delete_node_vectors(project_id, node_id)
+    except Exception:  # noqa: BLE001 - 索引清理失败不应阻断删除
+        pass
 
 
 def create_edge(project_id: str, edge: EdgePayload) -> EdgePayload:

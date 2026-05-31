@@ -9,6 +9,7 @@ from fastapi.middleware.cors import CORSMiddleware
 
 from app.api.routes.chat import router as chat_router
 from app.api.routes.graph import router as graph_router
+from app.api.routes.projects import router as projects_router
 from app.api.routes.rag import router as rag_router
 from app.api.routes.system import router as system_router
 from app.db.database import init_db
@@ -34,6 +35,9 @@ async def startup() -> None:
 
 
 app.include_router(system_router)
+# graph_router 必须在 projects_router 之前注册：它的字面量路由 /api/projects/default
+# 否则会被 projects_router 的动态路由 /api/projects/{project_id} 抢先匹配成 404。
 app.include_router(graph_router)
+app.include_router(projects_router)
 app.include_router(rag_router)
 app.include_router(chat_router)

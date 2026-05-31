@@ -1,0 +1,102 @@
+<script setup lang="ts">
+import { nextTick, ref } from 'vue'
+
+/**
+ * 通用 inline edit 文字组件（second_revision 改点 A）。
+ *
+ * 默认显示纯文本，单击进入编辑态：Enter / 失焦保存，Esc 取消。
+ * 编辑/显示元素都带 `nodrag nopan`，避免 Vue Flow 拦截鼠标导致拖拽冲突。
+ */
+const props = defineProps<{
+  modelValue: string
+  placeholder?: string
+  multiline?: boolean
+}>()
+const emit = defineEmits<{
+  'update:modelValue': [string]
+  save: [string]
+}>()
+
+const editing = ref(false)
+const draft = ref('')
+const inputEl = ref<HTMLInputElement | HTMLTextAreaElement | null>(null)
+
+async function enterEdit() {
+  draft.value = props.modelValue
+  editing.value = true
+  await nextTick()
+  inputEl.value?.focus()
+  if (inputEl.value instanceof HTMLInputElement) inputEl.value.select()
+}
+
+function save() {
+  if (!editing.value) return
+  editing.value = false
+  if (draft.value !== props.modelValue) {
+    emit('update:modelValue', draft.value)
+    emit('save', draft.value)
+  }
+}
+
+function cancel() {
+  draft.value = props.modelValue
+  editing.value = false
+}
+</script>
+
+<template>
+  <span
+    v-if="!editing"
+    class="inline-text nodrag nopan"
+    :class="{ 'inline-text--empty': !modelValue }"
+    @click.stop="enterEdit"
+  >{{ modelValue || placeholder || 'Click to edit' }}</span>
+
+  <textarea
+    v-else-if="multiline"
+    ref="inputEl"
+    v-model="draft"
+    class="inline-input nodrag nopan"
+    rows="3"
+    @keydown.enter.prevent="save"
+    @keydown.esc.prevent="cancel"
+    @blur="save"
+    @click.stop
+  ></textarea>
+
+  <input
+    v-else
+    ref="inputEl"
+    v-model="draft"
+    class="inline-input nodrag nopan"
+    @keydown.enter.prevent="save"
+    @keydown.esc.prevent="cancel"
+    @blur="save"
+    @click.stop
+  />
+</template>
+
+<style scoped>
+.inline-text {
+  cursor: text;
+  border-radius: 4px;
+  transition: background 0.12s;
+}
+.inline-text:hover {
+  background: rgba(99, 102, 241, 0.1);
+}
+.inline-text--empty {
+  color: #9ca3af;
+}
+.inline-input {
+  width: 100%;
+  box-sizing: border-box;
+  padding: 2px 4px;
+  border: 1px solid var(--accent);
+  border-radius: 4px;
+  font: inherit;
+  color: inherit;
+  background: #fff;
+  resize: vertical;
+}
+</style>

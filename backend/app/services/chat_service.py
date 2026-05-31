@@ -40,6 +40,7 @@ from app.services.chat_repository import (
     list_project_sessions,
     list_session_messages,
     list_staging_by_batch,
+    list_staging_by_project,
     list_staging_by_session,
     require_message,
     require_session,
@@ -190,6 +191,17 @@ def list_session_staging(
         return _group_by_batch(records)
 
 
+def list_project_staging(
+    project_id: str,
+    status: str | None = None,
+) -> list[AgentStagingBatchPayload]:
+    """按项目列出 staging, 自动按 batch 分组（ChatWorkspace 待审面板用）。"""
+    with SessionLocal() as db:
+        require_project(db, project_id)
+        records = list_staging_by_project(db, project_id, status)
+        return _group_by_batch(records)
+
+
 def resolve_staging_item(
     staging_id: str,
     payload: AgentStagingActionRequest,
@@ -326,6 +338,7 @@ def run_chat_turn(payload: ChatRequest) -> ChatResponse:
                 "project_id": project_id,
                 "user_message": payload.user_message,
                 "selected_node_ids": list(payload.selected_node_ids),
+                "extraction_enabled": payload.extraction_enabled,
             },
             config=config,
         )

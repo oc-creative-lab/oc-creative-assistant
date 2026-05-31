@@ -157,6 +157,22 @@ def list_staging_by_session(
     return list(db.scalars(stmt))
 
 
+def list_staging_by_project(
+    db: Session,
+    project_id: str,
+    status: str | None = None,
+) -> list[AgentStagingORM]:
+    """按项目列出 staging（first_revision 阶段 4：ChatWorkspace 跨会话汇总待审）。"""
+    stmt = (
+        select(AgentStagingORM)
+        .where(AgentStagingORM.project_id == project_id)
+        .order_by(AgentStagingORM.created_at, AgentStagingORM.order_in_batch)
+    )
+    if status:
+        stmt = stmt.where(AgentStagingORM.status == status)
+    return list(db.scalars(stmt))
+
+
 def list_staging_by_batch(db: Session, batch_id: str) -> list[AgentStagingORM]:
     """读取指定 batch 的所有变更, 按批内顺序返回。"""
     return list(

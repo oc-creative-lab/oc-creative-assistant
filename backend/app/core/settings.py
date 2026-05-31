@@ -106,7 +106,7 @@ def get_llm_settings() -> LlmSettings:
         provider=os.getenv("OC_LLM_PROVIDER", "openai").strip().lower(),
         base_url=os.getenv("OC_LLM_BASE_URL"),
         api_key=os.getenv("OC_LLM_API_KEY"),
-        model=os.getenv("OC_LLM_MODEL", "deepseek-chat"),
+        model=os.getenv("OC_LLM_MODEL", "deepseek/deepseek-chat"),
     )
 
 
