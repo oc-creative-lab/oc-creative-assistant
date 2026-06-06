@@ -162,7 +162,7 @@ def list_staging_by_project(
     project_id: str,
     status: str | None = None,
 ) -> list[AgentStagingORM]:
-    """按项目列出 staging（first_revision 阶段 4：ChatWorkspace 跨会话汇总待审）。"""
+    """按项目列出 staging。"""
     stmt = (
         select(AgentStagingORM)
         .where(AgentStagingORM.project_id == project_id)

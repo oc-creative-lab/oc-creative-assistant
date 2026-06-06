@@ -5,7 +5,7 @@ import { storeToRefs } from 'pinia'
 import { useLibraryStore } from '../stores/useLibraryStore'
 
 /**
- * Library（阶段 2）。
+ * Library。
  *
  * 项目卡片网格：每卡 name / description / updated_at，点击进工作台。
  * 复用 useLibraryStore + projectApi，不重复实现请求逻辑。

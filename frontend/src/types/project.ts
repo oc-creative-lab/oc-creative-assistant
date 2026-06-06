@@ -1,5 +1,5 @@
 /**
- * 项目 / sub-graph / 种子相关类型（first_revision 阶段 1）。
+ * 项目 / sub-graph / 种子相关类型。
  *
  * 字段命名与后端 DTO 对齐（snake_case），避免在 API 边界再做一层转换。
  */
@@ -7,7 +7,7 @@
 /** sub-graph 分区。 */
 export type GraphSection = 'plot' | 'character' | 'world'
 
-/** 项目种子（决策 3）。 */
+/** 项目种子。 */
 export interface ProjectSeed {
   id: string
   project_id: string

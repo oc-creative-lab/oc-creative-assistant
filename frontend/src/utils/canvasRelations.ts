@@ -33,7 +33,7 @@ const relationEdgeStyles: Record<CreativeRelationType, RelationEdgeStyle> = {
 }
 
 export function getRelationLabel(relationType: CreativeRelationType): string {
-  return RELATION_TYPE_OPTIONS.find((option) => option.value === relationType)?.label ?? '关联'
+  return RELATION_TYPE_OPTIONS.find((option) => option.value === relationType)?.label ?? 'related to'
 }
 
 export function getRelationStyle(relationType: CreativeRelationType): RelationEdgeStyle {
@@ -87,6 +87,8 @@ export function normalizeEdge(
   const relationType = edge.data?.relationType ?? DEFAULT_RELATION_TYPE
   const label = edge.data?.label || edge.label || getRelationLabel(relationType)
   const relationStyle = getRelationStyle(relationType)
+  const strokeColor = edge.data?.color ?? relationStyle.color
+  const dashed = Boolean(edge.data?.dashed)
   const classNames = [
     'creative-edge',
     `creative-edge--${relationType}`,
@@ -101,20 +103,21 @@ export function normalizeEdge(
     type: 'orthogonal',
     markerEnd: {
       type: MarkerType.ArrowClosed,
-      color: relationStyle.color,
+      color: strokeColor,
     },
     animated: Boolean(edge.animated || relationStyle.animated),
     class: classNames.join(' '),
     style: {
-      stroke: relationStyle.color,
+      stroke: strokeColor,
+      strokeDasharray: dashed ? '6 5' : undefined,
     },
     labelStyle: {
-      fill: relationStyle.color,
+      fill: strokeColor,
       fontWeight: 700,
     },
     labelBgStyle: {
       fill: relationStyle.labelBg,
-      stroke: relationStyle.color,
+      stroke: strokeColor,
     },
     interactionWidth: 0,
     data: {

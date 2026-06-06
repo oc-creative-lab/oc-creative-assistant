@@ -10,41 +10,41 @@ import type { IndexingStatusDto } from '../api/graphApi'
 export function useIndexingStatus() {
   const indexingStatus = ref<IndexingStatusDto | undefined>()
   const indexingAlert = ref('')
-  const indexState = ref('向量索引未检查')
+  const indexState = ref('Vector index not checked')
 
   function simplifyError(error?: string | null) {
     if (!error) {
-      return '请检查 backend/.env 中的 embedding 配置。'
+      return 'Check the embedding configuration in backend/.env.'
     }
     if (error.includes('invalid_api_key') || error.includes('Incorrect API key') || error.includes('401')) {
-      return 'API Key 无效。'
+      return 'Invalid API key.'
     }
     if (error.toLowerCase().includes('timeout')) {
-      return 'embedding 服务请求超时，请稍后重试。'
+      return 'Embedding service request timed out, please retry later.'
     }
     if (error.includes('Connection') || error.includes('connect') || error.includes('network')) {
-      return '无法连接 embedding 服务，请检查网络或 base_url。'
+      return 'Cannot reach the embedding service, check the network or base_url.'
     }
     return error.length > 120 ? `${error.slice(0, 120)}...` : error
   }
 
   function formatState(indexing?: IndexingStatusDto) {
     if (!indexing || indexing.status === 'not_checked') {
-      return '向量索引未检查'
+      return 'Vector index not checked'
     }
     if (indexing.status === 'synced') {
-      return `向量索引已同步 ${indexing.indexed_nodes}/${indexing.expected_nodes}`
+      return `Vector index synced ${indexing.indexed_nodes}/${indexing.expected_nodes}`
     }
     return indexing.status === 'failed'
-      ? `向量索引失败 ${indexing.indexed_nodes}/${indexing.expected_nodes}`
-      : `向量索引未完整 ${indexing.indexed_nodes}/${indexing.expected_nodes}`
+      ? `Vector index failed ${indexing.indexed_nodes}/${indexing.expected_nodes}`
+      : `Vector index incomplete ${indexing.indexed_nodes}/${indexing.expected_nodes}`
   }
 
   function formatAlert(indexing: IndexingStatusDto) {
     const problem = simplifyError(indexing.error)
     const missingCount = indexing.missing_node_ids.length
-    const missingText = missingCount > 0 ? `当前还有 ${missingCount} 个节点缺少可用向量。` : ''
-    return `SQLite 已保存，但向量索引${indexing.status === 'failed' ? '失败' : '未完整'}。${problem} ${missingText}`.trim()
+    const missingText = missingCount > 0 ? `${missingCount} node(s) still lack a usable vector.` : ''
+    return `Saved to SQLite, but the vector index ${indexing.status === 'failed' ? 'failed' : 'is incomplete'}. ${problem} ${missingText}`.trim()
   }
 
   function applyIndexingStatus(indexing?: IndexingStatusDto) {

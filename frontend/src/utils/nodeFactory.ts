@@ -11,12 +11,12 @@ export interface NodeTypeOption {
 
 /** 左侧节点工具栏展示的节点类型配置。 */
 export const nodeTypeOptions: NodeTypeOption[] = [
-  { type: 'idea', icon: '💡', label: '灵感节点', description: '记录脑洞、初始想法、待扩展灵感' },
-  { type: 'character', icon: '👤', label: '角色节点', description: '记录角色设定、动机和关系' },
-  { type: 'worldbuilding', icon: '🌍', label: '世界观节点', description: '记录世界规则、场景和组织' },
-  { type: 'plot', icon: '🧩', label: '剧情节点', description: '记录事件、冲突、转折和结果' },
-  { type: 'research', icon: '📚', label: '资料节点', description: '记录资料摘要、来源和参考' },
-  { type: 'structure', icon: '🗂', label: '结构整理节点', description: '整理角色卡、关系图和剧情框架' },
+  { type: 'idea', icon: '💡', label: 'Idea', description: 'Capture brainstorms, initial ideas, and sparks to expand' },
+  { type: 'character', icon: '👤', label: 'Character', description: 'Capture character settings, motivations, and relationships' },
+  { type: 'worldbuilding', icon: '🌍', label: 'Worldbuilding', description: 'Capture world rules, settings, and organizations' },
+  { type: 'plot', icon: '🧩', label: 'Plot', description: 'Capture events, conflicts, turns, and outcomes' },
+  { type: 'research', icon: '📚', label: 'Research', description: 'Capture research summaries, sources, and references' },
+  { type: 'structure', icon: '🗂', label: 'Structure', description: 'Organize character cards, relationship maps, and plot frames' },
 ]
 
 /* 新增节点类型时需要同步补齐这里、Vue Flow 节点插槽和后端 DTO 类型。 */
@@ -30,56 +30,56 @@ const nodeDefaults: Record<
     icon: string
     tags: string[]
   }
-> = {
-  idea: {
-    idPrefix: 'idea-draft',
-    title: '未命名灵感',
-    content: '在这里记录一个新的创作灵感……',
-    typeLabel: '灵感',
-    icon: '💡',
-    tags: ['灵感'],
-  },
-  character: {
-    idPrefix: 'char-draft',
-    title: '未命名角色',
-    content: '在这里记录角色动机、关系和背景……',
-    typeLabel: '角色',
-    icon: '👤',
-    tags: ['角色'],
-  },
-  worldbuilding: {
-    idPrefix: 'world-draft',
-    title: '未命名世界观',
-    content: '在这里记录世界规则、场景或组织设定……',
-    typeLabel: '世界观',
-    icon: '🌍',
-    tags: ['世界观'],
-  },
-  plot: {
-    idPrefix: 'plot-draft',
-    title: '未命名剧情',
-    content: '在这里记录事件、冲突、转折和结果……',
-    typeLabel: '剧情',
-    icon: '🧩',
-    tags: ['剧情'],
-  },
-  research: {
-    idPrefix: 'research-draft',
-    title: '未命名资料',
-    content: '在这里记录资料摘要或参考来源……',
-    typeLabel: '资料',
-    icon: '📚',
-    tags: ['资料'],
-  },
-  structure: {
-    idPrefix: 'structure-draft',
-    title: '未命名结构',
-    content: '在这里整理角色卡、关系图或剧情框架……',
-    typeLabel: '结构整理',
-    icon: '🗂',
-    tags: ['结构'],
-  },
-}
+  > = {
+    idea: {
+      idPrefix: 'idea-draft',
+      title: 'Untitled idea',
+      content: 'Capture a new creative idea here…',
+      typeLabel: 'Idea',
+      icon: '💡',
+      tags: ['idea'],
+    },
+    character: {
+      idPrefix: 'char-draft',
+      title: 'Untitled character',
+      content: 'Capture motivations, relationships, and background here…',
+      typeLabel: 'Character',
+      icon: '👤',
+      tags: ['character'],
+    },
+    worldbuilding: {
+      idPrefix: 'world-draft',
+      title: 'Untitled worldbuilding',
+      content: 'Capture world rules, settings, or organizations here…',
+      typeLabel: 'Worldbuilding',
+      icon: '🌍',
+      tags: ['worldbuilding'],
+    },
+    plot: {
+      idPrefix: 'plot-draft',
+      title: 'Untitled plot',
+      content: 'Capture events, conflicts, turns, and outcomes here…',
+      typeLabel: 'Plot',
+      icon: '🧩',
+      tags: ['plot'],
+    },
+    research: {
+      idPrefix: 'research-draft',
+      title: 'Untitled research',
+      content: 'Capture research summaries or references here…',
+      typeLabel: 'Research',
+      icon: '📚',
+      tags: ['research'],
+    },
+    structure: {
+      idPrefix: 'structure-draft',
+      title: 'Untitled structure',
+      content: 'Organize character cards, relationship maps, or plot frames here…',
+      typeLabel: 'Structure',
+      icon: '🗂',
+      tags: ['structure'],
+    },
+  }
 
 /**
  * 读取节点类型配置。
@@ -201,12 +201,12 @@ export function getProjectGroupIdForNodeType(type: CreativeNodeType): ProjectGro
  */
 export function buildProjectGroupsFromNodes(nodes: CreativeFlowNode[]): ProjectGroup[] {
   const groups: ProjectGroup[] = [
-    { id: 'ideas', title: '灵感', items: [] },
-    { id: 'characters', title: '角色', items: [] },
-    { id: 'worldbuilding', title: '世界观', items: [] },
-    { id: 'plot', title: '剧情', items: [] },
-    { id: 'research', title: '资料', items: [] },
-    { id: 'structure', title: '结构整理', items: [] },
+    { id: 'ideas', title: 'Ideas', items: [] },
+    { id: 'characters', title: 'Characters', items: [] },
+    { id: 'worldbuilding', title: 'Worldbuilding', items: [] },
+    { id: 'plot', title: 'Plot', items: [] },
+    { id: 'research', title: 'Research', items: [] },
+    { id: 'structure', title: 'Structure', items: [] },
   ]
 
   for (const node of nodes) {

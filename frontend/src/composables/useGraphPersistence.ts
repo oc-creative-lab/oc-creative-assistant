@@ -7,7 +7,7 @@ import { graphDtoToSnapshot, snapshotToSaveDto } from '../utils/graphTransform'
 const CANVAS_AUTO_SAVE_DELAY_MS = 1000
 
 /**
- * 可注入的加载 / 保存策略（first_revision 阶段 3）。
+ * 可注入的加载 / 保存策略。
  *
  * 默认走默认项目维度（AppShell 单画布原行为）；工作台三视图按 sub-graph 维度
  * 注入 loadSubgraph / saveSubgraph，从而复用本 composable 的快照 + 防抖保存逻辑。

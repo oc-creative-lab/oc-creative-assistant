@@ -16,12 +16,12 @@ import type { CreativeNodeType } from '../../types/node'
 import CanvasWorkspace from '../canvas/CanvasWorkspace.vue'
 import NodeDetailView from './NodeDetailView.vue'
 
-// 工作台保存后 debounce 30s 触发种子重建（first_revision 阶段 5 触发器之一）。
+// 工作台保存后 debounce 30s 触发种子重建。
 const SEED_REBUILD_DEBOUNCE_MS = 30000
 const HIGHLIGHT_DURATION_MS = 2600
 
 /**
- * 单 sub-graph 画布（first_revision 阶段 3）。
+ * 单 sub-graph 画布。
  *
  * 复用现有 CanvasWorkspace（Vue Flow）+ AgentSidebar（节点/边详情编辑）+
  * useGraphPersistence/useGraphMutations，仅把加载/保存注入为 sub-graph 维度。
@@ -203,33 +203,34 @@ watch(
     @return="centerStage.returnToCanvas()"
   />
   <div v-else class="subgraph-canvas">
-    <div class="subgraph-canvas__toolbar">
-      <button
-        v-for="button in createButtons"
-        :key="button.type"
-        type="button"
-        class="subgraph-canvas__create"
-        @click="requestCreateNode(button.type)"
-      >
-        + New {{ button.label }}
-      </button>
-      <span class="subgraph-canvas__save">{{ isSaving ? 'Saving…' : saveState }}</span>
-    </div>
-    <div class="subgraph-canvas__body">
-      <CanvasWorkspace
-        :selected-node-id="selectedNodeId"
-        :initial-nodes="graphNodes"
-        :initial-edges="graphEdges"
-        :graph-version="graphVersion"
-        :create-node-request="createNodeRequest"
-        :highlighted-node-ids="highlightedNodeIds"
-        :highlighted-edge-ids="highlightedEdgeIds"
-        :create-types="createTypes"
-        @node-selected="selectNode"
-        @edge-selected="selectEdge"
-        @graph-changed="handleGraphChanged"
-      />
-    </div>
+    <CanvasWorkspace
+      :selected-node-id="selectedNodeId"
+      :initial-nodes="graphNodes"
+      :initial-edges="graphEdges"
+      :graph-version="graphVersion"
+      :create-node-request="createNodeRequest"
+      :highlighted-node-ids="highlightedNodeIds"
+      :highlighted-edge-ids="highlightedEdgeIds"
+      :create-types="createTypes"
+      @node-selected="selectNode"
+      @edge-selected="selectEdge"
+      @graph-changed="handleGraphChanged"
+    >
+      <template #toolbar-start>
+        <button
+          v-for="button in createButtons"
+          :key="button.type"
+          type="button"
+          class="subgraph-canvas__create"
+          @click="requestCreateNode(button.type)"
+        >
+          + New {{ button.label }}
+        </button>
+      </template>
+      <template #toolbar-status>
+        <span class="subgraph-canvas__save">{{ isSaving ? 'Saving…' : saveState }}</span>
+      </template>
+    </CanvasWorkspace>
   </div>
   </transition>
 </template>
@@ -238,14 +239,7 @@ watch(
 .subgraph-canvas {
   height: 100%;
   display: grid;
-  grid-template-rows: 44px minmax(0, 1fr);
-}
-.subgraph-canvas__toolbar {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  padding: 0 12px;
-  border-bottom: 1px solid var(--border, #e5e7eb);
+  grid-template-rows: minmax(0, 1fr);
 }
 .subgraph-canvas__create {
   padding: 6px 12px;
@@ -257,13 +251,8 @@ watch(
   font-size: 13px;
 }
 .subgraph-canvas__save {
-  margin-left: auto;
+  margin-left: 8px;
   font-size: 12px;
   color: var(--muted, #888);
-}
-.subgraph-canvas__body {
-  min-height: 0;
-  /* 单格 grid 让 CanvasWorkspace 撑满高度，否则 Vue Flow 高度塌成 0、画布不显示 */
-  display: grid;
 }
 </style>

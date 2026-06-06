@@ -1,7 +1,8 @@
 import { nextTick, ref, type Ref } from 'vue'
 import { addEdge } from '@vue-flow/core'
-import type { Connection, Edge } from '@vue-flow/core'
+import type { Connection, Edge, GraphEdge } from '@vue-flow/core'
 import type {
+  CreativeEdgeData,
   CreativeEdgeWaypoint,
   CreativeFlowEdge,
   CreativeFlowNode,
@@ -239,6 +240,12 @@ export function useCanvasGraph(options: Options) {
     emitGraphChanged()
   }
 
+  /** 删除单条边（右键菜单删除）。 */
+  function removeEdge(edgeId: string) {
+    options.edges.value = options.edges.value.filter((edge) => edge.id !== edgeId)
+    emitGraphChanged()
+  }
+
   function handleClearCanvas() {
     const confirmed = window.confirm('Clear the whole canvas? This removes every node and edge.')
     if (!confirmed) return
@@ -291,6 +298,37 @@ export function useCanvasGraph(options: Options) {
     options.onEdgeSelected(edge.id)
   }
 
+  /**
+   * 把已存在边的端点拖到别的节点上时触发（VueFlow 的 edge-update 事件）。
+   * 保留原 edge.id 与 data，只换 source/target/handle，
+   * 让选中态 / 已保存的 waypoint / 后端匹配都不受影响。
+   */
+  function handleEdgeUpdate({
+    edge,
+    connection,
+  }: {
+    edge: GraphEdge
+    connection: Connection
+  }) {
+    if (!connection.source || !connection.target || connection.source === connection.target) {
+      return
+    }
+    if (hasDuplicateEdge(connection)) return
+
+    options.edges.value = options.edges.value.map((item) =>
+      item.id === edge.id
+        ? {
+            ...item,
+            source: connection.source,
+            target: connection.target,
+            sourceHandle: connection.sourceHandle ?? DEFAULT_SOURCE_HANDLE,
+            targetHandle: connection.targetHandle ?? DEFAULT_TARGET_HANDLE,
+          }
+        : item,
+    )
+    emitGraphChanged()
+  }
+
   function handleNodeDragStop() {
     emitGraphChanged()
   }
@@ -311,14 +349,32 @@ export function useCanvasGraph(options: Options) {
     emitGraphChanged()
   }
 
+    /** 改写边的 data（标签 / 颜色 / 虚实线），重算样式并触发自动保存。 */
+  function updateEdgeData(edgeId: string, patch: Partial<CreativeEdgeData>) {
+    let changed = false
+    options.edges.value = options.edges.value.map((edge) => {
+      if (edge.id !== edgeId) return edge
+      changed = true
+      const merged: CreativeFlowEdge = {
+        ...edge,
+        data: { ...(edge.data ?? {}), ...patch },
+      }
+      if (patch.label !== undefined) merged.label = patch.label
+      return normalizeEdge(merged)
+    })
+    if (changed) emitGraphChanged()
+  }
   return {
     handleAutoLayout,
     handleCreateNode,
     handleClearCanvas,
     handleConnect,
+    handleEdgeUpdate,
+    updateEdgeData,
     handleNodeDragStop,
     applyEdgeWaypoint,
     updateNodeData,
     removeNode,
+    removeEdge,
   }
 }

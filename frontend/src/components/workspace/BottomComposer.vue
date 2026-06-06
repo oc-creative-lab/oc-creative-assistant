@@ -1,45 +1,38 @@
 <script setup lang="ts">
-import { ref } from 'vue'
+import { onMounted, watch } from 'vue'
 import { useRoute } from 'vue-router'
 import { storeToRefs } from 'pinia'
 import { useComposerStore } from '../../stores/useComposerStore'
-import { useAiOutputStore } from '../../stores/useAiOutputStore'
-import { streamWorkspaceChat } from '../../api/workspaceChatApi'
+import { useChatStore } from '../../stores/useChatStore'
 import QuotedNodeChip from './QuotedNodeChip.vue'
 
 /**
- * 底部常驻对话框（second_revision 改点 B/C / W5）。
+ * 底部常驻对话框：驱动完整 Agent（streamChat）。
  *
- * 引用节点卡片区（选中节点 → 复制到对话框）+ 单行输入框。发送时把输入 + 引用
- * 节点 id 发给工作台被动 agent（SSE），输出 push 进右栏 useAiOutputStore。
- * Enter 发送，无 Shift+Enter 换行（保持单行简单）。
+ * 输入 + 引用节点发给主对话 StateGraph，历史与流式回复、staging 都由
+ * useChatStore 持有，右栏 RightStageOutput 读取同一份状态渲染。
+ * 关闭自动抽取，画布增删改一律走显式 staging（HITL）。
  */
 const route = useRoute()
 const composer = useComposerStore()
-const aiOutput = useAiOutputStore()
+const chat = useChatStore()
 const { references, input } = storeToRefs(composer)
+const { isStreaming } = storeToRefs(chat)
 
-const isSending = ref(false)
+onMounted(() => void chat.init(String(route.params.projectId)))
+watch(
+  () => route.params.projectId,
+  (id) => {
+    if (id) void chat.init(String(id))
+  },
+)
 
 async function handleSend() {
   const message = input.value.trim()
   const quotedIds = references.value.map((r) => r.id)
-  if ((!message && quotedIds.length === 0) || isSending.value) return
-
-  const projectId = String(route.params.projectId)
-  isSending.value = true
-  try {
-    await streamWorkspaceChat(projectId, message, quotedIds, (event) => {
-      if (event.type === 'output') {
-        aiOutput.push({ type: event.output_type, content: event.content })
-      }
-    })
-    composer.clear()
-  } catch {
-    aiOutput.push({ type: 'feedback', content: '(The assistant could not respond. Try again.)' })
-  } finally {
-    isSending.value = false
-  }
+  if ((!message && quotedIds.length === 0) || isStreaming.value) return
+  composer.clear()
+  await chat.send(message, quotedIds, false)
 }
 </script>
 
@@ -59,9 +52,10 @@ async function handleSend() {
         class="composer__input"
         type="text"
         placeholder="Ask anything — or copy nodes here to send with your message…"
+        :disabled="isStreaming"
       />
-      <button type="submit" class="composer__send" :disabled="isSending">
-        {{ isSending ? '…' : 'Send' }}
+      <button type="submit" class="composer__send" :disabled="isStreaming">
+        {{ isStreaming ? '…' : 'Send' }}
       </button>
     </form>
   </div>
@@ -74,7 +68,9 @@ async function handleSend() {
   display: flex;
   flex-direction: column;
   gap: 6px;
-  background: var(--app-bg, #fff);
+  background:
+    radial-gradient(circle at 80% 0%, rgba(167, 139, 250, 0.1), transparent 60%),
+    var(--panel);
 }
 .composer__refs {
   display: flex;

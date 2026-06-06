@@ -166,8 +166,6 @@ def read_ordered_nodes_by_graph(session: Session, graph_id: str) -> list[NodeORM
 
 def read_intra_graph_edges(session: Session, graph_id: str) -> list[EdgeORM]:
     """读取两端都落在该 sub-graph 内的边。
-
-    阶段 1 只处理 sub-graph 内部边；跨 sub-graph 的边在阶段 6 引入。
     """
     node_ids = {
         node_id

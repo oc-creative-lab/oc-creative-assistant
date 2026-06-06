@@ -4,12 +4,13 @@ import { storeToRefs } from 'pinia'
 import { useProjectStore } from '../../stores/useProjectStore'
 
 /**
- * 工作台左侧导航（first_revision 阶段 3）。
+ * 工作台左侧导航。
  *
  * 从上到下：返回项目库、项目名 + 简介、三视图导航（故事线 / 角色卡 / 世界观）、
  * 种子版本。导航用 router-link，子视图按各自 graph_id 加载。
  */
-const props = defineProps<{ projectId: string }>()
+const props = defineProps<{ projectId: string; collapsed?: boolean }>()
+const emit = defineEmits<{ toggle: [] }>()
 
 const projectStore = useProjectStore()
 const { detail } = storeToRefs(projectStore)
@@ -31,32 +32,68 @@ const navItems = computed(() => [
 </script>
 
 <template>
-  <aside class="workspace-sidebar">
-    <router-link class="workspace-sidebar__back" to="/library">← Library</router-link>
-
-    <div class="workspace-sidebar__meta">
-      <h2 class="workspace-sidebar__name">{{ detail?.name ?? 'Loading…' }}</h2>
-      <p class="workspace-sidebar__desc">{{ detail?.description || 'No description yet.' }}</p>
+  <aside class="workspace-sidebar" :class="{ 'is-collapsed': collapsed }">
+    <div class="workspace-sidebar__bar">
+      <router-link v-if="!collapsed" class="workspace-sidebar__back" to="/library">← Library</router-link>
+      <button
+        type="button"
+        class="workspace-sidebar__toggle"
+        :title="collapsed ? 'Expand' : 'Collapse'"
+        @click="emit('toggle')"
+      >{{ collapsed ? '›' : '‹' }}</button>
     </div>
 
-    <nav class="workspace-sidebar__nav">
-      <router-link
-        v-for="item in navItems"
-        :key="item.to"
-        :to="item.to"
-        class="workspace-sidebar__link"
-        active-class="is-active"
-      >
-        <span class="workspace-sidebar__icon">{{ item.icon }}</span>
-        {{ item.label }}
-      </router-link>
-    </nav>
+    <template v-if="!collapsed">
+      <div class="workspace-sidebar__meta">
+        <h2 class="workspace-sidebar__name">{{ detail?.name ?? 'Loading…' }}</h2>
+        <p class="workspace-sidebar__desc">{{ detail?.description || 'No description yet.' }}</p>
+      </div>
 
-    <div class="workspace-sidebar__seed">{{ seedLabel }}</div>
+      <nav class="workspace-sidebar__nav">
+        <router-link
+          v-for="item in navItems"
+          :key="item.to"
+          :to="item.to"
+          class="workspace-sidebar__link"
+          active-class="is-active"
+        >
+          <span class="workspace-sidebar__icon">{{ item.icon }}</span>
+          {{ item.label }}
+        </router-link>
+      </nav>
+
+      <div class="workspace-sidebar__seed">{{ seedLabel }}</div>
+    </template>
   </aside>
 </template>
 
 <style scoped>
+.workspace-sidebar__bar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+.workspace-sidebar__toggle {
+  width: 24px;
+  height: 26px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--panel);
+  color: var(--muted);
+  cursor: pointer;
+  line-height: 1;
+}
+.workspace-sidebar__toggle:hover {
+  color: var(--accent);
+  border-color: var(--accent-border);
+  background: var(--accent-soft);
+}
+.workspace-sidebar.is-collapsed {
+  padding: 16px 6px;
+}
+.workspace-sidebar.is-collapsed .workspace-sidebar__bar {
+  justify-content: center;
+}
 .workspace-sidebar {
   display: flex;
   flex-direction: column;
@@ -118,9 +155,9 @@ const navItems = computed(() => [
   transform: translateX(2px);
 }
 .workspace-sidebar__link.is-active {
-  background: var(--grad-pill);
+  background: linear-gradient(135deg, var(--accent), var(--accent-deep));
   color: #fff;
-  box-shadow: 0 6px 16px rgba(139, 92, 246, 0.32);
+  box-shadow: 0 6px 16px rgba(124, 92, 255, 0.32);
 }
 .workspace-sidebar__icon {
   font-size: 16px;

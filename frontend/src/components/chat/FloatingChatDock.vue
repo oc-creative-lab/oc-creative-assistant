@@ -42,11 +42,11 @@ const BOOT_KEY = 'oc-creative.backend-boot-id'
 const REVEAL_INTERVAL_MS = 25
 
 const AGENT_LABELS: Record<string, string> = {
-  inspiration: '灵感发散',
-  research: '资料检索',
-  structure: '结构搭建',
-  simulation: '推演假设',
-  small_talk: '日常对话',
+  inspiration: 'Inspiration',
+  research: 'Research',
+  structure: 'Structure',
+  simulation: 'Simulation',
+  small_talk: 'Small talk',
 }
 
 const isOpen = ref(true)
@@ -113,7 +113,7 @@ async function ensureSession(projectId: string) {
       localStorage.removeItem(SESSION_KEY)
     }
   }
-  const session = await createChatSession(projectId, '当前会话')
+  const session = await createChatSession(projectId, 'Current session')
   localStorage.setItem(SESSION_KEY, session.id)
   sessionId.value = session.id
 }
@@ -225,7 +225,7 @@ async function handleSend() {
       if (response.staging_count > 0) showStaging.value = true
     } catch (fallbackError) {
       errorText.value =
-        fallbackError instanceof Error ? fallbackError.message : '发送失败'
+        fallbackError instanceof Error ? fallbackError.message : 'Failed to send'
     }
   } finally {
     isSending.value = false
@@ -241,7 +241,7 @@ async function handleResolveItem(stagingId: string, action: 'accept' | 'reject')
     await reloadStaging()
     if (action === 'accept') emit('graphRefreshNeeded')
   } catch (error) {
-    errorText.value = error instanceof Error ? error.message : 'staging 操作失败'
+    errorText.value = error instanceof Error ? error.message : 'Staging action failed'
   }
 }
 
@@ -251,7 +251,7 @@ async function handleResolveBatch(batchId: string, action: 'accept_all' | 'rejec
     await reloadStaging()
     if (action === 'accept_all') emit('graphRefreshNeeded')
   } catch (error) {
-    errorText.value = error instanceof Error ? error.message : 'staging 操作失败'
+    errorText.value = error instanceof Error ? error.message : 'Staging action failed'
   }
 }
 
@@ -289,7 +289,7 @@ onBeforeUnmount(() => {
     type="button"
     class="dock-fab"
     :style="ballStyle"
-    aria-label="打开创作助手"
+    aria-label="Open creative assistant"
     @mousedown="onBallMouseDown"
   >
   <svg
@@ -312,7 +312,7 @@ onBeforeUnmount(() => {
     class="bar-dock"
     :style="barStyle"
     role="dialog"
-    aria-label="创作助手"
+    aria-label="Creative assistant"
     @mousedown="onBarMouseDown"
   >
   <transition name="reply">
@@ -337,7 +337,7 @@ onBeforeUnmount(() => {
         v-model="inputValue"
         type="text"
         class="bar-dock__input"
-        :placeholder="isSending ? '思考中...' : '问问创作助手'"
+        :placeholder="isSending ? 'Thinking...' : 'Ask the assistant'"
         :disabled="isSending"
         @keydown.enter.prevent="handleSend"
       />
@@ -349,14 +349,14 @@ onBeforeUnmount(() => {
         :class="{ 'is-active': showStaging }"
         @click="toggleStaging"
       >
-        ✨ {{ pendingCount }} 待确认
+      ✨ {{ pendingCount }} pending
       </button>
 
       <button
         type="button"
         class="bar-dock__send"
         :disabled="!canSend"
-        aria-label="发送"
+        aria-label="Send"
         @click="handleSend"
       >
         ➤
@@ -365,7 +365,7 @@ onBeforeUnmount(() => {
       <button
         type="button"
         class="bar-dock__close"
-        aria-label="收起"
+        aria-label="Collapse"
         @click="toggleOpen"
       >
         ─

@@ -172,6 +172,7 @@ def make_project_tools(project_id: str) -> list[BaseTool]:
     def list_neighbors(node_id: str) -> str:
         """列出某节点画布上一跳直接相连的邻居。
 
+        同一对节点之间可能有多条不同关系的边, 这里逐条返回, 不做邻居去重。
         只回一跳; 若需要"X 的导师的家族"这类跨多跳的链式追问, 改用
         multi_hop_neighbors, 否则会要连续调用本工具自己拼路径。
 
@@ -179,7 +180,8 @@ def make_project_tools(project_id: str) -> list[BaseTool]:
             node_id: 节点 ID。
 
         Returns:
-            JSON 列表, 每项含 id / title / type / direction / relation。
+            JSON 列表, 每项含 id / title / type / direction / relation;
+            两节点间有多条边时会出现多项, relation 各不相同。
         """
         with SessionLocal() as db:
             edges = (
@@ -193,31 +195,28 @@ def make_project_tools(project_id: str) -> list[BaseTool]:
             if not edges:
                 return "[]"
 
-            neighbor_meta: dict[str, dict[str, str]] = {}
+            rows: list[tuple[str, str, str]] = []
             for edge in edges:
                 if edge.source == node_id:
                     other_id, direction = edge.target, "outgoing"
                 else:
                     other_id, direction = edge.source, "incoming"
-                neighbor_meta[other_id] = {
-                    "direction": direction,
-                    "relation": edge.label or edge.relation_type,
-                }
+                rows.append((other_id, direction, edge.label or edge.relation_type or "related to"))
 
-            nodes = (
-                db.query(NodeORM)
-                .filter(NodeORM.id.in_(neighbor_meta.keys()))
-                .all()
-            )
+            titles = {
+                n.id: (n.title, n.node_type)
+                for n in db.query(NodeORM).filter(NodeORM.id.in_({r[0] for r in rows})).all()
+            }
             payload = [
                 {
-                    "id": node.id,
-                    "title": node.title,
-                    "type": node.node_type,
-                    "direction": neighbor_meta[node.id]["direction"],
-                    "relation": neighbor_meta[node.id]["relation"],
+                    "id": other_id,
+                    "title": titles[other_id][0],
+                    "type": titles[other_id][1],
+                    "direction": direction,
+                    "relation": relation,
                 }
-                for node in nodes
+                for other_id, direction, relation in rows
+                if other_id in titles
             ]
         return json.dumps(payload, ensure_ascii=False)
 

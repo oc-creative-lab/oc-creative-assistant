@@ -41,8 +41,8 @@ defineEmits<{
     />
 
     <section v-else class="empty-state">
-      <p>未选择对象</p>
-      <span>选择一个节点编辑内容，或选择一条连线编辑关系标签。</span>
+      <p>Nothing selected</p>
+      <span>Select a node to edit its content, or a connection to edit its relation label.</span>
     </section>
   </aside>
 </template>

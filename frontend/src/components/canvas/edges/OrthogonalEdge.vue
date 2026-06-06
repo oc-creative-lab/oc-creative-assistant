@@ -1,7 +1,9 @@
 <script setup lang="ts">
 import { computed, inject, onBeforeUnmount, ref } from 'vue'
 import { EdgeLabelRenderer, useVueFlow, type EdgeProps } from '@vue-flow/core'
+import InlineEditableText from '../InlineEditableText.vue'
 import type { CreativeEdgeData, CreativeEdgeWaypoint } from '../../../types/node'
+const updateEdgeData = inject<(id: string, patch: Partial<CreativeEdgeData>) => void>('updateEdgeData')
 
 type Segment = 'source' | 'middle' | 'target'
 
@@ -111,7 +113,9 @@ const labelY = computed(() =>
     ? (segSource.value + segTarget.value) / 2
     : segMiddle.value,
 )
-
+const labelText = computed<string>(() =>
+  props.data?.label ?? (typeof props.label === 'string' ? props.label : ''),
+)
 /* ---------- 拖拽 ---------- */
 let dragStartClient = { x: 0, y: 0 }
 let dragStartValue = 0
@@ -196,14 +200,18 @@ onBeforeUnmount(() => {
     @mousedown="(e) => onMouseDown(e, 'target')"
   />
 
-  <EdgeLabelRenderer v-if="label">
+  <EdgeLabelRenderer v-if="labelText">
     <div
-      class="vue-flow__edge-text-wrapper"
+      class="vue-flow__edge-text-wrapper nodrag nopan"
       :style="{
         transform: `translate(-50%, -50%) translate(${labelX}px, ${labelY}px)`,
       }"
     >
-      <span class="vue-flow__edge-text" :style="labelStyle">{{ label }}</span>
+      <InlineEditableText
+        :model-value="labelText"
+        placeholder="relation"
+        @save="(v) => updateEdgeData?.(id, { label: v })"
+      />
     </div>
   </EdgeLabelRenderer>
 </template>
@@ -211,11 +219,16 @@ onBeforeUnmount(() => {
 <style scoped>
 .vue-flow__edge-text-wrapper {
   position: absolute;
-  pointer-events: none;
+  pointer-events: auto;
   padding: 2px 6px;
   border-radius: 4px;
   background: rgba(255, 255, 255, 0.92);
   font-size: 12px;
   font-weight: 700;
+  transition: box-shadow 0.12s, background 0.12s;
+}
+.vue-flow__edge-text-wrapper:hover {
+  background: #fff;
+  box-shadow: 0 0 0 2px rgba(99, 102, 241, 0.35);
 }
 </style>

@@ -76,6 +76,19 @@ export async function listProjectSessions(projectId: string): Promise<ChatSessio
   return requestJson<ChatSessionDto[]>(`/api/projects/${projectId}/sessions`)
 }
 
+/** 删除会话及其历史 / staging。 */
+export async function deleteChatSession(sessionId: string): Promise<void> {
+  await requestJson<void>(`/api/sessions/${sessionId}`, { method: 'DELETE' })
+}
+
+/** 重命名会话。 */
+export async function renameChatSession(sessionId: string, title: string): Promise<ChatSessionDto> {
+  return requestJson<ChatSessionDto>(`/api/sessions/${sessionId}`, {
+    method: 'PATCH',
+    body: JSON.stringify({ title }),
+  })
+}
+
 /** 读取会话完整消息历史, 时间正序。 */
 export async function listSessionMessages(sessionId: string): Promise<ChatMessageDto[]> {
   return requestJson<ChatMessageDto[]>(`/api/sessions/${sessionId}/messages`)
@@ -109,7 +122,7 @@ export async function listSessionStaging(
   return requestJson<AgentStagingBatchDto[]>(`/api/sessions/${sessionId}/staging${query}`)
 }
 
-/** 列出整个项目的 staging（first_revision 阶段 4：ChatWorkspace 跨会话待审）。 */
+/** 列出整个项目的 staging。 */
 export async function listProjectStaging(
   projectId: string,
   status: AgentStagingItemDto['status'] | null = 'pending',

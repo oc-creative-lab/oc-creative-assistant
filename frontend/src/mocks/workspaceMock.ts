@@ -3,7 +3,7 @@ import type { AgentMode, AgentSuggestion, ProjectGroup, WorkspaceStatus } from '
 import { buildProjectGroupsFromNodes } from '../utils/nodeFactory'
 
 /** PoC 默认项目名称，与后端默认项目名对齐；供前端独立演示和旧入口显示。 */
-export const mockProjectName = '《咒术回战》涉谷站线'
+export const mockProjectName = '《Jujutsu Kaisen》 Shibuya Station Line'
 
 /** 旧左侧分组数据，真实 graph 已改为从后端加载。 */
 export const mockProjectGroups: ProjectGroup[] = buildProjectGroupsFromNodes(mockGraphNodes)
@@ -55,7 +55,7 @@ export const mockAgentSuggestions: Record<AgentMode, AgentSuggestion[]> = {
 
 /** 工作区状态占位；保存状态会在 AppShell 中被真实后端状态覆盖。 */
 export const mockWorkspaceStatus: WorkspaceStatus = {
-  saveState: '第零站台草稿已保存',
-  indexState: '咒物资料索引待构建',
-  modelState: '模型：本地咒力占位',
+  saveState: 'Draft saved',
+  indexState: 'Index pending',
+  modelState: 'Model: local placeholder',
 }

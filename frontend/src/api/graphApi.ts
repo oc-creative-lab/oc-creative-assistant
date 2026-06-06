@@ -46,6 +46,8 @@ export interface GraphEdgeDto {
   type: string
   animated: boolean
   waypoint?: GraphEdgeWaypointDto | null
+  color?: string | null
+  dashed?: boolean
 }
 
 /** 后端向量索引状态；SQLite 保存成功不代表 embedding 一定成功，因此需要单独展示。 */

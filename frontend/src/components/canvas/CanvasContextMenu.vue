@@ -1,5 +1,4 @@
 <script setup lang="ts">
-import { nodeTypeOptions } from '../../utils/nodeFactory'
 import type { CreativeNodeType } from '../../types/node'
 
 /**
@@ -9,11 +8,11 @@ import type { CreativeNodeType } from '../../types/node'
  * menuType='node'：编辑详情 / 复制 / 删除 / 复制到对话框。
  * position:fixed + z-index:9999，盖过节点与画布。
  */
-defineProps<{
+ defineProps<{
   show: boolean
   x: number
   y: number
-  menuType: 'blank' | 'node'
+  menuType: 'blank' | 'node' | 'edge'
   createTypes: CreativeNodeType[]
 }>()
 const emit = defineEmits<{
@@ -22,9 +21,12 @@ const emit = defineEmits<{
   duplicate: []
   remove: []
   quote: []
+  setColor: [color: string]
+  setDashed: [dashed: boolean]
   close: []
 }>()
 
+const EDGE_COLORS = ['#a29bc4', '#f59e0b', '#8b5cf6', '#fb7185', '#6366f1', '#22c55e']
 function labelOf(type: CreativeNodeType): string {
   return ({character:'Character',worldbuilding:'Worldbuilding',plot:'Story node',idea:'Idea',research:'Research',structure:'Structure'} as Record<string,string>)[type] ?? type
 }
@@ -43,12 +45,29 @@ function labelOf(type: CreativeNodeType): string {
         + New {{ labelOf(type) }}
       </button>
     </template>
-    <template v-else>
+    <template v-else-if="menuType === 'node'">
       <button type="button" class="ctx-menu__item" @click="emit('edit')">Edit</button>
       <button type="button" class="ctx-menu__item" @click="emit('duplicate')">Duplicate</button>
-      <button type="button" class="ctx-menu__item" @click="emit('quote')">Copy to composer</button>
+      <button type="button" class="ctx-menu__item" @click="emit('quote')">Copy to Agent</button>
       <button type="button" class="ctx-menu__item ctx-menu__item--danger" @click="emit('remove')">
         Delete
+      </button>
+    </template>
+    <template v-else-if="menuType === 'edge'">
+      <div class="ctx-menu__swatches">
+        <button
+          v-for="c in EDGE_COLORS"
+          :key="c"
+          type="button"
+          class="ctx-menu__swatch"
+          :style="{ background: c }"
+          @click="emit('setColor', c)"
+        />
+      </div>
+      <button type="button" class="ctx-menu__item" @click="emit('setDashed', false)">Solid line</button>
+      <button type="button" class="ctx-menu__item" @click="emit('setDashed', true)">Dashed line</button>
+      <button type="button" class="ctx-menu__item ctx-menu__item--danger" @click="emit('remove')">
+        Delete connection
       </button>
     </template>
   </div>
@@ -82,5 +101,17 @@ function labelOf(type: CreativeNodeType): string {
 }
 .ctx-menu__item--danger {
   color: #dc2626;
+}
+.ctx-menu__swatches {
+  display: flex;
+  gap: 6px;
+  padding: 6px 8px;
+}
+.ctx-menu__swatch {
+  width: 18px;
+  height: 18px;
+  border-radius: 50%;
+  border: 1px solid rgba(0, 0, 0, 0.15);
+  cursor: pointer;
 }
 </style>

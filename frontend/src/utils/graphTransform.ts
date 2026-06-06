@@ -23,7 +23,7 @@ const DEFAULT_RELATION_TYPE: CreativeRelationType = 'relates_to'
  *   用户可读的关系标签。
  */
 function getRelationLabel(relationType: CreativeRelationType) {
-  return RELATION_TYPE_OPTIONS.find((option) => option.value === relationType)?.label ?? '关联'
+  return RELATION_TYPE_OPTIONS.find((option) => option.value === relationType)?.label ?? 'related to'
 }
 
 /**
@@ -154,6 +154,8 @@ function graphEdgeDtoToFlowEdge(edge: GraphEdgeDto): CreativeFlowEdge {
       label,
       relationType,
       waypoint,
+      color: edge.color ?? undefined,
+      dashed: edge.dashed ?? undefined,
     },
   }
 }
@@ -219,5 +221,7 @@ function flowEdgeToGraphEdgeDto(edge: CreativeFlowEdge): GraphEdgeDto {
           nearTarget: wp.nearTarget ?? null,
         }
       : null,
+    color: edge.data?.color ?? null,
+    dashed: Boolean(edge.data?.dashed),
   }
 }

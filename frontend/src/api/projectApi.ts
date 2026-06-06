@@ -7,7 +7,7 @@ import type {
 import { requestJson } from './http'
 
 /**
- * 项目 API 客户端（first_revision 阶段 1）。
+ * 项目 API 客户端。
  *
  * 与后端 /api/projects/* 对应。sub-graph 的节点/边读写仍走 graphApi 的
  * loadSubgraph / saveSubgraph（按 graph_id）。
@@ -73,7 +73,7 @@ export interface CrossReferenceItem {
   direction: 'outgoing' | 'incoming'
 }
 
-/** 节点在其它 sub-graph 中被引用的位置（first_revision 阶段 6）。 */
+/** 节点在其它 sub-graph 中被引用的位置。 */
 export interface CrossReferenceResponse {
   node_id: string
   section: 'plot' | 'character' | 'world' | null

@@ -35,7 +35,7 @@ interface FieldRow {
 const fieldRows = ref<FieldRow[]>([])
 const saveState = ref('')
 
-// 跨 sub-graph 反向引用（阶段 6）：该角色出现在故事线 / 所属世界观等。
+// 跨 sub-graph 反向引用：该角色出现在故事线 / 所属世界观等。
 const crossRefs = ref<CrossReferenceItem[]>([])
 const plotRefs = computed(() => crossRefs.value.filter((r) => r.other_section === 'plot'))
 const worldRefs = computed(() => crossRefs.value.filter((r) => r.other_section === 'world'))

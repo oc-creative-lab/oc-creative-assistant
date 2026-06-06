@@ -4,7 +4,7 @@ import { useProjectStore } from '../../stores/useProjectStore'
 import SubgraphCanvas from '../../components/workspace/SubgraphCanvas.vue'
 
 /**
- * 世界观视图（first_revision 阶段 3）：Vue Flow 画布，绑定 world sub-graph。
+ * 世界观视图：Vue Flow 画布，绑定 world sub-graph。
  */
 const { worldGraphId } = storeToRefs(useProjectStore())
 </script>
@@ -16,7 +16,7 @@ const { worldGraphId } = storeToRefs(useProjectStore())
     :graph-id="worldGraphId"
     :create-types="['worldbuilding']"
   />
-  <p v-else class="workspace-loading">正在加载世界观...</p>
+  <p v-else class="workspace-loading">Loading worldbuilding...</p>
 </template>
 
 <style scoped>

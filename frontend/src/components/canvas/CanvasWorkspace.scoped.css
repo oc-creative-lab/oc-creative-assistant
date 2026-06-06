@@ -13,7 +13,9 @@
     gap: 12px;
     padding: 8px 14px;
     border-bottom: 1px solid var(--border);
-    background: var(--panel-strong);
+    background:
+      radial-gradient(circle at 20% 0%, rgba(167, 139, 250, 0.1), transparent 60%),
+      var(--panel);
   }
   
   .mode-actions,

@@ -8,7 +8,7 @@ import InlineEntityCard from '../components/chat/InlineEntityCard.vue'
 import StagingPanel from '../components/chat/StagingPanel.vue'
 
 /**
- * 全屏聊天工作台（first_revision 阶段 4，核心创新）。
+ * 全屏聊天工作台。
  *
  * 左：对话流（用户自由说想法，Chat Agent A 流式回复并自然抛问题）；
  * 右：StagingPanel（复用），实时展示后台 structured_extractor 抽出的待审实体；
@@ -49,7 +49,7 @@ async function handleSend() {
   await chat.send(text)
 }
 
-/** Exit聊天 = 会话结束，触发一次种子重建（first_revision 阶段 5 触发器之一）。 */
+/** Exit聊天 = 会话结束，触发一次种子重建。 */
 async function handleExit() {
   try {
     await rebuildProjectSeed(props.projectId)

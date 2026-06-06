@@ -47,7 +47,7 @@ class ProjectSummaryPayload(BaseModel):
 
 
 class ProjectDetailPayload(BaseModel):
-    """项目详情：含三个 sub-graph id 与最新种子（first_revision 阶段 1）。"""
+    """项目详情：含三个 sub-graph id 与最新种子。"""
 
     id: str
     name: str
@@ -89,7 +89,7 @@ class WorkspaceChatRequest(BaseModel):
 
 
 class CrossReferenceItem(BaseModel):
-    """一条跨 sub-graph 引用（first_revision 阶段 6）。"""
+    """一条跨 sub-graph 引用。"""
 
     edge_id: str
     other_node_id: str
@@ -163,6 +163,8 @@ class EdgePayload(BaseModel):
     type: str = "smoothstep"
     animated: bool = False
     waypoint: EdgeWaypointPayload | None = None
+    color: str | None = None
+    dashed: bool = False
 
 
 class IndexingStatusPayload(BaseModel):
@@ -327,6 +329,12 @@ class ChatSessionCreateRequest(BaseModel):
     title: str = ""
 
 
+class ChatSessionUpdateRequest(BaseModel):
+    """重命名会话。"""
+
+    title: str
+
+
 class ChatSessionPayload(BaseModel):
     """对话会话 DTO。"""
 
@@ -339,7 +347,7 @@ class ChatSessionPayload(BaseModel):
 
 
 class ChatMessageCreateRequest(BaseModel):
-    """追加对话消息的请求体, Phase 4 起由 graph 入口取代直接 POST。"""
+    """追加对话消息的请求体, 由 graph 入口取代直接 POST。"""
 
     role: Literal["user", "assistant", "system"]
     content: str
@@ -431,7 +439,6 @@ class ChatRequest(BaseModel):
     session_id: str
     user_message: str
     selected_node_ids: list[str] = Field(default_factory=list)
-    # first_revision 阶段 4：ChatWorkspace 全屏聊天置 True 开启后台 B-agent；
     # FloatingChatDock 不传，保持旧流程（无 question_planner / structured_extractor 副作用）。
     extraction_enabled: bool = False
 

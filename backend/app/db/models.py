@@ -169,6 +169,8 @@ class EdgeORM(Base):
     waypoint: Mapped[dict[str, Any] | None] = mapped_column(JSON, nullable=True)
     animated: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False, server_default=false())
     sort_order: Mapped[int] = mapped_column(Integer, nullable=False, default=0, server_default=text("0"))
+    color: Mapped[str | None] = mapped_column(String, nullable=True)
+    dashed: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False, server_default=false())
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True),
         nullable=False,
@@ -386,7 +388,7 @@ class ProjectSeedORM(Base):
 
     种子是对项目当前状态的压缩快照（worldview / characters / plot / style），
     供 Chat Agent 启动注入。版本随每次重建自增，``source`` 记录触发来源。
-    seed_compressor 写入（阶段 5），这里先建表为阶段 1 的数据模型升级铺路。
+    seed_compressor 写入。
     """
 
     __tablename__ = "project_seeds"

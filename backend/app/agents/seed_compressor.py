@@ -1,4 +1,4 @@
-"""项目种子压缩器（first_revision 阶段 5）。
+"""项目种子压缩器。
 
 独立 entrypoint，【不在主对话 StateGraph 内】：把一个项目的当前状态（所有节点，
 按 sub-graph 分区）压成结构化种子 JSON（worldview / characters / plot / style），

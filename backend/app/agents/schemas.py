@@ -180,8 +180,6 @@ class SummaryOutput(_LlmStructuredOutput):
     key_facts: list[str] = Field(default_factory=list)
 
 
-# --- first_revision 阶段 4：后台 B-agent 输出契约 ---
-
 EntityTypeLiteral = Literal["character", "world", "plot"]
 """structured_extractor 抽出的实体类型; 映射到 sub-graph 分区与 node_type。"""
 
@@ -242,7 +240,7 @@ class WorkspaceInspirationOutput(_LlmStructuredOutput):
 
 
 class SeedOutput(_LlmStructuredOutput):
-    """项目种子压缩输出（first_revision 阶段 5）。
+    """项目种子压缩输出。
 
     seed_compressor 把项目当前状态压成这份结构化快照，落到 ProjectSeedORM，
     供 Chat Agent 启动注入（~500 tokens 量级）。

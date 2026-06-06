@@ -27,18 +27,18 @@ logger = logging.getLogger(__name__)
 
 
 _NODE_LABELS: dict[str, str] = {
-    "load_context": "加载上下文",
-    "intent_router": "判断意图",
-    "parallel_retrieval": "检索知识库",
-    "context_compress": "压缩上下文",
-    "inspiration_agent": "灵感发散中",
-    "research_agent": "考据查证中",
-    "structure_agent": "整理结构中",
-    "simulation_agent": "推演分支中",
-    "boundary_check": "边界校验",
-    "chat_assembler": "生成回复",
-    "persistence_hub": "持久化结果",
-    "summary_compress": "压缩对话摘要",
+    "load_context": "Loading context",
+    "intent_router": "Detecting intent",
+    "parallel_retrieval": "Searching knowledge base",
+    "context_compress": "Compressing context",
+    "inspiration_agent": "Brainstorming",
+    "research_agent": "Researching",
+    "structure_agent": "Organizing structure",
+    "simulation_agent": "Simulating branches",
+    "boundary_check": "Boundary check",
+    "chat_assembler": "Composing reply",
+    "persistence_hub": "Persisting results",
+    "summary_compress": "Compressing summary",
 }
 
 
@@ -144,7 +144,7 @@ async def stream_chat_turn(payload: ChatRequest) -> AsyncIterator[str]:
                 break
             if isinstance(item, Exception):
                 logger.exception("stream_chat_turn graph 内部失败: %s", item)
-                yield _sse({"type": "error", "message": "推理过程出错, 请再试一次"})
+                yield _sse({"type": "error", "message": "Something went wrong while reasoning, please try again."})
                 return
 
             mode, payload = item
@@ -163,6 +163,6 @@ async def stream_chat_turn(payload: ChatRequest) -> AsyncIterator[str]:
 
     except Exception as exc:  # noqa: BLE001
         logger.exception("stream_chat_turn 失败: %s", exc)
-        yield _sse({"type": "error", "message": "推理过程出错, 请再试一次"})
+        yield _sse({"type": "error", "message": "Something went wrong while reasoning, please try again."})
     finally:
         await producer_task

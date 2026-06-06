@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, onMounted, watch } from 'vue'
+import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { storeToRefs } from 'pinia'
 import { useProjectStore } from '../stores/useProjectStore'
 import { mockWorkspaceStatus } from '../mocks/workspaceMock'
@@ -8,6 +8,7 @@ import WorkspaceSidebar from '../components/workspace/WorkspaceSidebar.vue'
 import RightStageOutput from '../components/workspace/RightStageOutput.vue'
 import BottomComposer from '../components/workspace/BottomComposer.vue'
 import StatusBar from '../components/workspace/StatusBar.vue'
+import { provideWorkspaceChatContext } from '../composables/useWorkspaceChatContext'
 
 /**
  * 工作台外壳（second_revision 改点 B：写作友好型布局）。
@@ -16,12 +17,61 @@ import StatusBar from '../components/workspace/StatusBar.vue'
  * 中部三列：WorkspaceSidebar(300) | router-view(1fr) | RightStageOutput(360)。
  * 工作台已废弃 FloatingChatDock，AI 改为底部常驻输入 + 右栏输出流。
  */
-const props = defineProps<{ projectId: string }>()
+ const props = defineProps<{ projectId: string }>()
 
 const projectStore = useProjectStore()
 const { detail } = storeToRefs(projectStore)
 
-const projectName = computed(() => detail.value?.name ?? '正在加载项目...')
+provideWorkspaceChatContext()
+
+const leftWidth = ref(Math.max(160, Number(localStorage.getItem('oc.leftWidth')) || 300))
+const rightWidth = ref(Math.max(500, Number(localStorage.getItem('oc.rightWidth')) || 520))
+watch([leftWidth, rightWidth], ([l, r]) => {
+  localStorage.setItem('oc.leftWidth', String(l))
+  localStorage.setItem('oc.rightWidth', String(r))
+})
+const leftCollapsed = ref(false)
+const rightCollapsed = ref(false)
+const RAIL_WIDTH = 40
+const gridColumns = computed(
+  () =>
+    `${leftCollapsed.value ? RAIL_WIDTH : leftWidth.value}px minmax(0, 1fr) ${rightCollapsed.value ? RAIL_WIDTH : rightWidth.value}px`,
+)
+
+let activeSide: 'left' | 'right' | null = null
+let startX = 0
+let startWidth = 0
+
+function startResize(side: 'left' | 'right', event: MouseEvent) {
+  event.preventDefault()
+  activeSide = side
+  startX = event.clientX
+  startWidth = side === 'left' ? leftWidth.value : rightWidth.value
+  document.body.style.userSelect = 'none'
+  window.addEventListener('mousemove', onResize)
+  window.addEventListener('mouseup', stopResize)
+}
+
+function onResize(event: MouseEvent) {
+  if (!activeSide) return
+  const delta = event.clientX - startX
+  if (activeSide === 'left') {
+    leftWidth.value = Math.min(480, Math.max(160, startWidth + delta))
+  } else {
+    rightWidth.value = Math.min(760, Math.max(280, startWidth - delta))
+  }
+}
+
+function stopResize() {
+  activeSide = null
+  document.body.style.userSelect = ''
+  window.removeEventListener('mousemove', onResize)
+  window.removeEventListener('mouseup', stopResize)
+}
+
+onBeforeUnmount(stopResize)
+
+const projectName = computed(() => detail.value?.name ?? 'Loading project...')
 
 onMounted(() => {
   void projectStore.loadProject(props.projectId)
@@ -39,15 +89,37 @@ watch(
   <div class="workspace-shell">
     <TopToolbar :project-name="projectName" :is-saving="false" />
 
-    <main class="workspace-shell__body">
-      <WorkspaceSidebar :project-id="projectId" />
-      <div class="workspace-shell__center">
+    <main class="workspace-shell__body" :style="{ gridTemplateColumns: gridColumns }">
+      <WorkspaceSidebar
+        style="grid-column: 1"
+        :project-id="projectId"
+        :collapsed="leftCollapsed"
+        @toggle="leftCollapsed = !leftCollapsed"
+      />
+      <div class="workspace-shell__center" style="grid-column: 2">
         <section class="workspace-shell__view">
           <router-view />
         </section>
         <BottomComposer />
       </div>
-      <RightStageOutput />
+      <RightStageOutput
+        style="grid-column: 3"
+        :collapsed="rightCollapsed"
+        @toggle="rightCollapsed = !rightCollapsed"
+      />
+
+      <div
+        v-show="!leftCollapsed"
+        class="workspace-shell__resizer"
+        :style="{ left: `${leftWidth}px` }"
+        @mousedown="startResize('left', $event)"
+      ></div>
+      <div
+        v-show="!rightCollapsed"
+        class="workspace-shell__resizer"
+        :style="{ left: `calc(100% - ${rightWidth}px)` }"
+        @mousedown="startResize('right', $event)"
+      ></div>
     </main>
 
     <StatusBar :status="mockWorkspaceStatus" />
@@ -64,12 +136,24 @@ watch(
   overflow: hidden;
 }
 .workspace-shell__body {
+  position: relative;
   min-height: 0;
   display: grid;
   grid-template-columns: 300px minmax(0, 1fr) 360px;
   border-top: 1px solid var(--border);
 }
-/* 中栏纵向拆成：视图(画布/详情, 1fr) + 底部提问条(auto)，提问条只占中栏宽度 */
+.workspace-shell__resizer {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  width: 8px;
+  transform: translateX(-50%);
+  cursor: col-resize;
+  z-index: 5;
+}
+.workspace-shell__resizer:hover {
+  background: var(--accent-soft);
+}
 .workspace-shell__center {
   min-width: 0;
   min-height: 0;

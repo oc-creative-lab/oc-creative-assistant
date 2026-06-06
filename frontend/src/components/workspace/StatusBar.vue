@@ -17,7 +17,7 @@ defineProps<{
   <footer class="status-bar">
     <div class="status-left">
       <span class="status-item save-status">
-        <span class="status-dot" :class="{ 'is-saving': status.saveState.includes('保存中') }"></span>
+        <span class="status-dot" :class="{ 'is-saving': status.saveState.includes('Saving') }"></span>
         {{ status.saveState }}
       </span>
     </div>

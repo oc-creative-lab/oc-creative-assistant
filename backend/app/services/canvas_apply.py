@@ -272,7 +272,9 @@ def _apply_delete_edge(
             )
             relation = payload.get("relation_type")
             if relation:
-                query = query.filter(EdgeORM.relation_type == relation)
+                query = query.filter(
+                    (EdgeORM.relation_type == relation) | (EdgeORM.label == relation)
+                )
             edge = query.first()
 
     if edge is None:

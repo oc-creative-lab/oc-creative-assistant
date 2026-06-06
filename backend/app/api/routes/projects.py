@@ -1,4 +1,4 @@
-"""Project HTTP 路由（first_revision 阶段 1）。
+"""Project HTTP 路由。
 
 项目 CRUD + 种子读取/重建。路由层只做 HTTP 映射，生命周期与 sub-graph 创建
 交给 project_service。
@@ -120,5 +120,5 @@ async def read_project_seed(project_id: str) -> ProjectSeedPayload:
 
 @router.post("/{project_id}/seed/rebuild", response_model=ProjectSeedPayload)
 async def rebuild_project_seed(project_id: str) -> ProjectSeedPayload:
-    """强制重建项目种子，版本自增（阶段 1 为占位，阶段 5 接入压缩器）。"""
+    """强制重建项目种子，版本自增。"""
     return rebuild_seed(project_id)

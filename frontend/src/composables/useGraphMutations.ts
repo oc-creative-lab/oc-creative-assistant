@@ -45,7 +45,7 @@ export function useGraphMutations(options: Options) {
     if (!node) {
       return
     }
-    const confirmed = window.confirm(`确定要删除节点「${node.data.title}」吗？相关连线也会一并删除。`)
+    const confirmed = window.confirm(`Delete node "${node.data.title}"? Connected edges will be removed too.`)
     if (!confirmed) {
       return
     }

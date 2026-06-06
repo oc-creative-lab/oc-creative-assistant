@@ -38,3 +38,53 @@ const updateNodeData = inject<(id: string, patch: { title?: string; content?: st
     </p>
   </article>
 </template>
+
+<style scoped>
+.creative-node {
+  width: 184px;
+  padding: 10px 12px;
+  border: 1px solid #d4dae5;
+  border-left: 4px solid #2764c5;
+  border-radius: 8px;
+  background: #ffffff;
+  box-shadow: 0 10px 24px rgba(31, 41, 51, 0.1);
+}
+
+.creative-node.selected {
+  border-color: #2764c5;
+  box-shadow: 0 0 0 2px rgba(39, 100, 197, 0.18), 0 14px 28px rgba(31, 41, 51, 0.14);
+}
+
+.node-type,
+h3,
+.node-summary {
+  margin: 0;
+}
+
+.node-type {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  color: #2764c5;
+  font-size: 0.74rem;
+  font-weight: 800;
+}
+
+h3 {
+  margin-top: 6px;
+  color: #1f2933;
+  font-size: 1rem;
+}
+
+.node-summary {
+  display: -webkit-box;
+  margin-top: 8px;
+  overflow: hidden;
+  color: #667085;
+  font-size: 0.82rem;
+  line-height: 1.45;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 3;
+  line-clamp: 3;
+}
+</style>

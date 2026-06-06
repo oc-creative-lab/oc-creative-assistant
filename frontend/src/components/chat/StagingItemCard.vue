@@ -17,18 +17,18 @@ const emit = defineEmits<{
 }>()
 
 const CHANGE_TYPE_LABELS: Record<string, string> = {
-  create_node: '新建节点',
-  create_edge: '新建关系',
-  update_node: '更新节点',
-  delete_node: '删除节点',
-  delete_edge: '删除关系',
+  create_node: 'New node',
+  create_edge: 'New relation',
+  update_node: 'Update node',
+  delete_node: 'Delete node',
+  delete_edge: 'Delete relation',
 }
 
 const titleHint = computed(() => {
   const type = props.item.change_type
   if (type === 'create_node') {
     const payload = props.item.payload as { title?: string; node_type?: string }
-    const title = payload.title ?? '未命名节点'
+    const title = payload.title ?? 'Untitled node'
     return payload.node_type ? `${title} · ${payload.node_type}` : title
   }
   return CHANGE_TYPE_LABELS[type] ?? type
@@ -45,8 +45,8 @@ const contentPreview = computed(() => {
   if (item.change_type === 'create_edge') {
     const source = (payload.source as string | undefined) ?? '?'
     const target = (payload.target as string | undefined) ?? '?'
-    const relation = (payload.relation_type as string | undefined) ?? '关联'
-    return `${source}  →  ${target}\n关系: ${relation}`
+    const relation = (payload.relation_type as string | undefined) ?? 'related to'
+    return `${source}  →  ${target}\nRelation: ${relation}`
   }
 
   if (item.change_type === 'update_node') {
@@ -57,12 +57,12 @@ const contentPreview = computed(() => {
   }
 
   if (item.change_type === 'delete_node') {
-    return item.target_id ? `目标节点 ID: ${item.target_id}` : ''
+    return item.target_id ? `Target node ID: ${item.target_id}` : ''
   }
 
   if (item.change_type === 'delete_edge') {
     if (item.target_id) {
-      return `目标关系 ID: ${item.target_id}`
+      return `Target relation ID: ${item.target_id}`
     }
     const source = (payload.source as string | undefined) ?? '?'
     const target = (payload.target as string | undefined) ?? '?'
@@ -87,10 +87,10 @@ const isPending = computed(() => props.item.status === 'pending')
 
     <footer v-if="isPending" class="staging-item__actions">
       <button type="button" class="accept" @click="emit('resolve', item.id, 'accept')">
-        接受
+        Accept
       </button>
       <button type="button" class="reject" @click="emit('resolve', item.id, 'reject')">
-        拒绝
+        Reject
       </button>
     </footer>
   </article>

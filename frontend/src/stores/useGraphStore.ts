@@ -4,7 +4,7 @@ import type { GraphEdgeDto, GraphNodeDto } from '../api/graphApi'
 import { loadSubgraph } from '../api/graphApi'
 
 /**
- * 当前打开的 sub-graph store（first_revision 决策 6 / 阶段 3）。
+ * 当前打开的 sub-graph store。
  *
  * 主要服务角色卡两路由（CharacterCardList ↔ CharacterCardDetail）共享同一份
  * sub-graph 数据，避免详情页二次全量拉取。Plot/World 画布走 useGraphPersistence
@@ -28,8 +28,7 @@ export const useGraphStore = defineStore('graph', () => {
       nodes.value = graph.nodes
       edges.value = graph.edges
     } catch (e) {
-      error.value = e instanceof Error ? e.message : 'sub-graph 加载失败'
-      nodes.value = []
+      error.value = e instanceof Error ? e.message : 'Failed to load sub-graph'
       edges.value = []
     } finally {
       isLoading.value = false

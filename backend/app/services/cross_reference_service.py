@@ -1,4 +1,4 @@
-"""跨 sub-graph 引用服务（first_revision 阶段 6）。
+"""跨 sub-graph 引用服务。
 
 EdgeORM 只挂 project_id（不绑 graph_id），因此一条边天然可以连接不同 sub-graph
 的两个节点（同一项目即合法，由 graph_validation 的项目级校验保证）。本模块把

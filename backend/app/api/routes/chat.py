@@ -19,15 +19,18 @@ from app.schemas import (
     ChatRequest,
     ChatResponse,
     ChatSessionCreateRequest,
+    ChatSessionUpdateRequest,
     ChatSessionPayload,
 )
 from app.services.chat_service import (
     append_session_message,
     create_session,
     create_staging_batch,
+    delete_session,
     get_session_messages,
     list_sessions,
     list_session_staging,
+    update_session,
     resolve_staging_batch,
     resolve_staging_item,
     run_chat_turn,
@@ -66,6 +69,21 @@ async def append_chat_message(
     return append_session_message(session_id, payload)
 
 
+@router.delete("/sessions/{session_id}", status_code=204)
+async def delete_chat_session(session_id: str) -> None:
+    """删除会话及其消息 / staging。"""
+    delete_session(session_id)
+
+
+@router.patch("/sessions/{session_id}", response_model=ChatSessionPayload)
+async def update_chat_session(
+    session_id: str,
+    payload: ChatSessionUpdateRequest,
+) -> ChatSessionPayload:
+    """重命名会话。"""
+    return update_session(session_id, payload)
+
+    
 @router.post("/sessions/{session_id}/staging", response_model=AgentStagingBatchPayload)
 async def create_chat_staging_batch(
     session_id: str,

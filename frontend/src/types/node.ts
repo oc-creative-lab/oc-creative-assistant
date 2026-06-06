@@ -96,12 +96,11 @@ export interface CreativeEdgeWaypoint {
 
 /** 连线业务数据。 */
 export interface CreativeEdgeData {
-  /** 连线标签是用户可编辑的创作关系文本。 */
   label: string
-  /** 关系类型用于后续筛选、结构整理和 RAG 检索扩展。 */
   relationType: CreativeRelationType
-  /** 用户拖拽自定义的中段位置; 未设置时按 source/target 几何关系自动算。 */
   waypoint?: CreativeEdgeWaypoint
+  color?: string
+  dashed?: boolean
 }
 
 /** 需要传给 Vue Flow 工具函数时使用的兼容类型。 */

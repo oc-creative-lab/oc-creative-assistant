@@ -103,6 +103,12 @@ def _ensure_sqlite_schema_compatibility() -> None:
 
         if "waypoint" not in edge_columns:
             connection.exec_driver_sql("ALTER TABLE edges ADD COLUMN waypoint TEXT")
+        if "color" not in edge_columns:
+            connection.exec_driver_sql("ALTER TABLE edges ADD COLUMN color VARCHAR")
+        if "dashed" not in edge_columns:
+            connection.exec_driver_sql(
+                "ALTER TABLE edges ADD COLUMN dashed BOOLEAN NOT NULL DEFAULT 0"
+            )
 
         project_columns = {
             row[1]
@@ -124,7 +130,7 @@ def _ensure_sqlite_schema_compatibility() -> None:
                 "ALTER TABLE chat_sessions ADD COLUMN summary_message_count INTEGER NOT NULL DEFAULT 0"
             )
 
-        # first_revision 阶段 1：多 sub-graph 架构需要的新增列。
+        # 多 sub-graph 架构需要的新增列。
         # create_all 只建新表(graphs / project_seeds)，不会给旧表补列，这里手动补。
         if "description" not in project_columns:
             connection.exec_driver_sql(

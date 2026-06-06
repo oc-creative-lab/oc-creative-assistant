@@ -4,10 +4,10 @@ import type { ProjectDetail } from '../types/project'
 import { getProjectDetail } from '../api/projectApi'
 
 /**
- * 当前项目 store（first_revision 决策 6）。
+ * 当前项目 store。
  *
  * 持有当前打开项目的元数据：name / description / 三个 sub-graph id / 最新种子。
- * 工作台三视图（阶段 3）从这里取对应的 graph_id。
+ * 工作台三视图从这里取对应的 graph_id。
  */
 export const useProjectStore = defineStore('project', () => {
   const detail = ref<ProjectDetail | null>(null)
@@ -26,7 +26,7 @@ export const useProjectStore = defineStore('project', () => {
     try {
       detail.value = await getProjectDetail(projectId)
     } catch (e) {
-      error.value = e instanceof Error ? e.message : '项目加载失败'
+      error.value = e instanceof Error ? e.message : 'Failed to load project'
       detail.value = null
     } finally {
       isLoading.value = false

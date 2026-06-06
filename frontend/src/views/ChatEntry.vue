@@ -5,7 +5,7 @@ import { storeToRefs } from 'pinia'
 import { useLibraryStore } from '../stores/useLibraryStore'
 
 /**
- * 聊天入口（阶段 2）。
+ * 聊天入口。
  *
  * 选已有项目下拉 + “新建项目”，确认后跳 /chat/:projectId。
  * 复用 useLibraryStore，与项目库共享项目列表与创建逻辑。

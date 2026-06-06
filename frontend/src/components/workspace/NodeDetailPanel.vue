@@ -79,9 +79,9 @@ function runAgentMock(type: 'inspiration' | 'research' | 'structure') {
       {
         type: 'inspiration',
         suggestions: [
-          '这个角色的核心欲望是什么？',
-          '这个设定会和哪个已有世界观节点发生冲突？',
-          '是否需要补充一个事件节点解释其背景？',
+          'What is the core desire of this character?',
+          'What setting will conflict with which existing worldview node?',
+          'Is it necessary to supplement an event node to explain its background?',
         ],
       },
       null,
@@ -94,8 +94,8 @@ function runAgentMock(type: 'inspiration' | 'research' | 'structure') {
     agentResult.value = JSON.stringify(
       {
         type: 'research',
-        summary: '这里将来会展示 RAG 或资料查询结果。',
-        status: 'RAG 尚未接入',
+        summary: 'RAG or research results will appear here.',
+        status: 'RAG is not yet connected',
       },
       null,
       2,
@@ -106,8 +106,8 @@ function runAgentMock(type: 'inspiration' | 'research' | 'structure') {
   agentResult.value = JSON.stringify(
     {
       type: 'structure',
-      summary: '这里将来会把多个节点整理成角色卡、关系图或剧情框架。',
-      status: 'Structure Agent 尚未接入',
+      summary: 'This will organize nodes into character cards, relationship maps, or plot frames.',
+      status: 'Structure Agent not connected yet',
     },
     null,
     2,
@@ -136,7 +136,7 @@ async function handleLoadRagContext() {
     })
   } catch (error) {
     ragResult.value = null
-    ragError.value = error instanceof Error ? error.message : 'RAG 上下文加载失败'
+    ragError.value = error instanceof Error ? error.message : 'Failed to load RAG context'
   } finally {
     isRagLoading.value = false
   }
@@ -156,18 +156,18 @@ watch(
 <template>
   <div class="node-detail-panel">
     <section class="detail-header">
-      <p>当前节点</p>
+      <p>Current node</p>
       <h2>{{ selectedNode.data.icon }} {{ selectedNode.data.title }}</h2>
       <span class="status-badge" :class="selectedNode.data.status">{{ selectedNode.data.status }}</span>
     </section>
 
     <section class="detail-panel">
-      <label for="node-type">节点类型</label>
+      <label for="node-type">Node type</label>
       <div class="input-wrapper">
         <input id="node-type" type="text" :value="selectedNode.data.typeLabel" disabled />
       </div>
 
-      <label for="node-title">节点标题</label>
+      <label for="node-title">Node title</label>
       <div class="input-wrapper">
         <input
           id="node-title"
@@ -177,7 +177,7 @@ watch(
         />
       </div>
 
-      <label for="node-content">节点内容</label>
+      <label for="node-content">Node content</label>
       <div class="input-wrapper">
         <textarea
           id="node-content"
@@ -187,18 +187,18 @@ watch(
         />
       </div>
 
-      <label for="node-tags">标签</label>
+      <label for="node-tags">Tags</label>
       <div class="input-wrapper">
         <input
           id="node-tags"
           type="text"
           :value="selectedNodeTags"
-          placeholder="用逗号分隔，例如：主角, 第一幕"
+          placeholder="Separate with commas, e.g. protagonist, first act"
           @input="updateNodeTags(($event.target as HTMLInputElement).value)"
         />
       </div>
 
-      <label for="node-status">状态</label>
+      <label for="node-status">Status</label>
       <div class="custom-select-container">
         <div
           class="custom-select-trigger"
@@ -221,39 +221,39 @@ watch(
         </ul>
       </div>
 
-      <button type="button" class="danger" @click="handleDeleteNode">删除节点</button>
+      <button type="button" class="danger" @click="handleDeleteNode">Delete node</button>
     </section>
 
     <section class="detail-panel">
-      <h3>Agent Actions 占位</h3>
+      <h3>Agent Actions placeholder</h3>
       <div class="agent-actions">
-        <button type="button" @click="runAgentMock('inspiration')">灵感引导</button>
-        <button type="button" @click="runAgentMock('research')">资料查询</button>
-        <button type="button" @click="runAgentMock('structure')">结构整理</button>
+        <button type="button" @click="runAgentMock('inspiration')">Inspiration</button>
+        <button type="button" @click="runAgentMock('research')">Research</button>
+        <button type="button" @click="runAgentMock('structure')">Structure</button>
       </div>
       <pre v-if="agentResult" class="agent-result">{{ agentResult }}</pre>
     </section>
 
     <section class="detail-panel rag-panel">
-      <h3>RAG / Agent 调试</h3>
-      <label for="rag-query">用户请求</label>
+      <h3>RAG / Agent Debug</h3>
+      <label for="rag-query">User request</label>
       <div class="input-wrapper">
         <textarea
           id="rag-query"
           rows="3"
           v-model="ragQuery"
-          placeholder="留空时使用当前节点标题和内容作为检索 query"
+          placeholder="When empty, use the current node title and content as the search query"
         />
       </div>
       <!-- 当前按钮只查看上下文，不调用 LLM，也不会把结果写入节点正文。 -->
       <button type="button" :disabled="isRagLoading" @click="handleLoadRagContext">
-        {{ isRagLoading ? '加载 RAG 上下文...' : '查看 RAG 上下文' }}
+        {{ isRagLoading ? 'Loading RAG context...' : 'View RAG context' }}
       </button>
       <p v-if="ragError" class="rag-error">{{ ragError }}</p>
 
       <div v-if="ragResult" class="rag-result">
         <details open>
-          <summary>当前节点 Current Node</summary>
+          <summary>Current node</summary>
           <div class="rag-card">
             <strong>{{ ragResult.current_node.title }}</strong>
             <span>{{ ragResult.current_node.type }}</span>
@@ -262,8 +262,8 @@ watch(
         </details>
 
         <details open>
-          <summary>图关系上下文 Graph Context</summary>
-          <p v-if="ragResult.graph_context.length === 0" class="rag-empty">暂无直接连接的相关节点</p>
+          <summary>Graph context</summary>
+          <p v-if="ragResult.graph_context.length === 0" class="rag-empty">No related nodes directly connected</p>
           <article v-for="item in ragResult.graph_context" :key="item.id" class="rag-card">
             <strong>{{ item.relation_label }} / {{ item.relation_type }}</strong>
             <span>{{ item.direction }} · {{ item.type }} · {{ item.title }}</span>
@@ -272,8 +272,8 @@ watch(
         </details>
 
         <details open>
-          <summary>向量检索上下文 Vector Context</summary>
-          <p v-if="ragResult.vector_context.length === 0" class="rag-empty">暂无向量检索结果</p>
+          <summary>Vector search context</summary>
+          <p v-if="ragResult.vector_context.length === 0" class="rag-empty">No vector search results</p>
           <article v-for="item in ragResult.vector_context" :key="item.id" class="rag-card">
             <strong>score {{ item.score.toFixed(2) }}</strong>
             <span>{{ item.type }} · {{ item.title }}</span>
@@ -286,7 +286,7 @@ watch(
         </details>
 
         <details>
-          <summary>最终 Prompt</summary>
+          <summary>Final prompt</summary>
           <!-- 先让用户看到 AI 将接收的上下文，便于验证检索和拼接是否合理。 -->
           <pre class="prompt-preview">{{ ragResult.prompt }}</pre>
         </details>

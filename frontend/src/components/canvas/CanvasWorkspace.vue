@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { computed, nextTick, onMounted, onUnmounted, provide, ref, watch } from 'vue'
-import { ConnectionMode, SelectionMode, VueFlow, useVueFlow } from '@vue-flow/core'
+import { ConnectionMode, SelectionMode, VueFlow, getRectOfNodes, useVueFlow } from '@vue-flow/core'
 import type { Edge, NodeMouseEvent } from '@vue-flow/core'
 import type {
   CreativeFlowEdge,
@@ -9,11 +9,9 @@ import type {
   CreativeNodeType,
   CreativeRelationType,
 } from '../../types/node'
-import { RELATION_TYPE_OPTIONS } from '../../types/node'
 import {
   DEFAULT_RELATION_TYPE,
   cloneNode,
-  getRelationLabel,
   normalizeEdge,
 } from '../../utils/canvasRelations'
 import { useCanvasGraph } from '../../composables/useCanvasGraph'
@@ -28,7 +26,7 @@ import StructureNode from '../nodes/StructureNode.vue'
 import WorldNode from '../nodes/WorldNode.vue'
 import OrthogonalEdge from './edges/OrthogonalEdge.vue'
 
-const FLOW_ID = 'oc-main-flow'
+const FLOW_ID = `oc-main-flow-${Math.random().toString(36).slice(2, 9)}`
 
 /**
  * 创作画布组件。
@@ -92,7 +90,6 @@ const edges = ref<CreativeFlowEdge[]>(
   props.initialEdges.map((edge) => normalizeEdge(edge, new Set(props.highlightedEdgeIds))),
 )
 
-/* 固定 flow id 确保工具栏操作绑定到当前画布实例, 不被页面上其他 Vue Flow 抢走 */
 const {
   fitView,
   getViewport,
@@ -102,20 +99,37 @@ const {
   findEdge,
   onPaneContextMenu,
   onNodeContextMenu,
+  onEdgeContextMenu,
   onNodeDoubleClick,
+  onNodesInitialized,
   screenToFlowCoordinate,
+  getNodes,
   getSelectedNodes,
 } = useVueFlow({ id: FLOW_ID })
+
+const FIT_MAX_ZOOM = 0.9
+const FIXED_ZOOM = 0.8
+const pendingFit = ref(true)
+
+onNodesInitialized(() => {
+  if (!pendingFit.value || getNodes.value.length === 0) return
+  pendingFit.value = false
+  const rect = getRectOfNodes(getNodes.value)
+  void setCenter(rect.x + rect.width / 2, rect.y + rect.height / 2, { zoom: FIXED_ZOOM })
+})
 
 const {
   handleAutoLayout,
   handleCreateNode,
   handleClearCanvas,
   handleConnect,
+  handleEdgeUpdate,
+  updateEdgeData,
   handleNodeDragStop,
   applyEdgeWaypoint,
   updateNodeData,
   removeNode,
+  removeEdge,
 } = useCanvasGraph({
   nodes,
   edges,
@@ -130,8 +144,8 @@ const {
 })
 
 provide('applyEdgeWaypoint', applyEdgeWaypoint)
-// 节点组件 inline edit 时调用，写回数据并触发自动保存（second_revision 改点 A）。
 provide('updateNodeData', updateNodeData)
+provide('updateEdgeData', updateEdgeData)
 
 const composer = useComposerStore()
 const centerStage = useCenterStageStore()
@@ -150,9 +164,10 @@ const contextMenu = ref<{
   show: boolean
   x: number
   y: number
-  type: 'blank' | 'node'
+  type: 'blank' | 'node' | 'edge'
   nodeId: string
-}>({ show: false, x: 0, y: 0, type: 'blank', nodeId: '' })
+  edgeId: string
+}>({ show: false, x: 0, y: 0, type: 'blank', nodeId: '', edgeId: '' })
 
 function closeContextMenu() {
   contextMenu.value.show = false
@@ -161,7 +176,7 @@ function closeContextMenu() {
 onPaneContextMenu((event) => {
   const mouse = event as MouseEvent
   mouse.preventDefault()
-  contextMenu.value = { show: true, x: mouse.clientX, y: mouse.clientY, type: 'blank', nodeId: '' }
+  contextMenu.value = { show: true, x: mouse.clientX, y: mouse.clientY, type: 'blank', nodeId: '', edgeId: '' }
 })
 
 onNodeContextMenu(({ event, node }) => {
@@ -173,6 +188,16 @@ onNodeContextMenu(({ event, node }) => {
     y: mouse.clientY,
     type: 'node',
     nodeId: node.id,
+    edgeId: '',
+  }
+})
+
+onEdgeContextMenu(({ event, edge }) => {
+  const mouse = event as MouseEvent
+  mouse.preventDefault()
+  contextMenu.value = {
+    show: true, x: mouse.clientX, y: mouse.clientY,
+    type: 'edge', nodeId: '', edgeId: edge.id,
   }
 })
 
@@ -215,7 +240,7 @@ function handleMenuDuplicate() {
     const created = nodes.value[nodes.value.length - 1]
     if (created) {
       updateNodeData(created.id, {
-        title: `${src.data.title} 副本`,
+        title: `${src.data.title} (copy)`,
         content: src.data.content,
       })
     }
@@ -224,8 +249,22 @@ function handleMenuDuplicate() {
 }
 
 function handleMenuRemove() {
-  if (contextMenu.value.nodeId) removeNode(contextMenu.value.nodeId)
+  if (contextMenu.value.type === 'edge') {
+    if (contextMenu.value.edgeId) removeEdge(contextMenu.value.edgeId)
+  } else if (contextMenu.value.nodeId) {
+    removeNode(contextMenu.value.nodeId)
+  }
   closeContextMenu()
+}
+
+function handleMenuSetColor(color: string) {
+  if (contextMenu.value.edgeId) updateEdgeData(contextMenu.value.edgeId, { color })
+  contextMenu.value.show = false
+}
+
+function handleMenuSetDashed(dashed: boolean) {
+  if (contextMenu.value.edgeId) updateEdgeData(contextMenu.value.edgeId, { dashed })
+  contextMenu.value.show = false
 }
 
 function quoteNodes(refs: { id: string; type: string; title: string }[]) {
@@ -250,7 +289,7 @@ function handleCopyKey(event: KeyboardEvent) {
     selected.map((node) => ({
       id: node.id,
       type: (node.data?.nodeType ?? node.type ?? 'idea') as string,
-      title: node.data?.title || '未命名',
+      title: node.data?.title || 'Untitled',
     })),
   )
 }
@@ -296,9 +335,8 @@ function handleEdgeClick(event: { edge: Edge }) {
   emit('edgeSelected', event.edge.id)
 }
 
-/** 将视口调整到完整 graph 范围, 便于节点变多后找回全局结构。 */
 function handleFitView() {
-  void fitView({ padding: 0.2, duration: 260 })
+  void fitView({ padding: 0.2, maxZoom: FIT_MAX_ZOOM, duration: 260 })
 }
 
 function handleZoomIn() {
@@ -322,13 +360,13 @@ watch(
 watch(
   () => props.graphVersion,
   () => {
-    /* 右侧详情编辑或后端恢复后, AppShell 会把新的权威快照推回画布 */
     nodes.value = props.initialNodes.map((node) =>
       cloneNode(node, props.selectedNodeId, new Set(props.highlightedNodeIds)),
     )
     edges.value = props.initialEdges.map((edge) =>
       normalizeEdge(edge, new Set(props.highlightedEdgeIds)),
     )
+    pendingFit.value = true
   },
 )
 
@@ -370,31 +408,7 @@ watch(
     <!-- 画布工具栏：只处理画布相关操作 -->
     <header class="canvas-toolbar">
       <div class="mode-actions" aria-label="canvas mode">
-        <span class="interaction-hint">Click to select · drag handles to connect · double-click to open</span>
-        <label class="relation-picker" for="new-edge-relation">
-          Relation
-          <div class="custom-select-container">
-            <div
-              class="custom-select-trigger"
-              :class="{ 'is-open': isRelationSelectOpen }"
-              @click="isRelationSelectOpen = !isRelationSelectOpen"
-            >
-              <span>{{ getRelationLabel(selectedRelationType) }}</span>
-              <div class="custom-select-arrow"></div>
-            </div>
-            <ul class="custom-select-options" v-show="isRelationSelectOpen">
-              <li
-                v-for="option in RELATION_TYPE_OPTIONS"
-                :key="option.value"
-                class="custom-select-option"
-                :class="{ 'is-selected': selectedRelationType === option.value }"
-                @click="selectedRelationType = option.value; isRelationSelectOpen = false"
-              >
-                {{ option.label }}
-              </li>
-            </ul>
-          </div>
-        </label>
+        <slot name="toolbar-start" />
         <button type="button" @click="handleAutoLayout">Auto layout</button>
       </div>
 
@@ -403,6 +417,7 @@ watch(
         <button type="button" title="Zoom out" @click="handleZoomOut">-</button>
         <button type="button" @click="handleFitView">Fit</button>
         <button type="button" class="danger" @click="handleClearCanvas">Clear</button>
+        <slot name="toolbar-status" />
       </div>
     </header>
 
@@ -419,14 +434,16 @@ watch(
         :nodes-connectable="true"
         :nodes-draggable="true"
         :elements-selectable="true"
+        :edges-updatable="true"
         :connection-mode="ConnectionMode.Loose"
         :connect-on-click="false"
         :connection-radius="24"
-        :fit-view-on-init="true"
+        :fit-view-on-init="false"
         :selection-key-code="'Shift'"
         :multi-selection-key-code="['Shift', 'Meta', 'Control']"
         :selection-mode="SelectionMode.Partial"
         @connect="handleConnect"
+        @edge-update="handleEdgeUpdate"
         @node-click="handleNodeClick"
         @edge-click="handleEdgeClick"
         @node-drag-stop="handleNodeDragStop"
@@ -473,6 +490,8 @@ watch(
       @remove="handleMenuRemove"
       @quote="handleMenuQuote"
       @close="closeContextMenu"
+      @set-color="handleMenuSetColor"
+      @set-dashed="handleMenuSetDashed"
     />
   </section>
 </template>

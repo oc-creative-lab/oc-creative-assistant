@@ -1,7 +1,7 @@
 """对话与 staging 的应用服务层。
 
 对外暴露语义化操作: 创建会话、追加消息、列消息、推进 staging 状态机。
-本模块不感知 LangGraph; Phase 4 会在 ``append_session_message`` 内调用
+本模块不感知 LangGraph; 会在 ``append_session_message`` 内调用
 agent_graph 触发完整推理链路, 当前阶段只做持久化 + 状态机。
 """
 
@@ -31,6 +31,7 @@ from app.schemas import (
     ChatRequest,
     ChatResponse,
     ChatSessionCreateRequest,
+    ChatSessionUpdateRequest,
     ChatSessionPayload,
 )
 from app.services.chat_repository import (
@@ -128,6 +129,21 @@ def list_sessions(project_id: str) -> list[ChatSessionPayload]:
         require_project(db, project_id)
         return [_session_to_payload(r) for r in list_project_sessions(db, project_id)]
 
+
+def update_session(session_id: str, payload: ChatSessionUpdateRequest) -> ChatSessionPayload:
+    """重命名会话; 不存在抛 404。"""
+    with SessionLocal.begin() as db:
+        record = require_session(db, session_id)
+        record.title = payload.title.strip()
+        db.flush()
+        return _session_to_payload(record)
+
+        
+def delete_session(session_id: str) -> None:
+    """删除会话及其消息 / staging（relationship 配了级联, 子表自动清理）。"""
+    with SessionLocal.begin() as db:
+        record = require_session(db, session_id)
+        db.delete(record)
 
 # ---- Messages ----
 

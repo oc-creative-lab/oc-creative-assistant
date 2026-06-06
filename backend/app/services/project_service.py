@@ -1,4 +1,4 @@
-"""项目应用服务（first_revision 阶段 1）。
+"""项目应用服务。
 
 负责项目 CRUD 与种子读取，并在创建项目时自动建立三个 sub-graph
 （plot / character / world）。索引与 graph 节点读写仍由 graph_store 负责，
@@ -144,7 +144,7 @@ def get_latest_seed(project_id: str) -> ProjectSeedPayload | None:
 def rebuild_seed(project_id: str) -> ProjectSeedPayload:
     """强制重建项目种子，版本自增。
 
-    阶段 5：调用 seed_compressor 真正压缩项目当前状态；项目尚无内容或 LLM
+    调用 seed_compressor 真正压缩项目当前状态；项目尚无内容或 LLM
     失败时回退到空结构占位，保证接口始终返回一条种子。
     """
     # 延迟导入避免与 agents 包的潜在循环依赖。

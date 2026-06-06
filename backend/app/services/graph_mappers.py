@@ -98,6 +98,8 @@ def edge_to_payload(edge: EdgeORM) -> EdgePayload:
         type=edge.edge_type,
         animated=edge.animated,
         waypoint=waypoint,
+        color=edge.color,
+        dashed=edge.dashed,
     )
 
 
@@ -148,6 +150,8 @@ def edge_to_orm(project_id: str, edge: EdgePayload, sort_order: int) -> EdgeORM:
         relation_type=edge.relationType,
         animated=edge.animated,
         waypoint=edge.waypoint.model_dump() if edge.waypoint else None,
+        color=edge.color,
+        dashed=edge.dashed,
         sort_order=sort_order,
     )
 

@@ -4,7 +4,7 @@ import { useProjectStore } from '../../stores/useProjectStore'
 import SubgraphCanvas from '../../components/workspace/SubgraphCanvas.vue'
 
 /**
- * 故事线视图（first_revision 阶段 3）：Vue Flow 画布，绑定 plot sub-graph。
+ * 故事线视图：Vue Flow 画布，绑定 plot sub-graph。
  */
 const { plotGraphId } = storeToRefs(useProjectStore())
 </script>
@@ -16,7 +16,7 @@ const { plotGraphId } = storeToRefs(useProjectStore())
     :graph-id="plotGraphId"
     :create-types="['plot']"
   />
-  <p v-else class="workspace-loading">正在加载故事线...</p>
+  <p v-else class="workspace-loading">Loading storyline...</p>
 </template>
 
 <style scoped>

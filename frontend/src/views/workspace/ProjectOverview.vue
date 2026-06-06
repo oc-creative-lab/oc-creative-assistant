@@ -5,7 +5,7 @@ import { useProjectStore } from '../../stores/useProjectStore'
 import { updateProject } from '../../api/projectApi'
 
 /**
- * Overview（first_revision 阶段 3）：编辑项目名与简介，持久化到 ProjectORM。
+ * Overview：编辑项目名与简介，持久化到 ProjectORM。
  */
 const projectStore = useProjectStore()
 const { detail } = storeToRefs(projectStore)

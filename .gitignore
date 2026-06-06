@@ -218,6 +218,10 @@ electron/.bundle/
 
 # === 本地草稿 / 一次性脚本 / 编辑器残留 ===
 /proposal.md
+/OC_Creative_Assistant_Report.md
+/first_revision.txt
+/second_revision.txt
+/proposal.txt
 /graph.json
 backend/scripts/
 backend/test_main.http

@@ -60,7 +60,7 @@ class AgentState(TypedDict, total=False):
     staging_batch_id: str | None
     staging_count: int
 
-    # first_revision 阶段 4：后台 B-agent（structured_extractor / question_planner）。
+    # 后台 B-agent（structured_extractor / question_planner）。
     # extraction_enabled 关闭时两个节点全程 no-op，FloatingChatDock 旧流程不受影响。
     extraction_enabled: bool
     seed_context: str

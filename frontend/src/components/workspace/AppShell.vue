@@ -165,7 +165,7 @@ onBeforeUnmount(() => {
     <div class="indexing-alert" :class="{ 'is-hidden': !indexingAlert }" role="alert" aria-live="polite">
       <template v-if="indexingAlert">
         <span>{{ indexingAlert }}</span>
-        <button type="button" class="indexing-alert__close" @click="dismissAlert">关闭</button>
+        <button type="button" class="indexing-alert__close" @click="dismissAlert">Dismiss</button>
       </template>
     </div>
 
