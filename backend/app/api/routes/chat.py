@@ -21,6 +21,7 @@ from app.schemas import (
     ChatSessionCreateRequest,
     ChatSessionUpdateRequest,
     ChatSessionPayload,
+    SessionTitleRequest,
 )
 from app.services.chat_service import (
     append_session_message,
@@ -34,12 +35,21 @@ from app.services.chat_service import (
     resolve_staging_batch,
     resolve_staging_item,
     run_chat_turn,
+    generate_session_title,
 )
 from app.services.chat_stream import stream_chat_turn
 from fastapi.responses import StreamingResponse
 
 
 router = APIRouter(prefix="/api", tags=["chat"])
+
+@router.post("/sessions/{session_id}/title", response_model=ChatSessionPayload)
+def generate_chat_session_title(
+    session_id: str,
+    payload: SessionTitleRequest,
+) -> ChatSessionPayload:
+    """用 LLM 把首条用户消息提炼为会话标题并保存。"""
+    return generate_session_title(session_id, payload.text)
 
 
 @router.post("/sessions", response_model=ChatSessionPayload)

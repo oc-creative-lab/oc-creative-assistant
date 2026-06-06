@@ -6,7 +6,13 @@ import { useChatStore } from '../stores/useChatStore'
 import { rebuildProjectSeed } from '../api/projectApi'
 import InlineEntityCard from '../components/chat/InlineEntityCard.vue'
 import StagingPanel from '../components/chat/StagingPanel.vue'
+import { marked } from 'marked'
 
+marked.use({ gfm: true, breaks: true })
+
+function renderMarkdown(text: string): string {
+  return marked.parse(text) as string
+}
 /**
  * 全屏聊天工作台。
  *
@@ -50,12 +56,8 @@ async function handleSend() {
 }
 
 /** Exit聊天 = 会话结束，触发一次种子重建。 */
-async function handleExit() {
-  try {
-    await rebuildProjectSeed(props.projectId)
-  } catch {
-    /* 种子重建失败不应阻断Exit */
-  }
+function handleExit() {
+  void rebuildProjectSeed(props.projectId).catch(() => {})
   router.push('/')
 }
 </script>
@@ -86,7 +88,12 @@ async function handleExit() {
             <span v-if="message.role === 'assistant' && message.agentType" class="chat-msg__agent">
               {{ AGENT_LABELS[message.agentType] ?? message.agentType }}
             </span>
-            <div class="chat-msg__bubble">{{ message.content }}</div>
+            <div
+              v-if="message.role === 'assistant'"
+              class="chat-msg__bubble chat-msg__bubble--md"
+              v-html="renderMarkdown(message.content)"
+            ></div>
+            <div v-else class="chat-msg__bubble">{{ message.content }}</div>
             <div v-if="message.applied?.length" class="chat-msg__applied">
               <InlineEntityCard
                 v-for="item in message.applied"
@@ -99,7 +106,7 @@ async function handleExit() {
           </div>
 
           <div v-if="streamingReply" class="chat-msg chat-msg--assistant">
-            <div class="chat-msg__bubble">{{ streamingReply }}</div>
+            <div class="chat-msg__bubble chat-msg__bubble--md" v-html="renderMarkdown(streamingReply)"></div>
           </div>
           <p v-else-if="isStreaming" class="chat-workspace__progress">{{ progressLabel }}</p>
           <p v-if="error" class="chat-workspace__error">{{ error }}</p>
@@ -136,7 +143,9 @@ async function handleExit() {
   height: 100vh;
   display: grid;
   grid-template-rows: 52px minmax(0, 1fr);
-  background: var(--app-bg, #fff);
+  background:
+    radial-gradient(circle at 20% 0%, rgba(167, 139, 250, 0.1), transparent 60%),
+    var(--panel);
 }
 .chat-workspace__top {
   display: flex;
@@ -196,6 +205,41 @@ async function handleExit() {
   line-height: 1.6;
   font-size: 14px;
 }
+.chat-msg__bubble--md {
+  white-space: normal;
+}
+.chat-msg__bubble--md :deep(p) {
+  margin: 0 0 8px;
+}
+.chat-msg__bubble--md :deep(p:last-child) {
+  margin-bottom: 0;
+}
+.chat-msg__bubble--md :deep(ul),
+.chat-msg__bubble--md :deep(ol) {
+  margin: 4px 0 8px;
+  padding-left: 18px;
+}
+.chat-msg__bubble--md :deep(strong) {
+  font-weight: 600;
+}
+.chat-msg__bubble--md :deep(code) {
+  background: rgba(0, 0, 0, 0.06);
+  padding: 1px 5px;
+  border-radius: 4px;
+  font-size: 12px;
+}
+.chat-msg__bubble--md :deep(pre) {
+  background: rgba(0, 0, 0, 0.06);
+  padding: 8px 10px;
+  border-radius: 8px;
+  overflow-x: auto;
+}
+.chat-msg__bubble--md :deep(h1),
+.chat-msg__bubble--md :deep(h2),
+.chat-msg__bubble--md :deep(h3) {
+  font-size: 14px;
+  margin: 8px 0 4px;
+}
 .chat-msg--assistant .chat-msg__bubble {
   background: #f3f4f6;
 }
@@ -244,6 +288,10 @@ async function handleExit() {
   min-height: 0;
   overflow-y: auto;
   padding: 16px;
+  border-left: 1px solid var(--border, #e5e7eb);
+  background:
+    radial-gradient(circle at 80% 0%, rgba(167, 139, 250, 0.1), transparent 60%),
+    var(--panel);
 }
 .chat-workspace__staging-title {
   font-size: 14px;

@@ -12,23 +12,24 @@ defineProps<{
 
 const emit = defineEmits<{
   save: []
+  settings: []
 }>()
 
 const toolbarActions = [
   { id: 'refresh', label: 'Refresh' },
   { id: 'save', label: 'Save' },
-  { id: 'import', label: 'Import' },
-  { id: 'export', label: 'Export' },
   { id: 'settings', label: 'Settings' },
 ]
 
 const savingLabel = 'Saving…'
 
 function handleActionClick(actionId: string) {
-  if (actionId === 'save') {
-    emit('save')
-  } else if (actionId === 'refresh') {
+  if (actionId === 'refresh') {
     window.location.reload()
+  } else if (actionId === 'save') {
+    emit('save')
+  } else if (actionId === 'settings') {
+    emit('settings')
   }
 }
 </script>

@@ -119,6 +119,6 @@ async def read_project_seed(project_id: str) -> ProjectSeedPayload:
 
 
 @router.post("/{project_id}/seed/rebuild", response_model=ProjectSeedPayload)
-async def rebuild_project_seed(project_id: str) -> ProjectSeedPayload:
+def rebuild_project_seed(project_id: str) -> ProjectSeedPayload:
     """强制重建项目种子，版本自增。"""
     return rebuild_seed(project_id)

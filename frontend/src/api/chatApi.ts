@@ -89,6 +89,16 @@ export async function renameChatSession(sessionId: string, title: string): Promi
   })
 }
 
+export async function generateSessionTitle(
+  sessionId: string,
+  text: string,
+): Promise<ChatSessionDto> {
+  return requestJson<ChatSessionDto>(`/api/sessions/${sessionId}/title`, {
+    method: 'POST',
+    body: JSON.stringify({ text }),
+  })
+}
+
 /** 读取会话完整消息历史, 时间正序。 */
 export async function listSessionMessages(sessionId: string): Promise<ChatMessageDto[]> {
   return requestJson<ChatMessageDto[]>(`/api/sessions/${sessionId}/messages`)

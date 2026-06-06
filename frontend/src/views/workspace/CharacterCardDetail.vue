@@ -11,12 +11,6 @@ import {
   type CrossReferenceItem,
 } from '../../api/projectApi'
 
-/**
- * 角色卡详情（first_revision 决策 2，已获批准偏离 proposal）。
- *
- * 顶部名字 + 简介；中部“自由字段”增删改（持久化到 node.meta JSON 的 fields 键）；
- * 底部“关系”区把该角色在 character sub-graph 里的出边以标签展示，不画连线。
- */
 const props = defineProps<{ charId: string }>()
 
 const route = useRoute()
@@ -183,11 +177,21 @@ watch(
 
 <style scoped>
 .char-detail {
-  max-width: 640px;
+  min-height: 100%;
   padding: 24px;
   display: flex;
   flex-direction: column;
+  align-items: center;
   gap: 20px;
+  box-sizing: border-box;
+  background:
+    radial-gradient(circle at 20% 0%, rgba(167, 139, 250, 0.1), transparent 60%),
+    var(--panel);
+}
+.char-detail__head,
+.char-detail__section {
+  width: 100%;
+  max-width: 640px;
 }
 .char-detail__back {
   align-self: flex-start;

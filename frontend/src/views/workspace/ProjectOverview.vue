@@ -62,13 +62,18 @@ async function handleSave() {
 
 <style scoped>
 .overview {
-  max-width: 640px;
+  min-height: 100%;
   padding: 24px;
   display: flex;
   flex-direction: column;
   gap: 16px;
+  box-sizing: border-box;
+  background:
+    radial-gradient(circle at 20% 0%, rgba(167, 139, 250, 0.1), transparent 60%),
+    var(--panel);
 }
 .overview__field {
+  max-width: 640px;
   display: flex;
   flex-direction: column;
   gap: 6px;

@@ -16,6 +16,7 @@ import {
   resolveStagingBatch,
   resolveStagingItem,
   streamChat,
+  generateSessionTitle,
 } from '../api/chatApi'
 import { deleteNode as apiDeleteNode, updateNode as apiUpdateNode } from '../api/projectApi'
 
@@ -133,12 +134,16 @@ export const useChatStore = defineStore('chat', () => {
     const content = text.trim()
     if (!content || isStreaming.value || !projectId.value) return
 
-    // 惰性创建：没有当前会话时，用首条消息（截断）作标题新建一个，避免空会话堆积
+    // 惰性创建：先用占位标题建会话，再让 LLM 异步提炼正式标题（不阻塞发送）。
     if (!sessionId.value) {
       try {
-        const session = await createChatSession(projectId.value, content.slice(0, 30))
+        const session = await createChatSession(projectId.value, 'New chat')
         sessions.value.unshift(session)
         sessionId.value = session.id
+        void generateSessionTitle(session.id, content).then((updated) => {
+          const idx = sessions.value.findIndex((s) => s.id === updated.id)
+          if (idx !== -1) sessions.value[idx] = updated
+        })
       } catch (e) {
         error.value = e instanceof Error ? e.message : 'Failed to create chat'
         return

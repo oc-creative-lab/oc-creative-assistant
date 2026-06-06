@@ -7,6 +7,7 @@ import { useGraphPersistence } from '../../composables/useGraphPersistence'
 import { useIndexingStatus } from '../../composables/useIndexingStatus'
 import {
   injectWorkspaceGraphRefresh,
+  injectWorkspaceGraphSave,
   injectWorkspaceSelectedNodeIds,
 } from '../../composables/useWorkspaceChatContext'
 import { useProjectStore } from '../../stores/useProjectStore'
@@ -38,6 +39,7 @@ const projectStore = useProjectStore()
 const centerStage = useCenterStageStore()
 const workspaceSelectedNodeIds = injectWorkspaceSelectedNodeIds()
 const graphRefresh = injectWorkspaceGraphRefresh()
+const graphSave = injectWorkspaceGraphSave()
 
 let seedTimer: ReturnType<typeof setTimeout> | null = null
 let highlightClearTimer: ReturnType<typeof setTimeout> | null = null
@@ -66,6 +68,7 @@ const {
   clearAutoSave,
   loadGraph,
   handleGraphChanged,
+  handleSaveGraph,
 } = useGraphPersistence(applyIndexingStatus, {
   load: () => loadSubgraph(props.graphId),
   save: async (dto) => {
@@ -75,14 +78,16 @@ const {
   },
 })
 
+watch(isSaving, (v) => {
+  if (graphSave) graphSave.isSaving.value = v
+})
+
 const selectedNodeId = ref('')
 const selectedEdgeId = ref('')
 const createNodeRequest = ref<{ type: CreativeNodeType; nonce: number } | null>(null)
 const highlightedNodeIds = ref<string[]>([])
 const highlightedEdgeIds = ref<string[]>([])
 
-// 详情编辑已迁出右栏（second_revision 改点 B）：右栏改为 AI 输出区，节点详情
-// 走中栏 NodeDetailView(W3)，标题/简介走 inline edit(W2)。这里仅保留键盘删除。
 const { handleGlobalKeydown } = useGraphMutations({
   graphSnapshot,
   selectedNodeId,
@@ -165,6 +170,7 @@ watch(selectedNodeId, (nodeId) => {
 onMounted(() => {
   window.addEventListener('keydown', handleGlobalKeydown, true)
   graphRefresh?.register(handleGraphRefreshNeeded)
+  graphSave?.register(handleSaveGraph)
   centerStage.returnToCanvas() // 进入画布视图时复位，避免残留上一个视图的详情态
   void reload()
 })
@@ -180,6 +186,7 @@ watch(
 onBeforeUnmount(() => {
   window.removeEventListener('keydown', handleGlobalKeydown, true)
   graphRefresh?.register(async () => {})
+  graphSave?.register(async () => {})
   clearAutoSave()
   if (seedTimer) clearTimeout(seedTimer)
   if (highlightClearTimer) clearTimeout(highlightClearTimer)
@@ -228,7 +235,13 @@ watch(
         </button>
       </template>
       <template #toolbar-status>
-        <span class="subgraph-canvas__save">{{ isSaving ? 'Saving…' : saveState }}</span>
+        <span class="subgraph-canvas__save">
+          <span
+            v-if="!isSaving && saveState.startsWith('Saved')"
+            class="subgraph-canvas__save-dot"
+          ></span>
+          {{ isSaving ? 'Saving…' : saveState }}
+        </span>
       </template>
     </CanvasWorkspace>
   </div>
@@ -254,5 +267,14 @@ watch(
   margin-left: 8px;
   font-size: 12px;
   color: var(--muted, #888);
+}
+.subgraph-canvas__save-dot {
+  display: inline-block;
+  width: 8px;
+  height: 8px;
+  margin-right: 6px;
+  border-radius: 50%;
+  background: #22c55e;
+  vertical-align: middle;
 }
 </style>

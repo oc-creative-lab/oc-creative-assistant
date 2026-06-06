@@ -48,7 +48,8 @@ from app.services.chat_repository import (
     require_staging,
     transition_staging,
 )
-
+from langchain_core.messages import HumanMessage, SystemMessage
+from app.llm.factory import get_llm_provider
 
 # ---- ORM → DTO ----
 
@@ -138,13 +139,52 @@ def update_session(session_id: str, payload: ChatSessionUpdateRequest) -> ChatSe
         db.flush()
         return _session_to_payload(record)
 
-        
+
 def delete_session(session_id: str) -> None:
     """删除会话及其消息 / staging（relationship 配了级联, 子表自动清理）。"""
     with SessionLocal.begin() as db:
         record = require_session(db, session_id)
         db.delete(record)
 
+_TITLE_SYSTEM = (
+    "You generate concise chat titles. Summarize the user's request into a title of "
+    "at most 6 words. Reply in the same language as the user. Output only the title — "
+    "no quotes, no trailing punctuation, no explanation."
+)
+
+
+def _summarize_title(text: str) -> str:
+    """用 LLM 把首条消息提炼成短标题; 失败时回退为截断。"""
+    cleaned = text.strip()
+    if not cleaned:
+        return "New chat"
+    try:
+        raw = get_llm_provider().chat(
+            [
+                SystemMessage(content=_TITLE_SYSTEM),
+                HumanMessage(content=cleaned[:500]),
+            ]
+        )
+    except Exception:  # noqa: BLE001 - 标题生成失败不应阻断对话
+        logger.exception("session title generation failed")
+        raw = ""
+    title = raw.strip().strip('"').strip()
+    title = title.splitlines()[0] if title else ""
+    # mock provider 返回 "[mock] received: ..."，退回截断更干净
+    if not title or title.startswith("[mock]"):
+        return cleaned[:30]
+    return title[:60]
+
+
+def generate_session_title(session_id: str, text: str) -> ChatSessionPayload:
+    """提炼并保存会话标题, 返回更新后的会话。"""
+    title = _summarize_title(text)
+    with SessionLocal.begin() as db:
+        record = require_session(db, session_id)
+        record.title = title
+        db.flush()
+        return _session_to_payload(record)
+        
 # ---- Messages ----
 
 def append_session_message(

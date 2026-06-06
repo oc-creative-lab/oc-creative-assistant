@@ -108,7 +108,8 @@ const {
 } = useVueFlow({ id: FLOW_ID })
 
 const FIT_MAX_ZOOM = 0.9
-const FIXED_ZOOM = 0.8
+const FIXED_ZOOM = Number(localStorage.getItem('oc.canvasZoom')) || 0.8
+const SNAP_TO_GRID = localStorage.getItem('oc.snapToGrid') === 'true'
 const pendingFit = ref(true)
 
 onNodesInitialized(() => {
@@ -439,6 +440,8 @@ watch(
         :connect-on-click="false"
         :connection-radius="24"
         :fit-view-on-init="false"
+        :snap-to-grid="SNAP_TO_GRID"
+        :snap-grid="[16, 16]"
         :selection-key-code="'Shift'"
         :multi-selection-key-code="['Shift', 'Meta', 'Control']"
         :selection-mode="SelectionMode.Partial"

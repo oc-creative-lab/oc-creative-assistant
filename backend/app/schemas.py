@@ -18,7 +18,7 @@ class ProjectPayload(BaseModel):
 
 
 class ProjectSeedPayload(BaseModel):
-    """项目种子 DTO（first_revision 决策 3）。"""
+    """项目种子 DTO。"""
 
     id: str
     project_id: str
@@ -75,14 +75,14 @@ class ProjectUpdateRequest(BaseModel):
 
 
 class NodeFieldsPayload(BaseModel):
-    """节点自由字段 DTO（first_revision 决策 2）。"""
+    """节点自由字段 DTO。"""
 
     node_id: str
     fields: dict[str, str] = Field(default_factory=dict)
 
 
 class WorkspaceChatRequest(BaseModel):
-    """工作台底部对话框请求体（second_revision 改点 B / W5）。"""
+    """工作台底部对话框请求体。"""
 
     message: str = ""
     quoted_node_ids: list[str] = Field(default_factory=list)
@@ -409,6 +409,10 @@ class AgentStagingPayload(BaseModel):
     created_at: datetime
     resolved_at: datetime | None
 
+
+class SessionTitleRequest(BaseModel):
+    text: str
+    
 
 class AgentStagingBatchPayload(BaseModel):
     """staging 批次 DTO, 把同一 batch_id 的多条变更聚合展示。"""

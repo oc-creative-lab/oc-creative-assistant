@@ -1,28 +1,107 @@
 <script setup lang="ts">
 import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { storeToRefs } from 'pinia'
+import { useRoute } from 'vue-router'
+import { loadSubgraph, saveSubgraph } from '../api/graphApi'
+import { downloadProjectOcFile, readProjectOcFile } from '../utils/ocFile'
 import { useProjectStore } from '../stores/useProjectStore'
-import { mockWorkspaceStatus } from '../mocks/workspaceMock'
 import TopToolbar from '../components/workspace/TopToolbar.vue'
 import WorkspaceSidebar from '../components/workspace/WorkspaceSidebar.vue'
 import RightStageOutput from '../components/workspace/RightStageOutput.vue'
 import BottomComposer from '../components/workspace/BottomComposer.vue'
-import StatusBar from '../components/workspace/StatusBar.vue'
+import SettingsModal from '../components/workspace/SettingsModal.vue'
 import { provideWorkspaceChatContext } from '../composables/useWorkspaceChatContext'
 
-/**
- * 工作台外壳（second_revision 改点 B：写作友好型布局）。
- *
- * 四行：TopToolbar / 中部三栏 / BottomComposer / StatusBar。
- * 中部三列：WorkspaceSidebar(300) | router-view(1fr) | RightStageOutput(360)。
- * 工作台已废弃 FloatingChatDock，AI 改为底部常驻输入 + 右栏输出流。
- */
- const props = defineProps<{ projectId: string }>()
+const props = defineProps<{ projectId: string }>()
 
 const projectStore = useProjectStore()
-const { detail } = storeToRefs(projectStore)
+const { detail, plotGraphId, characterGraphId, worldGraphId } = storeToRefs(projectStore)
+const route = useRoute()
 
-provideWorkspaceChatContext()
+/** 当前所在画布对应的 sub-graph；Overview 等非画布视图为 null。 */
+const currentGraphId = computed(() => {
+  switch (route.name) {
+    case 'workspace-plot':
+      return plotGraphId.value
+    case 'workspace-characters':
+    case 'workspace-character-detail':
+      return characterGraphId.value
+    case 'workspace-world':
+      return worldGraphId.value
+    default:
+      return null
+  }
+})
+
+const fileInput = ref<HTMLInputElement | null>(null)
+
+  async function handleExport() {
+  const story = plotGraphId.value
+  const characters = characterGraphId.value
+  const world = worldGraphId.value
+  if (!story || !characters || !world) {
+    window.alert('Project graphs are still loading. Try again in a moment.')
+    return
+  }
+  const [storyGraph, charactersGraph, worldGraph] = await Promise.all([
+    loadSubgraph(story),
+    loadSubgraph(characters),
+    loadSubgraph(world),
+  ])
+  downloadProjectOcFile(detail.value?.name ?? 'project', {
+    story: storyGraph,
+    characters: charactersGraph,
+    world: worldGraph,
+  })
+}
+
+function handleImport() {
+  if (!plotGraphId.value || !characterGraphId.value || !worldGraphId.value) {
+    window.alert('Project graphs are still loading. Try again in a moment.')
+    return
+  }
+  fileInput.value?.click()
+}
+
+async function onFilePicked(event: Event) {
+  const input = event.target as HTMLInputElement
+  const file = input.files?.[0]
+  input.value = ''
+  const story = plotGraphId.value
+  const characters = characterGraphId.value
+  const world = worldGraphId.value
+  if (!file || !story || !characters || !world) return
+  try {
+    const boards = await readProjectOcFile(file)
+    if (
+      !window.confirm(
+        'Importing will overwrite Story, Characters and Worldbuilding on this project. Continue?',
+      )
+    )
+      return
+    await saveSubgraph(story, boards.story)
+    await saveSubgraph(characters, boards.characters)
+    await saveSubgraph(world, boards.world)
+    await triggerGraphRefresh()
+  } catch (e) {
+    window.alert(e instanceof Error ? e.message : 'Import failed')
+  }
+}
+
+const settingsOpen = ref(false)
+function handleSettings() {
+  settingsOpen.value = true
+}
+
+async function handleSave() {
+  if (!currentGraphId.value) {
+    window.alert('Open a canvas (Story / Characters / Worldbuilding) before saving.')
+    return
+  }
+  await triggerGraphSave()
+}
+
+const { triggerGraphRefresh, triggerGraphSave, isSaving } = provideWorkspaceChatContext()
 
 const leftWidth = ref(Math.max(160, Number(localStorage.getItem('oc.leftWidth')) || 300))
 const rightWidth = ref(Math.max(500, Number(localStorage.getItem('oc.rightWidth')) || 520))
@@ -30,8 +109,8 @@ watch([leftWidth, rightWidth], ([l, r]) => {
   localStorage.setItem('oc.leftWidth', String(l))
   localStorage.setItem('oc.rightWidth', String(r))
 })
-const leftCollapsed = ref(false)
-const rightCollapsed = ref(false)
+const leftCollapsed = ref(localStorage.getItem('oc.leftCollapsed') === 'true')
+const rightCollapsed = ref(localStorage.getItem('oc.rightCollapsed') === 'true')
 const RAIL_WIDTH = 40
 const gridColumns = computed(
   () =>
@@ -87,7 +166,25 @@ watch(
 
 <template>
   <div class="workspace-shell">
-    <TopToolbar :project-name="projectName" :is-saving="false" />
+    <TopToolbar
+      :project-name="projectName"
+      :is-saving="isSaving"
+      @save="handleSave"
+      @settings="handleSettings"
+    />
+    <input
+      ref="fileInput"
+      type="file"
+      accept=".oc,application/json"
+      hidden
+      @change="onFilePicked"
+    />
+    <SettingsModal
+      :open="settingsOpen"
+      @close="settingsOpen = false"
+      @export="handleExport"
+      @import="handleImport"
+    />
 
     <main class="workspace-shell__body" :style="{ gridTemplateColumns: gridColumns }">
       <WorkspaceSidebar
@@ -121,8 +218,6 @@ watch(
         @mousedown="startResize('right', $event)"
       ></div>
     </main>
-
-    <StatusBar :status="mockWorkspaceStatus" />
   </div>
 </template>
 
