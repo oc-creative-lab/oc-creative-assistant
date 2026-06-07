@@ -7,7 +7,6 @@ import { useGraphPersistence } from '../../../composables/useGraphPersistence'
 import { useIndexingStatus } from '../../../composables/useIndexingStatus'
 import {
   injectWorkspaceGraphRefresh,
-  injectSetCanvasFocus,
 } from '../../../composables/useWorkspaceChatContext'
 import { useProjectStore } from '../../../stores/useProjectStore'
 import { useWorldViewStore } from '../../../stores/useWorldViewStore'

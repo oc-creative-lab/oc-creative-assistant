@@ -85,6 +85,8 @@ export interface CreativeFlowEdge {
   labelStyle?: CSSProperties
   labelBgStyle?: CSSProperties
   interactionWidth?: number
+  /** Vue Flow runtime selection state; not persisted to the backend. */
+  selected?: boolean
   data: CreativeEdgeData
 }
 
