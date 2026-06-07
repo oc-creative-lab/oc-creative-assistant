@@ -1,9 +1,11 @@
-"""跨 sub-graph 引用服务（first_revision 阶段 6）。
+"""Cross sub-graph reference service (first_revision phase 6).
 
-EdgeORM 只挂 project_id（不绑 graph_id），因此一条边天然可以连接不同 sub-graph
-的两个节点（同一项目即合法，由 graph_validation 的项目级校验保证）。本模块把
-“触达某节点、且另一端落在其它 sub-graph”的边汇总出来，支撑角色卡的反向引用区
-（如“小明 出现在 plot:第一章相遇 / 所属 world:火焰王国”）。
+EdgeORM only carries project_id (not graph_id), so an edge can naturally connect
+two nodes in different sub-graphs (valid as long as they are in the same project,
+guaranteed by graph_validation's project-level check). This module aggregates the
+edges that "touch a given node and whose other end lands in a different
+sub-graph", to support the back-reference section of a character card (e.g.
+"Xiaoming appears in plot:Chapter 1 Encounter / belongs to world:Flame Kingdom").
 """
 
 from __future__ import annotations
@@ -18,7 +20,7 @@ from app.services.graph_repository import require_project
 
 
 def _section_by_graph_id(project: ProjectORM) -> dict[str, str]:
-    """项目的 graph_id → section 反查表。"""
+    """The project's graph_id -> section reverse-lookup table."""
     mapping: dict[str, str] = {}
     if project.plot_graph_id:
         mapping[project.plot_graph_id] = "plot"
@@ -30,7 +32,7 @@ def _section_by_graph_id(project: ProjectORM) -> dict[str, str]:
 
 
 def get_node_cross_references(project_id: str, node_id: str) -> CrossReferenceResponse:
-    """返回该节点在其它 sub-graph 中被引用的所有位置。"""
+    """Return all places where this node is referenced in other sub-graphs."""
     with SessionLocal() as db:
         project = require_project(db, project_id)
         node = db.get(NodeORM, node_id)
@@ -55,7 +57,7 @@ def get_node_cross_references(project_id: str, node_id: str) -> CrossReferenceRe
             if other is None:
                 continue
             other_section = section_of.get(other.graph_id or "")
-            # 只保留跨 sub-graph 的引用（另一端在不同分区）。
+            # Keep only cross sub-graph references (the other end is in a different section).
             if other_section is None or other_section == own_section:
                 continue
             references.append(
@@ -65,7 +67,7 @@ def get_node_cross_references(project_id: str, node_id: str) -> CrossReferenceRe
                     other_title=other.title,
                     other_section=other_section,
                     relation_type=edge.relation_type or "relates_to",
-                    relation_label=edge.label or "关联",
+                    relation_label=edge.label or "related",
                     direction="outgoing" if is_outgoing else "incoming",
                 )
             )

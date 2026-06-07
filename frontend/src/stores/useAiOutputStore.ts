@@ -1,6 +1,6 @@
 import { defineStore } from 'pinia'
 
-/** 工作台右栏的一条 AI 输出卡片（second_revision 改点 B）。 */
+/** A single AI output card in the workspace right panel (second_revision change B). */
 export interface AiOutput {
   id: string
   type: 'search' | 'rag' | 'question' | 'feedback'
@@ -11,9 +11,9 @@ export interface AiOutput {
 }
 
 /**
- * 右栏 AI 输出流：时间线倒序卡片（最新在最上）。
+ * Right-panel AI output stream: timeline cards in chronological order (oldest on top).
  *
- * 工作台 agent 被动响应，产出按 type 分发成不同卡片 push 进来（W5 接 SSE）。
+ * The workspace agent responds passively; its output is dispatched by type into different cards and appended (W5 wires up SSE).
  */
 export const useAiOutputStore = defineStore('aiOutput', {
   state: () => ({
@@ -21,7 +21,7 @@ export const useAiOutputStore = defineStore('aiOutput', {
   }),
   actions: {
     push(output: Omit<AiOutput, 'id' | 'timestamp' | 'collapsed'>) {
-      this.outputs.unshift({
+      this.outputs.push({
         ...output,
         id: crypto.randomUUID(),
         timestamp: Date.now(),

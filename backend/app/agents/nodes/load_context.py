@@ -1,9 +1,11 @@
-"""读取会话元信息 + 最近消息 + 当前节点, 写入 AgentState 的记忆与上下文字段。
+"""Read session metadata + recent messages + current nodes, writing the memory and context fields of AgentState.
 
-本节点是图的"入口加载器", 后续 RAG / agent 节点都依赖它写入的快照。
-``world_brief`` 取自项目级 ProjectORM, 让多轮对话共享同一份世界观语境;
-``recent_message_window`` 与 summary_compress 节点的 ``keep_recent`` 配合,
-共同决定哪些消息"逐字喂", 哪些进入摘要。
+This node is the graph's "entry loader"; subsequent RAG / agent nodes all
+depend on the snapshot it writes. ``world_brief`` comes from the project-level
+ProjectORM, letting multi-turn conversations share one worldbuilding context;
+``recent_message_window`` works together with the summary_compress node's
+``keep_recent`` to jointly decide which messages are "fed verbatim" and which
+enter the summary.
 """
 
 from __future__ import annotations
@@ -20,11 +22,11 @@ from app.indexing.document_loader import node_to_current_payload
 
 
 def _empty_context() -> dict[str, Any]:
-    """返回所有"可能跨轮残留"的 AgentState 字段清零增量。
+    """Return a zeroing delta for all AgentState fields that "may linger across turns".
 
-    两个返回路径 (session 不存在 / 正常加载) 都基于这份零值起步, 防止
-    LangGraph 复用 checkpoint 时上一轮的 *_output 或 boundary_warnings
-    污染本轮装配器的输入。
+    Both return paths (session missing / normal load) start from these zero
+    values, preventing the previous turn's *_output or boundary_warnings from
+    contaminating this turn's assembler input when LangGraph reuses a checkpoint.
     """
     return {
         "world_brief": "",
@@ -42,11 +44,16 @@ def _empty_context() -> dict[str, Any]:
         "boundary_warnings": [],
         "staging_batch_id": None,
         "staging_count": 0,
+        "next_question_hint": "",
+        "deferred_fields": [],
+        "extraction_batch_id": None,
+        "extraction_count": 0,
+        "extraction_applied": [],
     }
 
 
 def load_context_node(state: AgentState) -> dict[str, Any]:
-    """从 SQLite 拉取上下文; session 不存在或未提供时返回空骨架。"""
+    """Pull context from SQLite; return an empty skeleton when the session is missing or not provided."""
     session_id = state.get("session_id", "")
     selected_ids = state.get("selected_node_ids") or []
 
@@ -63,7 +70,7 @@ def load_context_node(state: AgentState) -> dict[str, Any]:
         project = db.get(ProjectORM, session.project_id)
         world_brief = project.world_brief if project is not None else ""
 
-        # 最新项目种子（决策 4）：启动注入的低成本项目全貌快照。
+        # Latest project seed (decision 4): a low-cost full-project snapshot injected at startup.
         latest_seed = (
             db.query(ProjectSeedORM)
             .filter(ProjectSeedORM.project_id == session.project_id)
@@ -80,7 +87,7 @@ def load_context_node(state: AgentState) -> dict[str, Any]:
                 .limit(window)
             )
         )
-        # SQL 取倒序便于 LIMIT, 这里翻回时间正序喂给 prompt
+        # SQL fetches in descending order for LIMIT; flip back to chronological order to feed the prompt
         recent.reverse()
 
         current_node_payloads: list[Any] = []

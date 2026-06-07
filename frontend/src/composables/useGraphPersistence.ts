@@ -7,10 +7,10 @@ import { graphDtoToSnapshot, snapshotToSaveDto } from '../utils/graphTransform'
 const CANVAS_AUTO_SAVE_DELAY_MS = 1000
 
 /**
- * 可注入的加载 / 保存策略（first_revision 阶段 3）。
+ * Injectable load / save strategy (first_revision phase 3).
  *
- * 默认走默认项目维度（AppShell 单画布原行为）；工作台三视图按 sub-graph 维度
- * 注入 loadSubgraph / saveSubgraph，从而复用本 composable 的快照 + 防抖保存逻辑。
+ * By default it uses the default-project dimension (AppShell's original single-canvas behavior); the three workspace views
+ * inject loadSubgraph / saveSubgraph at the sub-graph dimension, thereby reusing this composable's snapshot + debounced save logic.
  */
 export interface GraphPersistenceLoaders {
   load: () => Promise<GraphDto>
@@ -18,11 +18,11 @@ export interface GraphPersistenceLoaders {
 }
 
 /**
- * 维护工作区 graph 的加载 / 保存 / 自动保存语义。
+ * Maintains the load / save / auto-save semantics of the workspace graph.
  *
- * 真正变更 graphSnapshot 的入口都走 setGraphSnapshot, 自动保存采用单一防抖
- * 队列避免并发覆盖。staging 接受后调 clearAutoSave 丢弃过期的待存快照,
- * 防止旧 snapshot 覆盖后端刚落地的新节点 / 新边。
+ * Every entry that actually mutates graphSnapshot goes through setGraphSnapshot; auto-save uses a single debounce
+ * queue to avoid concurrent overwrites. After staging is accepted, clearAutoSave is called to drop stale pending snapshots,
+ * preventing an old snapshot from overwriting the new nodes / new edges the backend just persisted.
  */
 export function useGraphPersistence(
   applyIndexingStatus: (indexing?: IndexingStatusDto) => void,

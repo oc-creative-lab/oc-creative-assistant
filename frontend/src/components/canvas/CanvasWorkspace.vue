@@ -20,34 +20,37 @@ import { useCanvasGraph } from '../../composables/useCanvasGraph'
 import { useComposerStore } from '../../stores/useComposerStore'
 import { useCenterStageStore } from '../../stores/useCenterStageStore'
 import CanvasContextMenu from './CanvasContextMenu.vue'
+import EdgeRelationMenu from './EdgeRelationMenu.vue'
 import CharacterNode from '../nodes/CharacterNode.vue'
 import IdeaNode from '../nodes/IdeaNode.vue'
 import PlotNode from '../nodes/PlotNode.vue'
 import ResearchNode from '../nodes/ResearchNode.vue'
 import StructureNode from '../nodes/StructureNode.vue'
 import WorldNode from '../nodes/WorldNode.vue'
-import OrthogonalEdge from './edges/OrthogonalEdge.vue'
+import CreativeBezierEdge from './edges/CreativeBezierEdge.vue'
 
 const FLOW_ID = 'oc-main-flow'
 
 /**
- * 创作画布组件。
+ * Creative canvas component.
  *
- * 本组件负责 Vue Flow 运行时交互、节点渲染, 以及外部 props (graphVersion /
- * createNodeRequest / highlightedXxxIds) 与本地 nodes/edges 的同步;
- * 涉及图内容增删改的核心操作集中在 useCanvasGraph, 关系类型 / 节点 clone
- * 等纯函数放在 utils/canvasRelations。
+ * This component handles Vue Flow runtime interactions, node rendering, and
+ * synchronization between external props (graphVersion / createNodeRequest /
+ * highlightedXxxIds) and the local nodes/edges; the core operations for
+ * adding/removing/editing graph content live in useCanvasGraph, while pure
+ * functions like relation types / node clone live in utils/canvasRelations.
  */
 const props = defineProps<{
   selectedNodeId: string
+  selectedEdgeId?: string
   initialNodes: CreativeFlowNode[]
   initialEdges: CreativeFlowEdge[]
   graphVersion: number
   createNodeRequest: { type: CreativeNodeType; nonce: number } | null
-  /* 由 AppShell 在 staging 接受后做差集计算的"刚出现"的 ID; 跑完动画后会清空 */
+  /* IDs that "just appeared", computed by AppShell as a diff after staging is accepted; cleared once the animation finishes */
   highlightedNodeIds: string[]
   highlightedEdgeIds: string[]
-  /* 右键空白处可新建的节点类型；SubgraphCanvas 按 sub-graph 传入，未传则给全部类型 */
+  /* Node types that can be created on right-clicking blank space; SubgraphCanvas passes them per sub-graph, defaults to all types if not provided */
   createTypes?: CreativeNodeType[]
 }>()
 
@@ -59,6 +62,7 @@ const emit = defineEmits<{
 }>()
 
 const flowShell = ref<HTMLElement | null>(null)
+const isMiddleMouseDown = ref(false)
 const selectedRelationType = ref<CreativeRelationType>(DEFAULT_RELATION_TYPE)
 const isRelationSelectOpen = ref(false)
 const skipNextFocus = ref(false)
@@ -71,16 +75,41 @@ function closeAllSelects(e: MouseEvent) {
   if (!target.closest('.ctx-menu')) {
     contextMenu.value.show = false
   }
+  if (!target.closest('.edge-relation-menu')) {
+    edgeRelationMenu.value.show = false
+  }
+}
+
+function onFlowShellMouseDown(event: MouseEvent) {
+  if (event.button !== 1) return
+  event.preventDefault()
+  isMiddleMouseDown.value = true
+}
+
+function onFlowShellMouseUp(event: MouseEvent) {
+  if (event.button === 1) {
+    isMiddleMouseDown.value = false
+  }
+}
+
+function clearMiddleMousePan() {
+  isMiddleMouseDown.value = false
 }
 
 onMounted(() => {
   document.addEventListener('click', closeAllSelects)
   window.addEventListener('keydown', handleCopyKey, true)
+  flowShell.value?.addEventListener('mousedown', onFlowShellMouseDown)
+  window.addEventListener('mouseup', onFlowShellMouseUp)
+  window.addEventListener('blur', clearMiddleMousePan)
 })
 
 onUnmounted(() => {
   document.removeEventListener('click', closeAllSelects)
   window.removeEventListener('keydown', handleCopyKey, true)
+  flowShell.value?.removeEventListener('mousedown', onFlowShellMouseDown)
+  window.removeEventListener('mouseup', onFlowShellMouseUp)
+  window.removeEventListener('blur', clearMiddleMousePan)
 })
 
 const nodes = ref<CreativeFlowNode[]>(
@@ -92,7 +121,7 @@ const edges = ref<CreativeFlowEdge[]>(
   props.initialEdges.map((edge) => normalizeEdge(edge, new Set(props.highlightedEdgeIds))),
 )
 
-/* 固定 flow id 确保工具栏操作绑定到当前画布实例, 不被页面上其他 Vue Flow 抢走 */
+/* A fixed flow id ensures toolbar actions bind to the current canvas instance, instead of being hijacked by other Vue Flow instances on the page */
 const {
   fitView,
   getViewport,
@@ -102,26 +131,28 @@ const {
   findEdge,
   onPaneContextMenu,
   onNodeContextMenu,
+  onEdgeContextMenu,
+  onSelectionContextMenu,
   onNodeDoubleClick,
+  onEdgeDoubleClick,
   screenToFlowCoordinate,
   getSelectedNodes,
 } = useVueFlow({ id: FLOW_ID })
 
 const {
-  handleAutoLayout,
   handleCreateNode,
   handleClearCanvas,
   handleConnect,
   handleNodeDragStop,
-  applyEdgeWaypoint,
+  updateEdgeRelation,
   updateNodeData,
   removeNode,
+  removeEdge,
 } = useCanvasGraph({
   nodes,
   edges,
   flowShell,
   selectedRelationType,
-  fitView,
   getViewport,
   onGraphChanged: (snapshot) => emit('graphChanged', snapshot),
   onNodeAdded: (node) => emit('nodeAdded', node),
@@ -129,8 +160,7 @@ const {
   onEdgeSelected: (id) => emit('edgeSelected', id),
 })
 
-provide('applyEdgeWaypoint', applyEdgeWaypoint)
-// 节点组件 inline edit 时调用，写回数据并触发自动保存（second_revision 改点 A）。
+// Called when a node component does an inline edit; writes data back and triggers auto-save.
 provide('updateNodeData', updateNodeData)
 
 const composer = useComposerStore()
@@ -150,33 +180,90 @@ const contextMenu = ref<{
   show: boolean
   x: number
   y: number
-  type: 'blank' | 'node'
+  type: 'blank' | 'node' | 'edge'
   nodeId: string
-}>({ show: false, x: 0, y: 0, type: 'blank', nodeId: '' })
+  edgeId: string
+  edgeLabel: string
+}>({ show: false, x: 0, y: 0, type: 'blank', nodeId: '', edgeId: '', edgeLabel: '' })
+
+const edgeRelationMenu = ref<{
+  show: boolean
+  x: number
+  y: number
+  edgeId: string
+  relationType: CreativeRelationType
+}>({ show: false, x: 0, y: 0, edgeId: '', relationType: DEFAULT_RELATION_TYPE })
+
+function closeEdgeRelationMenu() {
+  edgeRelationMenu.value.show = false
+}
 
 function closeContextMenu() {
   contextMenu.value.show = false
 }
 
+function pointerFromEvent(event: MouseEvent | TouchEvent): { x: number; y: number } {
+  if (event instanceof MouseEvent) {
+    return { x: event.clientX, y: event.clientY }
+  }
+  const touch = event.touches[0] ?? event.changedTouches[0]
+  return { x: touch?.clientX ?? 0, y: touch?.clientY ?? 0 }
+}
+
+/** Keep the menu on-screen; coordinates are viewport-based (Teleport to body). */
+function clampMenuPosition(x: number, y: number): { x: number; y: number } {
+  const pad = 8
+  const maxW = 200
+  const maxH = 260
+  return {
+    x: Math.max(pad, Math.min(x, window.innerWidth - maxW - pad)),
+    y: Math.max(pad, Math.min(y, window.innerHeight - maxH - pad)),
+  }
+}
+
+function openContextMenu(
+  event: MouseEvent | TouchEvent,
+  type: 'blank' | 'node' | 'edge',
+  target: { nodeId?: string; edgeId?: string; edgeLabel?: string } = {},
+) {
+  event.preventDefault()
+  closeEdgeRelationMenu()
+  const { x, y } = pointerFromEvent(event)
+  const point = clampMenuPosition(x, y)
+  contextMenu.value = {
+    show: true,
+    x: point.x,
+    y: point.y,
+    type,
+    nodeId: target.nodeId ?? '',
+    edgeId: target.edgeId ?? '',
+    edgeLabel: target.edgeLabel ?? '',
+  }
+}
+
 onPaneContextMenu((event) => {
-  const mouse = event as MouseEvent
-  mouse.preventDefault()
-  contextMenu.value = { show: true, x: mouse.clientX, y: mouse.clientY, type: 'blank', nodeId: '' }
+  openContextMenu(event as MouseEvent, 'blank')
 })
 
 onNodeContextMenu(({ event, node }) => {
-  const mouse = event as MouseEvent
-  mouse.preventDefault()
-  contextMenu.value = {
-    show: true,
-    x: mouse.clientX,
-    y: mouse.clientY,
-    type: 'node',
-    nodeId: node.id,
-  }
+  openContextMenu(event as MouseEvent, 'node', { nodeId: node.id })
 })
 
-// 双击节点 → 进入节点详情（中栏 NodeDetailView），带上当前数据快照。
+onEdgeContextMenu(({ event, edge }) => {
+  const relationType = (edge.data?.relationType ?? DEFAULT_RELATION_TYPE) as CreativeRelationType
+  const label = edge.data?.label || edge.label || getRelationLabel(relationType)
+  openContextMenu(event as MouseEvent, 'edge', { edgeId: edge.id, edgeLabel: String(label) })
+  skipNextFocus.value = true
+  emit('edgeSelected', edge.id)
+})
+
+onSelectionContextMenu(({ event, nodes }) => {
+  const target = nodes[nodes.length - 1] ?? getSelectedNodes.value.at(-1)
+  if (!target) return
+  openContextMenu(event, 'node', { nodeId: target.id })
+})
+
+// Double-click a node -> open node details (center NodeDetailView), carrying the current data snapshot.
 onNodeDoubleClick(({ node }) => {
   centerStage.openDetail(node.id, {
     id: node.id,
@@ -189,6 +276,29 @@ onNodeDoubleClick(({ node }) => {
     status: node.data?.status ?? 'draft',
   })
 })
+
+onEdgeDoubleClick(({ event, edge }) => {
+  event.preventDefault()
+  event.stopPropagation()
+  const { x, y } = pointerFromEvent(event)
+  const point = clampMenuPosition(x, y)
+  const relationType = (edge.data?.relationType ?? DEFAULT_RELATION_TYPE) as CreativeRelationType
+  edgeRelationMenu.value = {
+    show: true,
+    x: point.x,
+    y: point.y,
+    edgeId: edge.id,
+    relationType,
+  }
+  skipNextFocus.value = true
+  emit('edgeSelected', edge.id)
+})
+
+function handleEdgeRelationSelect(relationType: CreativeRelationType) {
+  if (!edgeRelationMenu.value.edgeId) return
+  updateEdgeRelation(edgeRelationMenu.value.edgeId, relationType)
+  closeEdgeRelationMenu()
+}
 
 function nodeRef(nodeId: string) {
   return nodes.value.find((node) => node.id === nodeId)
@@ -215,7 +325,7 @@ function handleMenuDuplicate() {
     const created = nodes.value[nodes.value.length - 1]
     if (created) {
       updateNodeData(created.id, {
-        title: `${src.data.title} 副本`,
+        title: `${src.data.title} copy`,
         content: src.data.content,
       })
     }
@@ -228,19 +338,58 @@ function handleMenuRemove() {
   closeContextMenu()
 }
 
+function handleMenuRemoveClick() {
+  if (contextMenu.value.type === 'edge') {
+    handleMenuEdgeRemove()
+  } else {
+    handleMenuRemove()
+  }
+}
+
+function handleMenuEdgeRemove() {
+  if (contextMenu.value.edgeId) removeEdge(contextMenu.value.edgeId)
+  closeContextMenu()
+}
+
+function handleMenuEdgeChangeRelation() {
+  const { edgeId, x, y } = contextMenu.value
+  if (!edgeId) return
+  const edge = edges.value.find((item) => item.id === edgeId)
+  const relationType = (edge?.data?.relationType ?? DEFAULT_RELATION_TYPE) as CreativeRelationType
+  edgeRelationMenu.value = {
+    show: true,
+    x,
+    y,
+    edgeId,
+    relationType,
+  }
+  closeContextMenu()
+}
+
 function quoteNodes(refs: { id: string; type: string; title: string }[]) {
   if (refs.length) composer.addReferences(refs)
 }
 
 function handleMenuQuote() {
-  const src = nodeRef(contextMenu.value.nodeId)
-  if (src) {
-    quoteNodes([{ id: src.id, type: src.data.nodeType ?? src.type ?? 'idea', title: src.data.title }])
+  const selected = getSelectedNodes.value
+  if (selected.length > 1) {
+    quoteNodes(
+      selected.map((node) => ({
+        id: node.id,
+        type: (node.data?.nodeType ?? node.type ?? 'idea') as string,
+        title: node.data?.title || 'Untitled',
+      })),
+    )
+  } else {
+    const src = nodeRef(contextMenu.value.nodeId)
+    if (src) {
+      quoteNodes([{ id: src.id, type: src.data.nodeType ?? src.type ?? 'idea', title: src.data.title }])
+    }
   }
   closeContextMenu()
 }
 
-/** Ctrl/Cmd+C：把当前多选的节点复制成引用卡片到底部对话框（改点 C）。 */
+/** Ctrl/Cmd+C: copy the currently multi-selected nodes as reference cards into the bottom composer. */
 function handleCopyKey(event: KeyboardEvent) {
   if (!((event.ctrlKey || event.metaKey) && event.key === 'c')) return
   const selected = getSelectedNodes.value
@@ -250,20 +399,21 @@ function handleCopyKey(event: KeyboardEvent) {
     selected.map((node) => ({
       id: node.id,
       type: (node.data?.nodeType ?? node.type ?? 'idea') as string,
-      title: node.data?.title || '未命名',
+      title: node.data?.title || 'Untitled',
     })),
   )
 }
 
 /**
- * 更新画布节点选中态, 并按需聚焦视口。
+ * Update the selected state of canvas nodes, and focus the viewport as needed.
  *
- * 视觉层面的选中标记由本组件维护; 业务侧的"当前选中"由 AppShell 经
- * props.selectedNodeId 推回, 形成单向数据流。
+ * The visual selection marker is maintained by this component; the business-side
+ * "current selection" is pushed back by AppShell via props.selectedNodeId,
+ * forming a one-way data flow.
  *
  * Args:
- *   nodeId: 需要选中的节点 ID。
- *   shouldFocus: 是否将视口移动到该节点附近。
+ *   nodeId: ID of the node to select.
+ *   shouldFocus: whether to move the viewport near that node.
  */
  function selectNode(nodeId: string, shouldFocus = false) {
   for (const node of nodes.value) {
@@ -284,19 +434,45 @@ function handleCopyKey(event: KeyboardEvent) {
   })
 }
 
-/** 将 Vue Flow 节点点击事件上抛给 AppShell 维护全局选中对象。 */
+/** Bubble Vue Flow node click events up to AppShell to maintain the global selection. */
 function handleNodeClick(event: NodeMouseEvent) {
   skipNextFocus.value = true
   emit('nodeSelected', event.node.id)
 }
 
-/** 将 Vue Flow 连线点击事件上抛给 AppShell 维护全局选中对象。 */
+/** Sync primary selection after box-select; keep isActive aligned with Vue Flow selection. */
+function handleSelectionChange(params: { nodes: { id: string }[] }) {
+  const selectedIds = new Set(params.nodes.map((node) => node.id))
+  for (const node of nodes.value) {
+    const active = selectedIds.has(node.id)
+    if (node.data.isActive !== active) {
+      node.data.isActive = active
+    }
+  }
+  skipNextFocus.value = true
+  if (params.nodes.length === 0) {
+    emit('nodeSelected', '')
+    return
+  }
+  const primary = params.nodes[params.nodes.length - 1]
+  emit('nodeSelected', primary.id)
+}
+
+function syncEdgePresentation(highlighted = new Set(props.highlightedEdgeIds)) {
+  const selectedId = props.selectedEdgeId ?? ''
+  edges.value = edges.value.map((edge) =>
+    normalizeEdge(edge, highlighted, edge.id === selectedId),
+  )
+}
+
+/** Bubble Vue Flow edge click events up to AppShell to maintain the global selection. */
 function handleEdgeClick(event: { edge: Edge }) {
   skipNextFocus.value = true
   emit('edgeSelected', event.edge.id)
+  syncEdgePresentation()
 }
 
-/** 将视口调整到完整 graph 范围, 便于节点变多后找回全局结构。 */
+/** Fit the viewport to the full graph extent, making it easier to regain the overall structure as nodes grow. */
 function handleFitView() {
   void fitView({ padding: 0.2, duration: 260 })
 }
@@ -320,14 +496,22 @@ watch(
 )
 
 watch(
+  () => props.selectedEdgeId,
+  () => {
+    syncEdgePresentation()
+  },
+  { immediate: true },
+)
+
+watch(
   () => props.graphVersion,
   () => {
-    /* 右侧详情编辑或后端恢复后, AppShell 会把新的权威快照推回画布 */
+    /* After detail edits on the right or a backend restore, AppShell pushes the new authoritative snapshot back to the canvas */
     nodes.value = props.initialNodes.map((node) =>
       cloneNode(node, props.selectedNodeId, new Set(props.highlightedNodeIds)),
     )
     edges.value = props.initialEdges.map((edge) =>
-      normalizeEdge(edge, new Set(props.highlightedEdgeIds)),
+      normalizeEdge(edge, new Set(props.highlightedEdgeIds), edge.id === (props.selectedEdgeId ?? '')),
     )
   },
 )
@@ -346,11 +530,17 @@ watch(
     }
 
     edges.value.forEach((edge) => {
-      const normalized = normalizeEdge(edge, highlightedEdges)
+      const normalized = normalizeEdge(
+        edge,
+        highlightedEdges,
+        edge.id === (props.selectedEdgeId ?? ''),
+      )
       edge.class = normalized.class
+      edge.selected = normalized.selected
       const internal = findEdge(edge.id)
       if (internal) {
         internal.class = normalized.class
+        internal.selected = Boolean(normalized.selected)
       }
     })
   },
@@ -367,10 +557,15 @@ watch(
 
 <template>
   <section class="canvas-workspace">
-    <!-- 画布工具栏：只处理画布相关操作 -->
+    <!-- Canvas toolbar -->
     <header class="canvas-toolbar">
-      <div class="mode-actions" aria-label="canvas mode">
-        <span class="interaction-hint">Click to select · drag handles to connect · double-click to open</span>
+      <div class="toolbar-group toolbar-group--create">
+        <slot name="toolbar-leading" />
+      </div>
+
+      <div class="toolbar-sep" aria-hidden="true" />
+
+      <div class="toolbar-group toolbar-group--canvas">
         <label class="relation-picker" for="new-edge-relation">
           Relation
           <div class="custom-select-container">
@@ -395,19 +590,30 @@ watch(
             </ul>
           </div>
         </label>
-        <button type="button" @click="handleAutoLayout">Auto layout</button>
       </div>
 
-      <div class="canvas-actions" aria-label="canvas tools">
-        <button type="button" title="Zoom in" @click="handleZoomIn">+</button>
-        <button type="button" title="Zoom out" @click="handleZoomOut">-</button>
-        <button type="button" @click="handleFitView">Fit</button>
-        <button type="button" class="danger" @click="handleClearCanvas">Clear</button>
+      <div class="toolbar-spacer" />
+
+      <div class="toolbar-group toolbar-group--status">
+        <slot name="toolbar-trailing" />
+      </div>
+
+      <div class="toolbar-sep" aria-hidden="true" />
+
+      <div class="toolbar-group toolbar-group--view canvas-actions" aria-label="canvas view">
+        <button type="button" class="toolbar-btn toolbar-btn--icon" title="Zoom in" @click="handleZoomIn">+</button>
+        <button type="button" class="toolbar-btn toolbar-btn--icon" title="Zoom out" @click="handleZoomOut">−</button>
+        <button type="button" class="toolbar-btn" @click="handleFitView">Fit</button>
+        <button type="button" class="toolbar-btn toolbar-btn--danger" @click="handleClearCanvas">Clear</button>
       </div>
     </header>
 
-    <div ref="flowShell" class="flow-shell">
-      <!-- v-model 绑定本地 refs；拖拽、连线和标签恢复后由事件把可保存快照抛给 AppShell。 -->
+    <div
+      ref="flowShell"
+      class="flow-shell"
+      :class="{ 'is-middle-pan-ready': isMiddleMouseDown }"
+    >
+      <!-- v-model binds local refs; after drag, connect, and label restore, events bubble a savable snapshot up to AppShell. -->
       <VueFlow
         :id="FLOW_ID"
         v-model:nodes="nodes"
@@ -423,13 +629,16 @@ watch(
         :connect-on-click="false"
         :connection-radius="24"
         :fit-view-on-init="true"
-        :selection-key-code="'Shift'"
-        :multi-selection-key-code="['Shift', 'Meta', 'Control']"
+        :pan-on-drag="[1]"
+        :selection-on-drag="true"
+        :selection-key-code="true"
+        :multi-selection-key-code="null"
         :selection-mode="SelectionMode.Partial"
         @connect="handleConnect"
         @node-click="handleNodeClick"
         @edge-click="handleEdgeClick"
         @node-drag-stop="handleNodeDragStop"
+        @selection-change="handleSelectionChange"
       >
         <template #node-character="nodeProps">
           <CharacterNode v-bind="nodeProps" />
@@ -455,11 +664,28 @@ watch(
           <StructureNode v-bind="nodeProps" />
         </template>
 
-        <template #edge-orthogonal="edgeProps">
-          <OrthogonalEdge v-bind="edgeProps" />
+        <template #edge-bezier="edgeProps">
+          <CreativeBezierEdge v-bind="edgeProps" />
         </template>
       </VueFlow>
+
+      <!-- Interaction hint, lightly penciled into the bottom-left corner of the canvas -->
+      <ul class="canvas-hint" aria-hidden="true">
+        <li><span class="canvas-hint__key">Select</span><span>Left-click</span></li>
+        <li><span class="canvas-hint__key">Edge</span><span>Click · Right-click</span></li>
+        <li><span class="canvas-hint__key">Menu</span><span>Right-click</span></li>
+        <li><span class="canvas-hint__key">Pan</span><span>Middle-drag</span></li>
+      </ul>
     </div>
+
+    <EdgeRelationMenu
+      :show="edgeRelationMenu.show"
+      :x="edgeRelationMenu.x"
+      :y="edgeRelationMenu.y"
+      :current-type="edgeRelationMenu.relationType"
+      @select="handleEdgeRelationSelect"
+      @close="closeEdgeRelationMenu"
+    />
 
     <CanvasContextMenu
       :show="contextMenu.show"
@@ -467,11 +693,13 @@ watch(
       :y="contextMenu.y"
       :menu-type="contextMenu.type"
       :create-types="blankCreateTypes"
+      :edge-label="contextMenu.edgeLabel"
       @create="handleMenuCreate"
       @edit="handleMenuEdit"
       @duplicate="handleMenuDuplicate"
-      @remove="handleMenuRemove"
+      @remove="handleMenuRemoveClick"
       @quote="handleMenuQuote"
+      @change-relation="handleMenuEdgeChangeRelation"
       @close="closeContextMenu"
     />
   </section>

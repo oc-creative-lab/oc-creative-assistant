@@ -6,7 +6,7 @@ import NodeHandles from './NodeHandles.vue'
 import InlineEditableText from '../canvas/InlineEditableText.vue'
 
 /**
- * 剧情节点卡片。标题与简介支持 inline edit（second_revision 改点 A）。
+ * Plot node card. Title and summary support inline edit.
  */
 const props = defineProps<NodeProps<CreativeNodeData>>()
 const updateNodeData = inject<(id: string, patch: { title?: string; content?: string }) => void>(

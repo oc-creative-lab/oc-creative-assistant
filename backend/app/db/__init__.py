@@ -1,1 +1,1 @@
-"""数据库访问层包。"""
+"""Database access layer package."""

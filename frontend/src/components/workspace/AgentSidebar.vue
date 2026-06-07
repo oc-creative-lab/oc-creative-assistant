@@ -4,10 +4,11 @@ import EdgeDetailPanel from './EdgeDetailPanel.vue'
 import NodeDetailPanel from './NodeDetailPanel.vue'
 
 /**
- * 右侧详情面板的薄路由容器。
+ * Thin routing container for the right-hand detail panel.
  *
- * 选中节点时挂载 NodeDetailPanel; 选中连线时挂载 EdgeDetailPanel; 否则
- * 显示空状态。所有编辑事件原样上抛, 真正的落库由上层 AppShell 处理。
+ * Mounts NodeDetailPanel when a node is selected; EdgeDetailPanel when an edge
+ * is selected; otherwise shows an empty state. All edit events are re-emitted
+ * as-is, and the actual persistence is handled by the parent AppShell.
  */
 defineProps<{
   selectedNode: CreativeFlowNode | null
@@ -41,8 +42,8 @@ defineEmits<{
     />
 
     <section v-else class="empty-state">
-      <p>未选择对象</p>
-      <span>选择一个节点编辑内容，或选择一条连线编辑关系标签。</span>
+      <p>Nothing selected</p>
+      <span>Select a node to edit its content, or select an edge to edit its relation label.</span>
     </section>
   </aside>
 </template>

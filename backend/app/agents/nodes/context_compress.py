@@ -1,8 +1,10 @@
-"""检索上下文 token 压缩节点。
+"""Retrieval context token compression node.
 
-避免长项目把 prompt 顶爆 LLM 的窗口: 用 tiktoken 累加 merged_context 的
-token 数, 超出 ``context_token_cap`` 后按当前顺序截断, 保留前面更相关的
-条目。即便单条超额也至少保留首项, 防止全部裁空。
+Prevents long projects from blowing past the LLM's window: uses tiktoken to
+accumulate the token count of merged_context, and once it exceeds
+``context_token_cap``, truncates in the current order, keeping the earlier,
+more relevant items. Even if a single item is over the limit, at least the
+first item is kept to avoid trimming everything to empty.
 """
 
 from __future__ import annotations
@@ -16,8 +18,9 @@ from app.core.settings import get_agent_settings
 from app.schemas import RagMergedContextItem
 
 
-# cl100k_base 是 GPT-3.5/4 / DeepSeek 等主流模型的事实标准编码; 直接用现成
-# 编码避免每次按 model 名字解析, 也无需联网下载。
+# cl100k_base is the de facto standard encoding for mainstream models like
+# GPT-3.5/4 and DeepSeek; using a ready-made encoding directly avoids resolving
+# by model name each time and needs no network download.
 _encoder = tiktoken.get_encoding("cl100k_base")
 
 

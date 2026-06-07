@@ -1,1 +1,1 @@
-"""向量索引基础设施包。"""
+"""Vector index infrastructure package."""

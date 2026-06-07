@@ -8,11 +8,14 @@ import InlineEntityCard from '../components/chat/InlineEntityCard.vue'
 import StagingPanel from '../components/chat/StagingPanel.vue'
 
 /**
- * 全屏聊天工作台（first_revision 阶段 4，核心创新）。
+ * Full-screen chat workspace (first_revision stage 4, the core innovation).
  *
- * 左：对话流（用户自由说想法，Chat Agent A 流式回复并自然抛问题）；
- * 右：StagingPanel（复用），实时展示后台 structured_extractor 抽出的待审实体；
- * 顶：Exit回首页；底：输入框。开启 extraction_enabled 让 B-agent 介入。
+ * Left: the conversation stream (the user freely shares ideas, Chat Agent A
+ * streams replies and naturally raises questions).
+ * Right: StagingPanel (reused), showing in real time the pending entities that
+ * the background structured_extractor pulls out.
+ * Top: Exit back to home; bottom: the input box. Turning on extraction_enabled
+ * lets the B-agent step in.
  */
 const props = defineProps<{ projectId: string }>()
 const router = useRouter()
@@ -49,12 +52,12 @@ async function handleSend() {
   await chat.send(text)
 }
 
-/** Exit聊天 = 会话结束，触发一次种子重建（first_revision 阶段 5 触发器之一）。 */
+/** Exiting chat = the session ends, triggering one seed rebuild (one of the first_revision stage 5 triggers). */
 async function handleExit() {
   try {
     await rebuildProjectSeed(props.projectId)
   } catch {
-    /* 种子重建失败不应阻断Exit */
+    /* A failed seed rebuild should not block exiting */
   }
   router.push('/')
 }

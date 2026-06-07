@@ -1,8 +1,10 @@
-"""对话与 staging 的数据库操作 helper。
+"""Database operation helpers for chat and staging.
 
-属于服务层与 ORM 之间的持久化边界, 负责会话、消息、staging 三张表的 CRUD。
-事务策略与 graph_repository 对齐: 写操作由调用方包在 ``SessionLocal.begin``
-事务内, 读操作各自打开独立 session。
+This is the persistence boundary between the service layer and the ORM,
+responsible for CRUD on the three tables: sessions, messages, and staging.
+The transaction strategy aligns with graph_repository: write operations are
+wrapped by the caller in a ``SessionLocal.begin`` transaction, while read
+operations each open their own independent session.
 """
 
 from __future__ import annotations
@@ -20,12 +22,12 @@ from app.schemas import AgentStagingCreateItem
 
 
 def new_id() -> str:
-    """生成 32 位 hex UUID, 作为表主键和 LangGraph thread_id。"""
+    """Generate a 32-character hex UUID, used as table primary key and LangGraph thread_id."""
     return uuid.uuid4().hex
 
 
 def require_session(db: Session, session_id: str) -> ChatSessionORM:
-    """读取会话并确保存在; 不存在抛 404。"""
+    """Read a session and ensure it exists; raises 404 if not."""
     session = db.get(ChatSessionORM, session_id)
     if session is None:
         raise HTTPException(status_code=404, detail="Chat session not found")
@@ -33,7 +35,7 @@ def require_session(db: Session, session_id: str) -> ChatSessionORM:
 
 
 def require_message(db: Session, message_id: str) -> ChatMessageORM:
-    """读取消息并确保存在; 不存在抛 404。"""
+    """Read a message and ensure it exists; raises 404 if not."""
     message = db.get(ChatMessageORM, message_id)
     if message is None:
         raise HTTPException(status_code=404, detail="Chat message not found")
@@ -41,7 +43,7 @@ def require_message(db: Session, message_id: str) -> ChatMessageORM:
 
 
 def require_staging(db: Session, staging_id: str) -> AgentStagingORM:
-    """读取 staging 并确保存在; 不存在抛 404。"""
+    """Read a staging record and ensure it exists; raises 404 if not."""
     record = db.get(AgentStagingORM, staging_id)
     if record is None:
         raise HTTPException(status_code=404, detail="Staging item not found")
@@ -49,7 +51,7 @@ def require_staging(db: Session, staging_id: str) -> AgentStagingORM:
 
 
 def insert_session(db: Session, *, project_id: str, title: str = "") -> ChatSessionORM:
-    """创建会话, 自动分配 id; ``thread_id`` 直接用同一个 id, 一一对应。"""
+    """Create a session, auto-assigning an id; ``thread_id`` reuses the same id, one-to-one."""
     session_id = new_id()
     record = ChatSessionORM(
         id=session_id,
@@ -64,7 +66,7 @@ def insert_session(db: Session, *, project_id: str, title: str = "") -> ChatSess
 
 
 def list_project_sessions(db: Session, project_id: str) -> list[ChatSessionORM]:
-    """列出项目下的会话, 最新创建在前。"""
+    """List sessions under a project, newest created first."""
     return list(
         db.scalars(
             select(ChatSessionORM)
@@ -75,7 +77,7 @@ def list_project_sessions(db: Session, project_id: str) -> list[ChatSessionORM]:
 
 
 def list_session_messages(db: Session, session_id: str) -> list[ChatMessageORM]:
-    """列出会话消息, 时间正序。"""
+    """List session messages in chronological order."""
     return list(
         db.scalars(
             select(ChatMessageORM)
@@ -93,7 +95,7 @@ def append_message(
     content: str,
     meta: dict[str, Any] | None = None,
 ) -> ChatMessageORM:
-    """追加一条消息, 不修改既有记录。"""
+    """Append a message without modifying existing records."""
     record = ChatMessageORM(
         id=new_id(),
         session_id=session_id,
@@ -115,7 +117,7 @@ def insert_staging_batch(
     agent_type: str,
     items: list[AgentStagingCreateItem],
 ) -> tuple[str, list[AgentStagingORM]]:
-    """把同一 Agent turn 的多条变更落入 staging 表, 共享同一 batch_id。"""
+    """Persist multiple changes from the same Agent turn into the staging table, sharing one batch_id."""
     batch_id = new_id()
     records: list[AgentStagingORM] = []
     for index, item in enumerate(items):
@@ -146,7 +148,7 @@ def list_staging_by_session(
     session_id: str,
     status: str | None = None,
 ) -> list[AgentStagingORM]:
-    """按会话列出 staging, 可按 status 过滤; 排序按 batch 创建时间 + 批内顺序。"""
+    """List staging by session, optionally filtered by status; ordered by batch creation time + order within batch."""
     stmt = (
         select(AgentStagingORM)
         .where(AgentStagingORM.session_id == session_id)
@@ -162,7 +164,7 @@ def list_staging_by_project(
     project_id: str,
     status: str | None = None,
 ) -> list[AgentStagingORM]:
-    """按项目列出 staging（first_revision 阶段 4：ChatWorkspace 跨会话汇总待审）。"""
+    """List staging by project (first_revision phase 4: ChatWorkspace cross-session pending-review aggregation)."""
     stmt = (
         select(AgentStagingORM)
         .where(AgentStagingORM.project_id == project_id)
@@ -174,7 +176,7 @@ def list_staging_by_project(
 
 
 def list_staging_by_batch(db: Session, batch_id: str) -> list[AgentStagingORM]:
-    """读取指定 batch 的所有变更, 按批内顺序返回。"""
+    """Read all changes for a given batch, returned in order within the batch."""
     return list(
         db.scalars(
             select(AgentStagingORM)
@@ -190,7 +192,7 @@ def transition_staging(
     new_status: str,
     payload_edited: dict[str, Any] | None = None,
 ) -> None:
-    """状态机迁移; 只允许从 pending 转出, 已结案再次操作返回 409。"""
+    """State machine transition; only transitions out of pending are allowed, operating again on a resolved record returns 409."""
     if record.status != "pending":
         raise HTTPException(
             status_code=409,
@@ -209,11 +211,13 @@ def update_session_summary(
     key_facts: list[str],
     message_count: int,
 ) -> None:
-    """写回会话摘要 + 核心事实层 + 高水位; 不存在则静默跳过。
+    """Write back the conversation summary + core facts layer + high-water mark; silently skips if it does not exist.
 
-    key_facts 设计为"累积合并": 新 facts 跟旧的去重后拼接, 让早期沉淀的
-    关键设定不会被本轮覆盖。重复 fact 用大小写不敏感 + 去空白来粗判,
-    LLM 大概率重复表述会被吸收。
+    key_facts is designed as a "cumulative merge": new facts are deduplicated
+    against the old ones and appended, so key settings accumulated early are not
+    overwritten by this round. Duplicate facts are roughly detected
+    case-insensitively + whitespace-stripped, so the LLM's likely repeated
+    phrasings get absorbed.
     """
     record = db.get(ChatSessionORM, session_id)
     if record is None:

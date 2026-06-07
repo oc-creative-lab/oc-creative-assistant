@@ -1,7 +1,8 @@
-"""SQLAlchemy 数据库连接与初始化。
+"""SQLAlchemy database connection and initialization.
 
-本模块只负责 SQLite engine、Session 工厂、ORM metadata 初始化和旧库轻量兼容。
-业务校验放在服务层，向量索引放在 `app.indexing`。
+This module only handles the SQLite engine, the Session factory, ORM metadata
+initialization, and lightweight compatibility for legacy databases. Business
+validation lives in the service layer, and the vector index in `app.indexing`.
 """
 
 import json
@@ -18,21 +19,21 @@ DATABASE_URL = f"sqlite:///{DATABASE_PATH.as_posix()}"
 
 
 class Base(DeclarativeBase):
-    """所有 ORM 模型共用的 declarative base。"""
+    """The declarative base shared by all ORM models."""
 
 
-# 本地 SQLite 文件放在 backend/data 下；路径集中在 app.core.paths，避免受包层级影响。
+# The local SQLite file lives under backend/data; the path is centralized in app.core.paths to avoid being affected by package hierarchy levels.
 DATABASE_PATH.parent.mkdir(parents=True, exist_ok=True)
 
 
 def _deserialize_json(value: str | None) -> Any:
-    """反序列化 SQLite JSON 字段，并兼容旧库中的纯字符串 meta。
+    """Deserialize a SQLite JSON field, while staying compatible with plain-string meta in legacy databases.
 
     Args:
-        value: SQLAlchemy JSON 反序列化前的原始文本。
+        value: The raw text before SQLAlchemy JSON deserialization.
 
     Returns:
-        解析后的 Python 对象；旧的非 JSON 字符串会原样返回。
+        The parsed Python object; legacy non-JSON strings are returned as-is.
     """
     if value is None:
         return {}
@@ -53,9 +54,9 @@ engine = create_engine(
 
 @event.listens_for(engine, "connect")
 def enable_sqlite_foreign_keys(dbapi_connection, _connection_record) -> None:
-    """为每个 SQLite 连接启用外键约束。
+    """Enable foreign key constraints for each SQLite connection.
 
-    SQLite 默认不强制外键；这里保证 `ondelete=\"CASCADE\"` 在桌面本地库中真实生效。
+    SQLite does not enforce foreign keys by default; this ensures `ondelete=\"CASCADE\"` actually takes effect in the local desktop database.
     """
     if isinstance(dbapi_connection, SQLiteConnection):
         cursor = dbapi_connection.cursor()
@@ -67,8 +68,8 @@ SessionLocal = sessionmaker(bind=engine, autoflush=False, expire_on_commit=False
 
 
 def init_db() -> None:
-    """初始化 ORM 表结构，并为旧 PoC 数据库补齐轻量兼容字段。"""
-    # 延迟导入模型，确保 Base.metadata 已注册所有表后再 create_all。
+    """Initialize the ORM table schema and backfill lightweight compatibility fields for legacy PoC databases."""
+    # Import the models lazily, ensuring Base.metadata has registered all tables before create_all.
     from app.db.models import (  # noqa: F401
         AgentStagingORM,
         ChatMessageORM,
@@ -86,9 +87,10 @@ def init_db() -> None:
 
 
 def _ensure_sqlite_schema_compatibility() -> None:
-    """为旧 PoC 数据库补齐新增列。
+    """Backfill newly added columns for legacy PoC databases.
 
-    当前项目尚未引入完整迁移系统；这里只处理已上线本地库需要的最小兼容。
+    The project has not yet introduced a full migration system; this only handles
+    the minimum compatibility needed for already-shipped local databases.
     """
     with engine.begin() as connection:
         edge_columns = {
@@ -124,11 +126,15 @@ def _ensure_sqlite_schema_compatibility() -> None:
                 "ALTER TABLE chat_sessions ADD COLUMN summary_message_count INTEGER NOT NULL DEFAULT 0"
             )
 
-        # first_revision 阶段 1：多 sub-graph 架构需要的新增列。
-        # create_all 只建新表(graphs / project_seeds)，不会给旧表补列，这里手动补。
+        # first_revision phase 1: new columns needed by the multi sub-graph architecture.
+        # create_all only creates the new tables (graphs / project_seeds) and does not add columns to old tables, so add them manually here.
         if "description" not in project_columns:
             connection.exec_driver_sql(
                 "ALTER TABLE projects ADD COLUMN description TEXT NOT NULL DEFAULT ''"
+            )
+        if "cover_image" not in project_columns:
+            connection.exec_driver_sql(
+                "ALTER TABLE projects ADD COLUMN cover_image TEXT NOT NULL DEFAULT ''"
             )
         for column in ("plot_graph_id", "character_graph_id", "world_graph_id"):
             if column not in project_columns:
@@ -144,8 +150,8 @@ def _ensure_sqlite_schema_compatibility() -> None:
             connection.exec_driver_sql("ALTER TABLE nodes ADD COLUMN graph_id VARCHAR")
 
 
-# node_type → sub-graph section 的归属规则。
-# 决策：plot/character/world 各归本类；idea/research/structure 等其余类型暂归 plot。
+# Assignment rules for node_type → sub-graph section.
+# Decision: plot/character/world each belong to their own section; all other types such as idea/research/structure are temporarily assigned to plot.
 _SECTION_BY_NODE_TYPE: dict[str, str] = {
     "character": "character",
     "worldbuilding": "world",
@@ -155,10 +161,12 @@ _DEFAULT_SECTION = "plot"
 
 
 def _ensure_subgraph_backfill() -> None:
-    """为没有 sub-graph 的旧项目回填三个 sub-graph，并把现有节点归位。
+    """Backfill three sub-graphs for legacy projects that lack them, and place existing nodes accordingly.
 
-    幂等：只处理 ``plot_graph_id`` 仍为空的项目；已迁移项目跳过。
-    迁移不破坏旧数据——节点 / 边记录原样保留，仅补 ``graph_id`` 维度。
+    Idempotent: only handles projects whose ``plot_graph_id`` is still empty;
+    already-migrated projects are skipped.
+    The migration does not break legacy data — node / edge records are kept as-is,
+    only the ``graph_id`` dimension is added.
     """
     import uuid
 
@@ -168,7 +176,7 @@ def _ensure_subgraph_backfill() -> None:
         projects = session.query(ProjectORM).all()
         for project in projects:
             if project.plot_graph_id:
-                continue  # 已迁移
+                continue  # already migrated
 
             graph_ids: dict[str, str] = {}
             for section in ("plot", "character", "world"):

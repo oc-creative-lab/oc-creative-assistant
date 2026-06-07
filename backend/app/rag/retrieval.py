@@ -1,7 +1,8 @@
-"""RAG 检索与上下文合并。
+"""RAG retrieval and context merging.
 
-本模块负责从画布 graph 中抽取一跳关系上下文，并通过向量索引寻找语义相关节点，
-最后合并去重成前端和 prompt 可使用的上下文列表。
+This module is responsible for extracting one-hop relation context from the canvas
+graph, finding semantically related nodes via the vector index, and finally merging
+and deduplicating them into a context list usable by the frontend and the prompt.
 """
 
 from __future__ import annotations
@@ -23,17 +24,18 @@ def build_graph_context(
     nodes: list[NodeORM],
     edges: list[EdgeORM],
 ) -> list[RagGraphContextItem]:
-    """构建一跳图关系上下文。
+    """Build the one-hop graph relation context.
 
-    画布连线是用户显式建立的创作关系，因此优先级高于语义相似度。
+    Canvas edges are creative relations the user explicitly established, so they take
+    priority over semantic similarity.
 
     Args:
-        node_id: 当前节点 ID。
-        nodes: 当前项目完整节点快照。
-        edges: 当前项目完整边快照。
+        node_id: The current node ID.
+        nodes: The full node snapshot of the current project.
+        edges: The full edge snapshot of the current project.
 
     Returns:
-        与当前节点直接相连的图关系上下文。
+        The graph relation context directly connected to the current node.
     """
     node_by_id = {node.id: node for node in nodes}
     context: list[RagGraphContextItem] = []
@@ -49,7 +51,7 @@ def build_graph_context(
             continue
 
         if neighbor is None:
-            # 保存层已校验端点；这里兜底跳过脏数据，避免 RAG 接口整体失败。
+            # The save layer already validates endpoints; here we defensively skip dirty data to avoid failing the whole RAG endpoint.
             continue
 
         context.append(
@@ -74,17 +76,18 @@ def build_project_vector_context(
     top_k: int,
     node_type: str | None = None,
 ) -> tuple[list[RagVectorContextItem], str, str | None]:
-    """构建项目级向量检索上下文。
+    """Build the project-level vector retrieval context.
 
     Args:
-        project_id: 当前项目 ID。
-        nodes: 当前项目完整节点快照。
-        query: 用户输入的检索问题。
-        top_k: 最多返回的向量上下文数量。
-        node_type: 可选节点类型过滤。
+        project_id: The current project ID.
+        nodes: The full node snapshot of the current project.
+        query: The retrieval question entered by the user.
+        top_k: The maximum number of vector context items to return.
+        node_type: Optional node type filter.
 
     Returns:
-        相似节点列表、实际使用的向量库标识和可选错误信息。
+        The list of similar nodes, the identifier of the vector store actually used,
+        and an optional error message.
     """
     candidate_nodes = [node for node in nodes if node_type is None or node.node_type == node_type]
 
@@ -107,11 +110,13 @@ def _query_project_chroma_context(
     top_k: int,
     node_type: str | None = None,
 ) -> tuple[list[RagVectorContextItem], str, str | None]:
-    """跨 collection 做项目级 Lore Memory 检索。
+    """Perform project-level Lore Memory retrieval across collections.
 
-    指定 node_type 时只查对应 collection; 否则三集合都查并按 score 取 top_k。
-    多 collection 时复用同一份 query embedding, 避免每个 collection 重复
-    调用一次 embedding API; 这是 RAG 路径上 embedding 调用次数的最大放大点。
+    When node_type is specified, only the corresponding collection is queried;
+    otherwise all three collections are queried and the top_k are taken by score.
+    With multiple collections, the same query embedding is reused to avoid calling
+    the embedding API once per collection; this is the biggest amplification point
+    for embedding calls on the RAG path.
     """
     print(
         f"[debug-retrieval] node_type={node_type!r} query={query[:30]!r} "
@@ -148,7 +153,7 @@ def _hits_to_items(
     node_by_id: dict[str, NodeORM],
     top_k: int,
 ) -> list[RagVectorContextItem]:
-    """把 ChromaDB 命中转换为 RagVectorContextItem, 兜底处理失效 metadata。"""
+    """Convert ChromaDB hits into RagVectorContextItem, defensively handling stale metadata."""
     items: list[RagVectorContextItem] = []
 
     for _, metadata, distance in zip(ids, metadatas, distances, strict=False):
@@ -172,9 +177,10 @@ def merge_context(
     graph_context: list[RagGraphContextItem],
     vector_context: list[RagVectorContextItem],
 ) -> list[RagMergedContextItem]:
-    """合并图关系上下文和向量上下文。
+    """Merge the graph relation context and the vector context.
 
-    同一节点可能同时来自图关系和向量检索，需要去重，避免重复注入 prompt。
+    The same node may come from both the graph relations and the vector retrieval,
+    so deduplication is needed to avoid injecting it into the prompt twice.
     """
     merged: dict[str, RagMergedContextItem] = {}
 

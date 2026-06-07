@@ -1,7 +1,8 @@
-"""Graph 业务校验规则。
+"""Graph business validation rules.
 
-本模块属于服务层的业务规则边界，负责校验节点与边的项目一致性。
-它不写数据库，也不决定 HTTP 路由结构。
+This module is the service layer's business-rule boundary, responsible for
+validating the project consistency of nodes and edges.
+It does not write to the database, nor does it decide the HTTP routing structure.
 """
 
 from fastapi import HTTPException
@@ -13,14 +14,15 @@ from app.schemas import EdgePayload, NodePayload
 
 
 def validate_edges_against_payload_nodes(nodes: list[NodePayload], edges: list[EdgePayload]) -> None:
-    """校验整图快照中的边只引用本次提交的节点。
+    """Validate that edges in a full graph snapshot only reference nodes from this submission.
 
     Args:
-        nodes: 本次保存提交的完整节点列表。
-        edges: 本次保存提交的完整边列表。
+        nodes: The complete list of nodes submitted in this save.
+        edges: The complete list of edges submitted in this save.
 
     Raises:
-        HTTPException: 当任一边引用当前 graph 外部节点时抛出。
+        HTTPException: Raised when any edge references a node outside the current
+            graph.
     """
     node_ids = {node.id for node in nodes}
     invalid_edge = next(
@@ -41,16 +43,17 @@ def validate_edge_endpoints_in_project(
     source: str,
     target: str,
 ) -> None:
-    """校验单条边的两个端点都属于同一项目。
+    """Validate that both endpoints of a single edge belong to the same project.
 
     Args:
-        session: 当前数据库会话。
-        project_id: 边所属项目 ID。
-        source: 起点节点 ID。
-        target: 终点节点 ID。
+        session: The current database session.
+        project_id: The ID of the project the edge belongs to.
+        source: The source node ID.
+        target: The target node ID.
 
     Raises:
-        HTTPException: 当端点缺失或端点不属于当前项目时抛出。
+        HTTPException: Raised when an endpoint is missing or does not belong to the
+            current project.
     """
     endpoint_count = session.scalar(
         select(func.count())

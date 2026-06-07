@@ -1,12 +1,14 @@
-"""SSE 流式 chat 实现。
+"""SSE streaming chat implementation.
 
-LangGraph 的 sync 接口 `graph.stream` 跟项目现用的 `SqliteSaver` (同步
-checkpointer) 兼容; 直接调 `graph.astream` 会强制走 `aget_tuple`, 要求
-`AsyncSqliteSaver` + `aiosqlite`, 与现有架构不匹配。
+LangGraph's sync interface `graph.stream` is compatible with the `SqliteSaver`
+(synchronous checkpointer) the project currently uses; calling `graph.astream`
+directly would force `aget_tuple`, requiring `AsyncSqliteSaver` + `aiosqlite`,
+which does not match the existing architecture.
 
-折中: 在 `asyncio.to_thread` 里跑同步 `graph.stream`, 通过 `asyncio.Queue`
-桥接成 async generator, 既不引入 aiosqlite 依赖, 也不必把 chat_service.
-run_chat_turn 整体改成 async。
+Compromise: run the synchronous `graph.stream` inside `asyncio.to_thread` and
+bridge it into an async generator via `asyncio.Queue`, which neither pulls in
+the aiosqlite dependency nor requires rewriting chat_service.run_chat_turn as a
+whole into async.
 """
 
 from __future__ import annotations
@@ -14,10 +16,12 @@ from __future__ import annotations
 import asyncio
 import json
 import logging
+import traceback
 from collections.abc import AsyncIterator
 from typing import Any
 
 from app.agents.graph import get_agent_graph
+from app.core.settings import get_app_settings
 from app.db.database import SessionLocal
 from app.schemas import ChatRequest
 from app.services.chat_service import require_session
@@ -25,20 +29,24 @@ from app.services.chat_service import require_session
 
 logger = logging.getLogger(__name__)
 
+_PROD_ERROR_MESSAGE = "Something went wrong during reasoning, please try again"
+
 
 _NODE_LABELS: dict[str, str] = {
-    "load_context": "加载上下文",
-    "intent_router": "判断意图",
-    "parallel_retrieval": "检索知识库",
-    "context_compress": "压缩上下文",
-    "inspiration_agent": "灵感发散中",
-    "research_agent": "考据查证中",
-    "structure_agent": "整理结构中",
-    "simulation_agent": "推演分支中",
-    "boundary_check": "边界校验",
-    "chat_assembler": "生成回复",
-    "persistence_hub": "持久化结果",
-    "summary_compress": "压缩对话摘要",
+    "load_context": "Loading context",
+    "intent_router": "Determining intent",
+    "parallel_retrieval": "Searching knowledge base",
+    "context_compress": "Compressing context",
+    "inspiration_agent": "Brainstorming ideas",
+    "research_agent": "Researching and verifying",
+    "structure_agent": "Organizing structure",
+    "simulation_agent": "Simulating branches",
+    "boundary_check": "Boundary check",
+    "chat_assembler": "Generating reply",
+    "persistence_hub": "Persisting results",
+    "structured_extractor": "Extracting entities",
+    "question_planner": "Planning follow-up",
+    "summary_compress": "Compressing conversation summary",
 }
 
 
@@ -46,12 +54,49 @@ _DONE = object()
 
 
 def _sse(data: dict[str, Any]) -> str:
-    """字典 -> SSE 协议 data 行 (双 \\n 分隔事件)。"""
+    """Dict -> SSE protocol data line (events separated by double \\n)."""
     return f"data: {json.dumps(data, ensure_ascii=False)}\n\n"
 
 
+def _traceback_tail(exc: BaseException, *, max_lines: int = 14) -> str:
+    tb = "".join(traceback.format_exception(type(exc), exc, exc.__traceback__))
+    lines = tb.rstrip().splitlines()
+    if len(lines) <= max_lines:
+        return tb.rstrip()
+    omitted = len(lines) - max_lines
+    return "\n".join([f"... ({omitted} lines omitted) ...", *lines[-max_lines:]])
+
+
+def _build_error_event(
+    exc: BaseException,
+    *,
+    phase: str,
+    last_node: str | None = None,
+) -> dict[str, Any]:
+    """Build the SSE error payload; include diagnostics only in dev mode."""
+    if not get_app_settings().dev_mode:
+        return {"type": "error", "message": _PROD_ERROR_MESSAGE}
+
+    error_type = type(exc).__name__
+    error_message = str(exc) or repr(exc)
+    node_hint = f" at node `{last_node}`" if last_node else ""
+    summary = f"{error_type}: {error_message}{node_hint}"
+
+    return {
+        "type": "error",
+        "message": f"Reasoning failed during {phase}{node_hint}: {summary}",
+        "debug": {
+            "phase": phase,
+            "last_node": last_node,
+            "error_type": error_type,
+            "error_message": error_message,
+            "traceback": _traceback_tail(exc),
+        },
+    }
+
+
 def _build_events(node_name: str, node_output: Any) -> list[dict[str, Any]]:
-    """节点输出 -> SSE 事件列表 (主事件 + 关键节点附带元数据事件)。"""
+    """Node output -> list of SSE events (a main event + metadata events attached to key nodes)."""
     events: list[dict[str, Any]] = [
         {
             "type": "node_end",
@@ -80,6 +125,7 @@ def _build_events(node_name: str, node_output: Any) -> list[dict[str, Any]]:
                 "reply_text": assembler.reply_text,
                 "cited_node_ids": list(assembler.cited_node_ids),
                 "staging_summary": assembler.staging_summary,
+                "web_sources": [item.model_dump() for item in assembler.web_sources],
             })
 
     elif node_name == "persistence_hub":
@@ -94,10 +140,11 @@ def _build_events(node_name: str, node_output: Any) -> list[dict[str, Any]]:
 
 
 async def stream_chat_turn(payload: ChatRequest) -> AsyncIterator[str]:
-    """跑 graph.stream (sync) 并把每个节点输出转 SSE 事件。
+    """Run graph.stream (sync) and convert each node output into SSE events.
 
-    任何 graph 内部异常都收敛成一条 error 事件, 让前端能优雅切兜底文案,
-    不会撞 stream 中途截断。
+    Any internal graph exception is funneled into a single error event, so the
+    frontend can gracefully switch to fallback text without hitting a stream cut
+    off midway.
     """
     with SessionLocal() as db:
         session = require_session(db, payload.session_id)
@@ -112,17 +159,19 @@ async def stream_chat_turn(payload: ChatRequest) -> AsyncIterator[str]:
         "user_message": payload.user_message,
         "selected_node_ids": list(payload.selected_node_ids),
         "extraction_enabled": payload.extraction_enabled,
+        "web_search_mode": payload.web_search_mode,
     }
 
     loop = asyncio.get_running_loop()
     queue: asyncio.Queue = asyncio.Queue()
 
     def producer() -> None:
-        """同步线程跑 graph.stream, call_soon_threadsafe 把 chunk 投递回 loop。
+        """Synchronous thread runs graph.stream; call_soon_threadsafe delivers each chunk back to the loop.
 
-        多 stream_mode 时 LangGraph 把每个 chunk 包成 (mode, payload) 二元组,
-        主协程根据 mode 分发: "updates" 是节点级更新, "custom" 是节点内通过
-        get_stream_writer 推的 token 事件。
+        With multiple stream_modes, LangGraph wraps each chunk into a (mode,
+        payload) tuple; the main coroutine dispatches by mode: "updates" is a
+        node-level update, "custom" is a token event pushed from within a node via
+        get_stream_writer.
         """
         try:
             stream = graph.stream(
@@ -136,6 +185,7 @@ async def stream_chat_turn(payload: ChatRequest) -> AsyncIterator[str]:
             loop.call_soon_threadsafe(queue.put_nowait, _DONE)
 
     producer_task = asyncio.create_task(asyncio.to_thread(producer))
+    last_node: str | None = None
 
     try:
         while True:
@@ -143,26 +193,35 @@ async def stream_chat_turn(payload: ChatRequest) -> AsyncIterator[str]:
             if item is _DONE:
                 break
             if isinstance(item, Exception):
-                logger.exception("stream_chat_turn graph 内部失败: %s", item)
-                yield _sse({"type": "error", "message": "推理过程出错, 请再试一次"})
+                logger.exception(
+                    "stream_chat_turn graph internal failure (last_node=%s): %s",
+                    last_node,
+                    item,
+                )
+                yield _sse(_build_error_event(item, phase="graph.stream", last_node=last_node))
                 return
 
             mode, payload = item
             if mode == "custom":
-                # chat_assembler 通过 get_stream_writer 推的 token 事件, 透传给前端
+                # Token events pushed by chat_assembler via get_stream_writer, passed through to the frontend
                 if isinstance(payload, dict) and payload.get("type"):
                     yield _sse(payload)
                 continue
 
-            # mode == "updates": payload 是 {node_name: node_output} 字典
+            # mode == "updates": payload is a {node_name: node_output} dict
             for node_name, node_output in payload.items():
+                last_node = node_name
                 for event in _build_events(node_name, node_output):
                     yield _sse(event)
 
         yield _sse({"type": "done"})
 
     except Exception as exc:  # noqa: BLE001
-        logger.exception("stream_chat_turn 失败: %s", exc)
-        yield _sse({"type": "error", "message": "推理过程出错, 请再试一次"})
+        logger.exception(
+            "stream_chat_turn failed (last_node=%s): %s",
+            last_node,
+            exc,
+        )
+        yield _sse(_build_error_event(exc, phase="stream loop", last_node=last_node))
     finally:
         await producer_task

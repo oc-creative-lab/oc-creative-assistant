@@ -1,7 +1,17 @@
 import { inject, provide, ref, type InjectionKey, type Ref } from 'vue'
 
+export interface CanvasFocusRef {
+  id: string
+  type: string
+  title: string
+}
+
 export const WORKSPACE_SELECTED_NODE_IDS_KEY: InjectionKey<Ref<string[]>> = Symbol(
   'workspaceSelectedNodeIds',
+)
+
+export const WORKSPACE_CANVAS_FOCUS_KEY: InjectionKey<Ref<CanvasFocusRef[]>> = Symbol(
+  'workspaceCanvasFocus',
 )
 
 type GraphRefreshRegistry = {
@@ -13,10 +23,10 @@ export const WORKSPACE_GRAPH_REFRESH_KEY: InjectionKey<GraphRefreshRegistry> = S
   'workspaceGraphRefresh',
 )
 
-/** WorkspaceShell 提供：FloatingChatDock 读取选中节点、触发画布刷新。 */
+/** Provided by WorkspaceShell: canvas views publish focus; BottomComposer merges into agent context. */
 export function provideWorkspaceChatContext() {
   const selectedNodeIds = ref<string[]>([])
-  let refreshFn: (() => void | Promise<void>) | null = null
+  const canvasFocusRefs = ref<CanvasFocusRef[]>([])
 
   const graphRefreshRegistry: GraphRefreshRegistry = {
     register(fn) {
@@ -29,17 +39,52 @@ export function provideWorkspaceChatContext() {
     },
   }
 
+  let refreshFn: (() => void | Promise<void>) | null = null
+
   provide(WORKSPACE_SELECTED_NODE_IDS_KEY, selectedNodeIds)
+  provide(WORKSPACE_CANVAS_FOCUS_KEY, canvasFocusRefs)
   provide(WORKSPACE_GRAPH_REFRESH_KEY, graphRefreshRegistry)
+
+  function setCanvasFocus(refs: CanvasFocusRef[]) {
+    canvasFocusRefs.value = refs
+    selectedNodeIds.value = refs.map((ref) => ref.id)
+  }
+
+  function clearCanvasFocus() {
+    canvasFocusRefs.value = []
+    selectedNodeIds.value = []
+  }
 
   return {
     selectedNodeIds,
+    canvasFocusRefs,
+    setCanvasFocus,
+    clearCanvasFocus,
     triggerGraphRefresh: () => graphRefreshRegistry.trigger(),
   }
 }
 
 export function injectWorkspaceSelectedNodeIds() {
   return inject(WORKSPACE_SELECTED_NODE_IDS_KEY, ref<string[]>([]))
+}
+
+export function injectWorkspaceCanvasFocus() {
+  return inject(WORKSPACE_CANVAS_FOCUS_KEY, ref<CanvasFocusRef[]>([]))
+}
+
+export function injectSetCanvasFocus() {
+  const focus = inject(WORKSPACE_CANVAS_FOCUS_KEY, null)
+  const selected = inject(WORKSPACE_SELECTED_NODE_IDS_KEY, null)
+  return {
+    setCanvasFocus(refs: CanvasFocusRef[]) {
+      if (focus) focus.value = refs
+      if (selected) selected.value = refs.map((ref) => ref.id)
+    },
+    clearCanvasFocus() {
+      if (focus) focus.value = []
+      if (selected) selected.value = []
+    },
+  }
 }
 
 export function injectWorkspaceGraphRefresh() {

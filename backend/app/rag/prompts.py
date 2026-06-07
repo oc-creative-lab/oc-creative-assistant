@@ -1,7 +1,8 @@
-"""RAG prompt 模板与上下文格式化。
+"""RAG prompt templates and context formatting.
 
-本模块只负责把已经筛选好的 graph/vector 上下文拼成给 Agent 预览的 prompt，
-不读取数据库，也不触发真实 LLM 调用。
+This module is only responsible for assembling the already-filtered graph/vector
+context into a prompt for Agent preview. It does not read the database, nor does it
+trigger any real LLM call.
 """
 
 from __future__ import annotations
@@ -15,143 +16,144 @@ def build_inspiration_prompt(
     vector_context: list[RagVectorContextItem],
     user_query: str,
 ) -> str:
-    """构造灵感引导 Agent 的 prompt。
+    """Build the prompt for the Idea-guidance Agent.
 
     Args:
-        current_node: 当前正在请求 AI 辅助的节点。
-        graph_context: 从画布连线抽取的一跳关系上下文。
-        vector_context: 从向量索引检索到的语义相关节点。
-        user_query: 用户输入或服务层兜底生成的检索问题。
+        current_node: The node currently requesting AI assistance.
+        graph_context: One-hop relation context extracted from the canvas edges.
+        vector_context: Semantically related nodes retrieved from the vector index.
+        user_query: The retrieval question entered by the user or generated as a
+            fallback by the service layer.
 
     Returns:
-        给前端预览的 prompt 文本；本函数不会调用 LLM。
+        The prompt text for frontend preview; this function does not call the LLM.
     """
     graph_context_text = _format_graph_context(graph_context)
     vector_context_text = _format_vector_context(vector_context)
 
-    return f"""你是 OC Creative Assistant 中的「灵感引导 Agent」。
+    return f"""You are the "Idea-guidance Agent" in OC Creative Assistant.
 
-你的任务是辅助原创角色创作者进行思考，而不是替用户写正文。
+Your task is to help original-character creators think, not to write the actual content for the user.
 
-你只能输出：
-1. 引导性问题；
-2. 设定补充建议；
-3. 可能需要创建的新节点；
-4. 与已有设定的潜在冲突提醒。
+You may only output:
+1. Guiding questions;
+2. Suggestions for supplementing settings;
+3. New nodes that may need to be created;
+4. Reminders about potential conflicts with existing settings.
 
-你不能输出：
-1. 完整小说段落；
-2. 完整剧情正文；
-3. 替用户决定最终设定；
-4. 直接续写用户作品。
+You may not output:
+1. Complete novel passages;
+2. Complete plot prose;
+3. Final settings decided on the user's behalf;
+4. Direct continuation of the user's work.
 
-请严格基于下面提供的项目上下文回答。
+Please answer strictly based on the project context provided below.
 
 ---
 
-【当前节点】
+[Current Node]
 
-节点类型：{current_node.type}
-节点标题：{current_node.title}
-节点内容：
+Node type: {current_node.type}
+Node title: {current_node.title}
+Node content:
 {current_node.content}
 
 ---
 
-【画布关系上下文】
+[Canvas Relation Context]
 
-以下内容来自用户在画布中手动建立的节点连接，优先级较高：
+The following comes from node connections the user manually created on the canvas, and has higher priority:
 
 {graph_context_text}
 
 ---
 
-【向量检索上下文】
+[Vector Retrieval Context]
 
-以下内容来自 RAG 语义检索，可能与当前节点相关：
+The following comes from RAG semantic retrieval and may be related to the current node:
 
 {vector_context_text}
 
 ---
 
-【用户请求】
+[User Request]
 
 {user_query}
 
 ---
 
-【输出要求】
+[Output Requirements]
 
-请输出 JSON，不要输出 Markdown，不要输出完整剧情正文。
+Please output JSON. Do not output Markdown, and do not output complete plot prose.
 
-JSON 格式如下：
+The JSON format is as follows:
 
 {{
   "agent": "inspiration",
-  "summary": "一句话概括当前节点的创作状态",
+  "summary": "A one-sentence summary of the creative state of the current node",
   "questions": [
-    "引导性问题1",
-    "引导性问题2",
-    "引导性问题3"
+    "Guiding question 1",
+    "Guiding question 2",
+    "Guiding question 3"
   ],
   "missing_parts": [
-    "当前设定缺失点1",
-    "当前设定缺失点2"
+    "Missing setting point 1",
+    "Missing setting point 2"
   ],
   "suggested_nodes": [
     {{
       "nodeType": "plot",
-      "title": "建议新节点标题",
-      "reason": "为什么建议创建这个节点"
+      "title": "Suggested new node title",
+      "reason": "Why this node is suggested"
     }}
   ],
-  "boundary_notice": "提醒用户这些只是建议，最终设定由用户决定"
+  "boundary_notice": "Remind the user that these are only suggestions and that the final settings are decided by the user"
 }}"""
 
 
 def _format_graph_context(context: list[RagGraphContextItem]) -> str:
-    """格式化图关系上下文。
+    """Format the graph relation context.
 
     Args:
-        context: 已筛选的一跳图关系上下文。
+        context: The filtered one-hop graph relation context.
 
     Returns:
-        prompt 中的图关系上下文片段。
+        The graph relation context fragment for the prompt.
     """
     if not context:
-        # 明确写出“暂无”比空字符串更利于后续 LLM 理解上下文缺口。
-        return "暂无直接连接的相关节点"
+        # Explicitly writing "none" helps the downstream LLM understand the context gap better than an empty string.
+        return "No directly connected related nodes"
 
     return "\n\n".join(
         [
-            f"- 关系：{item.relation_label}（{item.relation_type}, {item.direction}）\n"
-            f"  节点类型：{item.type}\n"
-            f"  节点标题：{item.title}\n"
-            f"  节点内容：{item.content}"
+            f"- Relation: {item.relation_label} ({item.relation_type}, {item.direction})\n"
+            f"  Node type: {item.type}\n"
+            f"  Node title: {item.title}\n"
+            f"  Node content: {item.content}"
             for item in context
         ]
     )
 
 
 def _format_vector_context(context: list[RagVectorContextItem]) -> str:
-    """格式化向量检索上下文。
+    """Format the vector retrieval context.
 
     Args:
-        context: 已筛选的向量检索结果。
+        context: The filtered vector retrieval results.
 
     Returns:
-        prompt 中的向量检索上下文片段。
+        The vector retrieval context fragment for the prompt.
     """
     if not context:
-        # 无检索结果时仍保留段落占位，方便前端调试 prompt 结构。
-        return "暂无向量检索结果"
+        # Keep a placeholder paragraph even with no results, to make it easier for the frontend to debug the prompt structure.
+        return "No vector retrieval results"
 
     return "\n\n".join(
         [
-            f"- 相似度：{item.score:.2f}\n"
-            f"  节点类型：{item.type}\n"
-            f"  节点标题：{item.title}\n"
-            f"  节点内容：{item.content}"
+            f"- Similarity: {item.score:.2f}\n"
+            f"  Node type: {item.type}\n"
+            f"  Node title: {item.title}\n"
+            f"  Node content: {item.content}"
             for item in context
         ]
     )

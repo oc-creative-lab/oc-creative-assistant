@@ -1,9 +1,12 @@
-"""Graph 应用服务。
+"""Graph application service.
 
-本模块属于服务层编排入口，负责维护项目 graph 的事务边界，并在 SQLite
-提交后同步可重建的向量索引。它不直接处理 HTTP 请求，也不决定 RAG prompt
-或检索策略。
+This module is the service-layer orchestration entry point, responsible for
+maintaining the transaction boundary of the project graph and synchronizing the
+rebuildable vector index after SQLite commits. It does not directly handle HTTP
+requests, nor does it decide the RAG prompt or retrieval strategy.
 """
+
+import re
 
 from fastapi import HTTPException
 
@@ -57,10 +60,95 @@ from app.services.graph_seed import (
 from app.services.graph_validation import validate_edge_endpoints_in_project
 
 
-def _indexing_result_to_payload(result: IndexingSyncResult | None) -> IndexingStatusPayload:
-    """将索引同步结果转换为 API DTO。
+_HAN_RE = re.compile(r"[\u4e00-\u9fff]")
+_LEGACY_DEFAULT_PROJECT_NAMES = frozenset(
+    {
+        "《咒术回战》涉谷站线",
+        "咒术回战：涉谷站线",
+    }
+)
+_DEFAULT_SEED_NODE_IDS = frozenset(node.id for node in DEFAULT_NODES)
+_DEFAULT_SEED_NODES_BY_ID = {node.id: node for node in DEFAULT_NODES}
+_DEFAULT_SEED_EDGES_BY_ID = {edge.id: edge for edge in DEFAULT_EDGES}
 
-    保存接口的主结果仍然是 graph；indexing 字段只负责告诉前端 embedding/ChromaDB 是否正常。
+
+def _contains_han(text: str | None) -> bool:
+    return bool(text and _HAN_RE.search(text))
+
+
+def _node_needs_locale_resync(node: NodeORM) -> bool:
+    if _contains_han(node.title) or _contains_han(node.content) or _contains_han(node.type_label):
+        return True
+    return any(_contains_han(tag) for tag in db_tags_to_api(node.meta))
+
+
+def _should_resync_default_locale(session, project_id: str) -> bool:
+    """Re-seed the built-in demo graph when it still uses the old Chinese locale."""
+    project = session.get(ProjectORM, project_id)
+    if project is not None and project.name in _LEGACY_DEFAULT_PROJECT_NAMES:
+        return True
+
+    nodes = read_ordered_nodes(session, project_id)
+    if not nodes:
+        return False
+
+    if project is not None and _contains_han(project.name):
+        return True
+
+    for node in nodes:
+        if node.id in _DEFAULT_SEED_NODE_IDS and _node_needs_locale_resync(node):
+            return True
+
+    for edge in read_ordered_edges(session, project_id):
+        if edge.id in _DEFAULT_SEED_EDGES_BY_ID and _contains_han(edge.label):
+            return True
+
+    return False
+
+
+def _patch_legacy_seed_content(session, project_id: str) -> bool:
+    """Upgrade known demo nodes/edges to the current English seed without wiping user additions."""
+    changed = False
+    project = session.get(ProjectORM, project_id)
+    if project is not None and (
+        project.name in _LEGACY_DEFAULT_PROJECT_NAMES or _contains_han(project.name)
+    ):
+        project.name = DEFAULT_PROJECT_NAME
+        changed = True
+
+    for node in read_ordered_nodes(session, project_id):
+        seed = _DEFAULT_SEED_NODES_BY_ID.get(node.id)
+        if seed is None or not _node_needs_locale_resync(node):
+            continue
+        node.title = seed.title
+        node.content = seed.content
+        node.node_type = seed.nodeType or seed.type
+        node.type_label = seed.typeLabel
+        node.meta = api_meta_to_db(
+            seed.meta,
+            seed.tags,
+            seed.status,
+            existing_meta=node.meta,
+        )
+        changed = True
+
+    for edge in read_ordered_edges(session, project_id):
+        seed = _DEFAULT_SEED_EDGES_BY_ID.get(edge.id)
+        if seed is None or not _contains_han(edge.label):
+            continue
+        edge.label = seed.label or "related"
+        edge.relation_type = seed.relationType
+        changed = True
+
+    return changed
+
+
+def _indexing_result_to_payload(result: IndexingSyncResult | None) -> IndexingStatusPayload:
+    """Convert an index synchronization result into an API DTO.
+
+    The main result of the save endpoint is still the graph; the indexing field is
+    only responsible for telling the frontend whether embedding/ChromaDB is
+    working.
     """
     if result is None:
         return IndexingStatusPayload()
@@ -79,13 +167,14 @@ def _indexing_result_to_payload(result: IndexingSyncResult | None) -> IndexingSt
 
 
 def ensure_default_project() -> ProjectPayload:
-    """确保默认项目存在。
+    """Ensure the default project exists.
 
-    首次启动时会写入默认项目和示例 graph；如果只存在项目记录但没有节点，
-    也会补写示例 graph，修复半初始化状态。
+    On first startup it writes the default project and the example graph; if only
+    a project record exists but no nodes, it also backfills the example graph,
+    repairing a half-initialized state.
 
     Returns:
-        默认项目 DTO。
+        The default project DTO.
     """
     with SessionLocal.begin() as session:
         project = session.get(ProjectORM, DEFAULT_PROJECT_ID)
@@ -98,43 +187,51 @@ def ensure_default_project() -> ProjectPayload:
             payload = project_to_payload(project)
         else:
             has_nodes = read_ordered_nodes(session, DEFAULT_PROJECT_ID)
+            node_ids = {node.id for node in has_nodes}
             if not has_nodes:
                 replace_graph(session, DEFAULT_PROJECT_ID, DEFAULT_NODES, DEFAULT_EDGES)
+            elif node_ids == _DEFAULT_SEED_NODE_IDS and _should_resync_default_locale(
+                session, DEFAULT_PROJECT_ID
+            ):
+                project.name = DEFAULT_PROJECT_NAME
+                replace_graph(session, DEFAULT_PROJECT_ID, DEFAULT_NODES, DEFAULT_EDGES)
+            elif _patch_legacy_seed_content(session, DEFAULT_PROJECT_ID):
+                pass
             payload = project_to_payload(project)
 
-    # 默认项目的示例节点经 replace_graph 写入时不带 graph_id；这里复用迁移 backfill
-    # 为其建立三个 sub-graph 并按类型归位，保证全新安装的默认项目也符合多 sub-graph 架构。
+    # The default project's example nodes are written by replace_graph without a graph_id; here we reuse the migration backfill
+    # to create three sub-graphs for them and assign them by type, ensuring a fresh install's default project also conforms to the multi-sub-graph architecture.
     _ensure_subgraph_backfill()
     return payload
 
 
 def get_project(project_id: str) -> ProjectPayload:
-    """读取项目基本信息。
+    """Read the basic information of a project.
 
     Args:
-        project_id: 项目 ID。
+        project_id: The project ID.
 
     Returns:
-        项目 DTO。
+        The project DTO.
 
     Raises:
-        HTTPException: 当项目不存在时抛出 404。
+        HTTPException: Raises 404 when the project does not exist.
     """
     with SessionLocal() as session:
         return project_to_payload(require_project(session, project_id))
 
 
 def get_project_graph(project_id: str, indexing: IndexingStatusPayload | None = None) -> GraphPayload:
-    """读取项目 graph，并转换为前端 DTO。
+    """Read the project graph and convert it into a frontend DTO.
 
     Args:
-        project_id: 项目 ID。
+        project_id: The project ID.
 
     Returns:
-        项目、节点和边的完整快照。
+        A complete snapshot of the project, nodes, and edges.
 
     Raises:
-        HTTPException: 当项目不存在时抛出 404。
+        HTTPException: Raises 404 when the project does not exist.
     """
     with SessionLocal() as session:
         project = require_project(session, project_id)
@@ -150,17 +247,18 @@ def get_project_graph(project_id: str, indexing: IndexingStatusPayload | None = 
 
 
 def save_project_graph(project_id: str, payload: SaveGraphRequest) -> GraphPayload:
-    """整体替换项目 graph，并在事务提交后增量同步向量索引。
+    """Replace the entire project graph and incrementally sync the vector index after the transaction commits.
 
     Args:
-        project_id: 项目 ID。
-        payload: 前端当前完整 nodes/edges 快照。
+        project_id: The project ID.
+        payload: The frontend's current complete nodes/edges snapshot.
 
     Returns:
-        数据库最终保存后的 graph 快照。
+        The graph snapshot after the final database save.
 
     Raises:
-        HTTPException: 当项目不存在或边引用非法节点时抛出。
+        HTTPException: Raised when the project does not exist or an edge references
+            an invalid node.
     """
     old_nodes = read_project_nodes(project_id)
 
@@ -168,7 +266,7 @@ def save_project_graph(project_id: str, payload: SaveGraphRequest) -> GraphPaylo
         require_project(session, project_id)
         replace_graph(session, project_id, payload.nodes, payload.edges)
 
-    # ChromaDB 依赖已提交的 SQLite 状态，因此必须在事务完成后按 fingerprint 增量同步。
+    # ChromaDB depends on the committed SQLite state, so it must be incrementally synced by fingerprint after the transaction completes.
     new_nodes = read_project_nodes(project_id)
     indexing_result = safe_sync_project_index_incremental(project_id, old_nodes, new_nodes)
 
@@ -176,13 +274,14 @@ def save_project_graph(project_id: str, payload: SaveGraphRequest) -> GraphPaylo
 
 
 def get_subgraph(graph_id: str, indexing: IndexingStatusPayload | None = None) -> GraphPayload:
-    """读取单个 sub-graph 的快照（节点 + 内部边），转换为前端 DTO。
+    """Read a snapshot of a single sub-graph (nodes + intra-graph edges) and convert it into a frontend DTO.
 
-    复用 GraphPayload 结构：project 字段填该 sub-graph 所属项目，nodes 仅含本
-    sub-graph 节点，edges 仅含两端都在本 sub-graph 内的边。
+    Reuses the GraphPayload structure: the project field holds the project this
+    sub-graph belongs to, nodes contains only this sub-graph's nodes, and edges
+    contains only edges whose both endpoints fall within this sub-graph.
 
     Raises:
-        HTTPException: 当 sub-graph 不存在时抛出 404。
+        HTTPException: Raises 404 when the sub-graph does not exist.
     """
     with SessionLocal() as session:
         graph = require_graph(session, graph_id)
@@ -199,12 +298,15 @@ def get_subgraph(graph_id: str, indexing: IndexingStatusPayload | None = None) -
 
 
 def save_subgraph(graph_id: str, payload: SaveGraphRequest) -> GraphPayload:
-    """整体替换单个 sub-graph 的节点与内部边，并在事务提交后增量同步索引。
+    """Replace the nodes and intra-graph edges of a single sub-graph as a whole, and incrementally sync the index after the transaction commits.
 
-    索引仍按项目维度增量同步（ChromaDB 集合是项目级），保证与单画布保存一致。
+    The index is still incrementally synced at the project level (ChromaDB
+    collections are project-scoped), keeping it consistent with single-canvas
+    saving.
 
     Raises:
-        HTTPException: 当 sub-graph 不存在或边引用非法节点时抛出。
+        HTTPException: Raised when the sub-graph does not exist or an edge
+            references an invalid node.
     """
     with SessionLocal() as session:
         graph = require_graph(session, graph_id)
@@ -223,17 +325,17 @@ def save_subgraph(graph_id: str, payload: SaveGraphRequest) -> GraphPayload:
 
 
 def create_node(project_id: str, node: NodePayload) -> NodePayload:
-    """创建或覆盖单个节点，并在提交后同步向量索引。
+    """Create or overwrite a single node, and sync the vector index after commit.
 
     Args:
-        project_id: 节点所属项目 ID。
-        node: 前端提交的节点 DTO。
+        project_id: The ID of the project the node belongs to.
+        node: The node DTO submitted by the frontend.
 
     Returns:
-        已保存的节点 DTO。
+        The saved node DTO.
 
     Raises:
-        HTTPException: 当项目不存在时抛出。
+        HTTPException: Raised when the project does not exist.
     """
     with SessionLocal.begin() as session:
         require_project(session, project_id)
@@ -248,18 +350,18 @@ def create_node(project_id: str, node: NodePayload) -> NodePayload:
 
 
 def update_node(project_id: str, node_id: str, payload: UpdateNodeRequest) -> NodePayload:
-    """更新节点基础内容或位置，并在检索文档变化时同步向量索引。
+    """Update a node's basic content or position, and sync the vector index when the retrieval document changes.
 
     Args:
-        project_id: 节点所属项目 ID。
-        node_id: 需要更新的节点 ID。
-        payload: 局部更新字段；字段为 None 表示不修改。
+        project_id: The ID of the project the node belongs to.
+        node_id: The ID of the node to update.
+        payload: Partial update fields; a field of None means no modification.
 
     Returns:
-        更新后的节点 DTO。
+        The updated node DTO.
 
     Raises:
-        HTTPException: 当项目或节点不存在时抛出。
+        HTTPException: Raised when the project or node does not exist.
     """
     with SessionLocal.begin() as session:
         require_project(session, project_id)
@@ -303,7 +405,7 @@ def update_node(project_id: str, node_id: str, payload: UpdateNodeRequest) -> No
 
         updated = node_to_payload(node)
 
-    # 索引同步必须使用已提交状态，避免 ChromaDB 与 SQLite 在失败回滚时出现分叉。
+    # Index synchronization must use the committed state, to avoid ChromaDB and SQLite diverging on a failed rollback.
     latest_node = read_project_node(project_id, node_id)
     if latest_node is not None:
         safe_sync_node_index(latest_node, old_fingerprint)
@@ -312,10 +414,10 @@ def update_node(project_id: str, node_id: str, payload: UpdateNodeRequest) -> No
 
 
 def delete_node(project_id: str, node_id: str) -> None:
-    """删除单个节点及其相关边，并清理向量索引（改造 1：对话内联卡片"撤销/拒绝"）。
+    """Delete a single node and its related edges, and clean up the vector index (revision 1: inline chat card "undo/reject").
 
     Raises:
-        HTTPException: 当项目或节点不存在时抛出 404。
+        HTTPException: Raises 404 when the project or node does not exist.
     """
     with SessionLocal.begin() as session:
         require_project(session, project_id)
@@ -329,25 +431,26 @@ def delete_node(project_id: str, node_id: str) -> None:
         ).delete(synchronize_session=False)
         session.delete(node)
 
-    # 索引清理放在事务提交后，与既有 _sync_deletions 语义一致。
+    # Index cleanup is performed after the transaction commits, consistent with the existing _sync_deletions semantics.
     try:
         delete_node_vectors(project_id, node_id)
-    except Exception:  # noqa: BLE001 - 索引清理失败不应阻断删除
+    except Exception:  # noqa: BLE001 - index cleanup failure should not block deletion
         pass
 
 
 def create_edge(project_id: str, edge: EdgePayload) -> EdgePayload:
-    """创建或覆盖单条边，并校验两端节点属于同一项目。
+    """Create or overwrite a single edge, and validate that both endpoint nodes belong to the same project.
 
     Args:
-        project_id: 边所属项目 ID。
-        edge: 前端提交的边 DTO。
+        project_id: The ID of the project the edge belongs to.
+        edge: The edge DTO submitted by the frontend.
 
     Returns:
-        已保存的边 DTO。
+        The saved edge DTO.
 
     Raises:
-        HTTPException: 当项目不存在或边端点不属于同一项目时抛出。
+        HTTPException: Raised when the project does not exist or the edge endpoints
+            do not belong to the same project.
     """
     with SessionLocal.begin() as session:
         require_project(session, project_id)
@@ -355,3 +458,13 @@ def create_edge(project_id: str, edge: EdgePayload) -> EdgePayload:
         session.merge(edge_to_orm(project_id, edge, sort_order=0))
 
     return edge
+
+
+def delete_edge(project_id: str, edge_id: str) -> None:
+    """Delete a single edge by id within a project."""
+    with SessionLocal.begin() as session:
+        require_project(session, project_id)
+        edge = session.get(EdgeORM, edge_id)
+        if edge is None or edge.project_id != project_id:
+            raise HTTPException(status_code=404, detail="Edge not found")
+        session.delete(edge)

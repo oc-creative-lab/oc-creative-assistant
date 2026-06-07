@@ -1,6 +1,8 @@
-"""Graph HTTP 路由。
+"""Graph HTTP routes.
 
-路由层只负责 HTTP 映射和响应模型声明，业务校验、持久化和索引同步交给服务层。
+The route layer only handles HTTP mapping and response model declarations;
+business validation, persistence, and index synchronization are delegated to the
+service layer.
 """
 
 from fastapi import APIRouter
@@ -34,63 +36,64 @@ router = APIRouter(prefix="/api", tags=["graph"])
 
 @router.get("/projects/default", response_model=ProjectPayload)
 async def read_default_project() -> ProjectPayload:
-    """返回默认项目；首次调用会自动创建项目和示例 graph。"""
+    """Return the default project; the first call automatically creates the project and a sample graph."""
     return ensure_default_project()
 
 
 @router.get("/graphs/{graph_id}", response_model=GraphPayload)
 async def read_subgraph(graph_id: str) -> GraphPayload:
-    """读取单个 sub-graph 的快照（first_revision 决策 1）。
+    """Read a snapshot of a single sub-graph (first_revision decision 1).
 
-    与按项目读取的 ``/projects/{id}/graph`` 并存：旧的单画布工作台继续用项目维度，
-    新的三视图工作台按 graph_id 分别加载 plot / character / world。
+    Coexists with the per-project ``/projects/{id}/graph``: the old single-canvas
+    workspace keeps using the project dimension, while the new three-view
+    workspace loads plot / character / world separately by graph_id.
     """
     return get_subgraph(graph_id)
 
 
 @router.put("/graphs/{graph_id}", response_model=GraphPayload)
 async def replace_subgraph_route(graph_id: str, payload: SaveGraphRequest) -> GraphPayload:
-    """保存单个 sub-graph 快照，整体替换该 sub-graph 的节点与内部边。"""
+    """Save a single sub-graph snapshot, wholesale replacing the sub-graph's nodes and internal edges."""
     return save_subgraph(graph_id, payload)
 
 
 @router.get("/projects/{project_id}/graph", response_model=GraphPayload)
 async def read_project_graph(project_id: str) -> GraphPayload:
-    """读取指定项目下的完整 graph 快照。"""
+    """Read the full graph snapshot under the given project."""
     return get_project_graph(project_id)
 
 
 @router.put("/projects/{project_id}/graph", response_model=GraphPayload)
 async def replace_project_graph(project_id: str, payload: SaveGraphRequest) -> GraphPayload:
-    """保存当前画布快照，整体替换该项目 graph。"""
+    """Save the current canvas snapshot, wholesale replacing the project's graph."""
     return save_project_graph(project_id, payload)
 
 
 @router.post("/projects/{project_id}/memory/search", response_model=MemorySearchResponse)
 async def search_memory(project_id: str, payload: MemorySearchRequest) -> MemorySearchResponse:
-    """在指定项目内做 Lore Memory 语义搜索。"""
+    """Perform a Lore Memory semantic search within the given project."""
     return search_project_memory(project_id, payload)
 
 
 @router.post("/projects/{project_id}/nodes", response_model=NodePayload)
 async def add_node(project_id: str, payload: NodePayload) -> NodePayload:
-    """创建或覆盖单个 node，保留给后续细粒度保存使用。"""
+    """Create or overwrite a single node, reserved for future fine-grained saving."""
     return create_node(project_id, payload)
 
 
 @router.patch("/projects/{project_id}/nodes/{node_id}", response_model=NodePayload)
 async def patch_node(project_id: str, node_id: str, payload: UpdateNodeRequest) -> NodePayload:
-    """更新 node 的基础字段或位置。"""
+    """Update a node's basic fields or position."""
     return update_node(project_id, node_id, payload)
 
 
 @router.delete("/projects/{project_id}/nodes/{node_id}", status_code=204)
 async def remove_node(project_id: str, node_id: str) -> None:
-    """删除单个节点及其相关边（对话内联卡片"撤销/拒绝"用）。"""
+    """Delete a single node and its related edges (used by the inline chat card's "undo/reject")."""
     delete_node(project_id, node_id)
 
 
 @router.post("/projects/{project_id}/edges", response_model=EdgePayload)
 async def add_edge(project_id: str, payload: EdgePayload) -> EdgePayload:
-    """创建或覆盖单条 edge，并校验两端节点属于同一项目。"""
+    """Create or overwrite a single edge, validating that both endpoint nodes belong to the same project."""
     return create_edge(project_id, payload)

@@ -1,18 +1,35 @@
 <script setup lang="ts">
 import { computed } from 'vue'
 import { storeToRefs } from 'pinia'
+import { useRoute } from 'vue-router'
 import { useProjectStore } from '../../stores/useProjectStore'
+import { useWorldViewStore } from '../../stores/useWorldViewStore'
+import PanelToggleButton from './PanelToggleButton.vue'
 
 /**
- * 工作台左侧导航（first_revision 阶段 3）。
+ * Workspace left-hand navigation (first_revision phase 3).
  *
- * 从上到下：返回项目库、项目名 + 简介、三视图导航（故事线 / 角色卡 / 世界观）、
- * 种子版本。导航用 router-link，子视图按各自 graph_id 加载。
+ * Top to bottom: back to the project library, project name + summary, three-view
+ * navigation (Story / Characters / Worldbuilding), and the seed version. Navigation
+ * uses router-link, and each sub-view loads by its own graph_id.
  */
 const props = defineProps<{ projectId: string }>()
 
+defineEmits<{ collapse: [] }>()
+
+const route = useRoute()
 const projectStore = useProjectStore()
+const worldViewStore = useWorldViewStore()
 const { detail } = storeToRefs(projectStore)
+const { mode: worldMode } = storeToRefs(worldViewStore)
+
+interface NavItem {
+  id: string
+  to: string
+  icon: string
+  canvasIcon?: string
+  label: string
+}
 
 const seedLabel = computed(() => {
   const seed = detail.value?.latest_seed
@@ -22,17 +39,53 @@ const seedLabel = computed(() => {
   return `Seed v${seed.version}${timeLabel}`
 })
 
-const navItems = computed(() => [
-  { to: `/workspace/${props.projectId}/overview`, icon: '◷', label: 'Overview' },
-  { to: `/workspace/${props.projectId}/plot`, icon: '❧', label: 'Story' },
-  { to: `/workspace/${props.projectId}/characters`, icon: '✦', label: 'Characters' },
-  { to: `/workspace/${props.projectId}/world`, icon: '◍', label: 'Worldbuilding' },
+const navItems = computed<NavItem[]>(() => [
+  { id: 'overview', to: `/workspace/${props.projectId}/overview`, icon: '◷', label: 'Overview' },
+  {
+    id: 'world',
+    to: `/workspace/${props.projectId}/world`,
+    icon: '◍',
+    canvasIcon: '⊞',
+    label: 'Worldbuilding',
+  },
+  { id: 'plot', to: `/workspace/${props.projectId}/plot`, icon: '❧', label: 'Story' },
+  { id: 'characters', to: `/workspace/${props.projectId}/characters`, icon: '✦', label: 'Characters' },
 ])
+
+function isNavActive(item: NavItem) {
+  return route.path === item.to || route.path.startsWith(`${item.to}/`)
+}
+
+function navIcon(item: NavItem) {
+  if (item.id === 'world' && isNavActive(item) && worldMode.value === 'canvas') {
+    return item.canvasIcon ?? item.icon
+  }
+  return item.icon
+}
+
+function worldModeLabel(item: NavItem) {
+  if (item.id !== 'world' || !isNavActive(item)) return ''
+  return worldMode.value === 'notes' ? 'Notes' : 'Tree'
+}
+
+function handleNavClick(item: NavItem, event: MouseEvent) {
+  if (item.id !== 'world' || !isNavActive(item)) return
+  event.preventDefault()
+  worldViewStore.toggleMode()
+}
 </script>
 
 <template>
   <aside class="workspace-sidebar">
-    <router-link class="workspace-sidebar__back" to="/library">← Library</router-link>
+    <div class="workspace-sidebar__header">
+      <router-link class="workspace-sidebar__back" to="/library">← Library</router-link>
+      <PanelToggleButton
+        direction="left"
+        expanded
+        label="Collapse navigation"
+        @click="$emit('collapse')"
+      />
+    </div>
 
     <div class="workspace-sidebar__meta">
       <h2 class="workspace-sidebar__name">{{ detail?.name ?? 'Loading…' }}</h2>
@@ -45,10 +98,18 @@ const navItems = computed(() => [
         :key="item.to"
         :to="item.to"
         class="workspace-sidebar__link"
-        active-class="is-active"
+        :class="{
+          'is-active': isNavActive(item),
+          'is-world-canvas': item.id === 'world' && isNavActive(item) && worldMode === 'canvas',
+        }"
+        :title="item.id === 'world' && isNavActive(item) ? 'Click again to switch view' : undefined"
+        @click="handleNavClick(item, $event)"
       >
-        <span class="workspace-sidebar__icon">{{ item.icon }}</span>
-        {{ item.label }}
+        <span class="workspace-sidebar__icon">{{ navIcon(item) }}</span>
+        <span class="workspace-sidebar__label">{{ item.label }}</span>
+        <span v-if="worldModeLabel(item)" class="workspace-sidebar__mode-tag">
+          {{ worldModeLabel(item) }}
+        </span>
       </router-link>
     </nav>
 
@@ -67,6 +128,12 @@ const navItems = computed(() => [
     radial-gradient(circle at 20% 0%, rgba(167, 139, 250, 0.1), transparent 60%),
     var(--panel);
   overflow: auto;
+}
+.workspace-sidebar__header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
 }
 .workspace-sidebar__back {
   font-size: 13px;
@@ -110,7 +177,7 @@ const navItems = computed(() => [
   color: var(--text);
   font-size: 14px;
   font-weight: 600;
-  transition: background 0.16s, color 0.16s, transform 0.16s;
+  transition: background 0.16s, color 0.16s, transform 0.16s, box-shadow 0.16s;
 }
 .workspace-sidebar__link:hover {
   background: var(--accent-soft);
@@ -118,12 +185,45 @@ const navItems = computed(() => [
   transform: translateX(2px);
 }
 .workspace-sidebar__link.is-active {
-  background: var(--grad-pill);
-  color: #fff;
-  box-shadow: 0 6px 16px rgba(139, 92, 246, 0.32);
+  background: var(--accent-soft);
+  color: var(--accent-deep);
+  box-shadow: inset 0 0 0 1.5px var(--accent-border);
+}
+.workspace-sidebar__link.is-active:hover {
+  background: rgba(124, 92, 255, 0.16);
+  color: var(--accent-deep);
+  transform: none;
+}
+.workspace-sidebar__link.is-world-canvas.is-active {
+  background: rgba(233, 130, 74, 0.12);
+  color: #c45c2a;
+  box-shadow: inset 0 0 0 1.5px rgba(233, 130, 74, 0.45);
+}
+.workspace-sidebar__link.is-world-canvas.is-active:hover {
+  background: rgba(233, 130, 74, 0.18);
+  color: #b04f22;
+}
+.workspace-sidebar__label {
+  flex: 1;
+  min-width: 0;
 }
 .workspace-sidebar__icon {
   font-size: 16px;
+}
+.workspace-sidebar__mode-tag {
+  flex-shrink: 0;
+  padding: 2px 7px;
+  border-radius: 999px;
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+  text-transform: uppercase;
+  background: rgba(124, 92, 255, 0.14);
+  color: var(--accent-deep);
+}
+.workspace-sidebar__link.is-world-canvas .workspace-sidebar__mode-tag {
+  background: rgba(233, 130, 74, 0.18);
+  color: #c45c2a;
 }
 .workspace-sidebar__seed {
   margin-top: auto;

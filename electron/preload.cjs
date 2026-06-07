@@ -1,6 +1,6 @@
 const { contextBridge } = require('electron')
 
-// 读取主进程通过 additionalArguments 传入的单个参数。
+// Read a single argument passed in by the main process via additionalArguments.
 function readAdditionalArgument(name) {
   const prefix = `--${name}=`
   const entry = process.argv.find((argument) => argument.startsWith(prefix))
@@ -12,8 +12,8 @@ function readAdditionalArgument(name) {
   return entry.slice(prefix.length)
 }
 
-// 只向渲染进程暴露最小必要的运行时信息。
-// 注意：不要在这里暴露任意 Node/Electron API，避免扩大前端攻击面。
+// Expose only the minimal necessary runtime information to the renderer process.
+// Note: do not expose arbitrary Node/Electron APIs here, to avoid widening the frontend attack surface.
 contextBridge.exposeInMainWorld('ocDesktop', {
   config: {
     backendUrl: readAdditionalArgument('backend-url') ?? process.env.BACKEND_BASE_URL ?? null,

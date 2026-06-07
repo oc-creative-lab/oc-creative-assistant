@@ -1,8 +1,9 @@
-"""节点自由字段服务（first_revision 决策 2）。
+"""Node custom fields service (first_revision decision 2).
 
-角色卡的“自由字段”（如阵营 / 年龄 / 身高）存进 ``NodeORM.meta`` JSON 的
-``fields`` 键，不新增表、不污染既有 text / tags / status。读写后复用现有
-``safe_sync_node_index`` 保持 RAG 索引一致。
+A character card's "custom fields" (such as faction / age / height) are stored
+under the ``fields`` key of the ``NodeORM.meta`` JSON, without adding new tables
+or polluting the existing text / tags / status. After reads and writes, the
+existing ``safe_sync_node_index`` is reused to keep the RAG index consistent.
 """
 
 from fastapi import HTTPException
@@ -16,7 +17,7 @@ from app.services.graph_repository import read_project_node, require_project
 
 
 def get_node_fields(project_id: str, node_id: str) -> NodeFieldsPayload:
-    """读取节点自由字段。"""
+    """Read a node's custom fields."""
     with SessionLocal() as session:
         require_project(session, project_id)
         node = session.get(NodeORM, node_id)
@@ -26,7 +27,7 @@ def get_node_fields(project_id: str, node_id: str) -> NodeFieldsPayload:
 
 
 def set_node_fields(project_id: str, node_id: str, fields: dict[str, str]) -> NodeFieldsPayload:
-    """整体替换节点自由字段，并在提交后同步索引。"""
+    """Replace a node's custom fields as a whole, and sync the index after commit."""
     with SessionLocal.begin() as session:
         require_project(session, project_id)
         node = session.get(NodeORM, node_id)

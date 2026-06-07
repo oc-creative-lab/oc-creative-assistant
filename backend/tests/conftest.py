@@ -1,7 +1,8 @@
-"""pytest 全局夹具。
+"""Global pytest fixtures.
 
-在导入任何 app 模块之前把数据目录指向临时目录，保证测试用全新的 SQLite，
-不污染开发库（app.core.paths 在导入时一次性解析路径，必须先设置环境变量）。
+Point the data directory at a temporary directory before importing any app module,
+so tests use a fresh SQLite database and don't pollute the dev database
+(app.core.paths resolves paths once at import time, so the env var must be set first).
 """
 
 import os
@@ -9,14 +10,14 @@ import tempfile
 
 import pytest
 
-# 必须在 import app.* 之前设置，否则 paths/database 已用默认路径建好 engine。
+# Must be set before `import app.*`, otherwise paths/database has already built the engine with the default path.
 _TMP_DATA_DIR = tempfile.mkdtemp(prefix="oc-test-data-")
 os.environ["OC_CREATIVE_DATA_DIR"] = _TMP_DATA_DIR
 
 
 @pytest.fixture(scope="session", autouse=True)
 def _init_db():
-    """建表一次。TestClient 不用 with 包裹时不会触发 startup 事件，这里兜底。"""
+    """Create tables once. When TestClient isn't wrapped in `with`, the startup event won't fire, so this is the fallback."""
     from app.db.database import init_db
 
     init_db()

@@ -1,8 +1,8 @@
-"""first_revision 阶段 6 验收测试（跨 sub-graph 引用）。
+"""first_revision phase 6 acceptance tests (cross-sub-graph references).
 
-1. character → world 的跨子图边创建后，cross_references 能查到该引用并标注 section；
-2. 反向（从 world 节点看）方向为 incoming；
-3. 同子图内的边不计入跨子图引用。
+1. After creating a character -> world cross-subgraph edge, cross_references can find the reference and tag its section;
+2. In the reverse direction (viewed from the world node) the direction is incoming;
+3. Edges within the same sub-graph don't count as cross-subgraph references.
 """
 
 import uuid
@@ -17,7 +17,7 @@ client = TestClient(app)
 
 
 def _project() -> dict:
-    return client.post("/api/projects", json={"name": f"跨引用-{uuid.uuid4().hex[:6]}"}).json()
+    return client.post("/api/projects", json={"name": f"cross-ref-{uuid.uuid4().hex[:6]}"}).json()
 
 
 def _add_node(project_id: str, graph_id: str, node_type: str, title: str) -> str:
@@ -54,21 +54,21 @@ def _add_edge(project_id: str, source: str, target: str, label: str, relation: s
 
 def test_cross_graph_reference_visible_from_both_sides():
     project = _project()
-    char_id = _add_node(project["id"], project["character_graph_id"], "character", "小明")
-    world_id = _add_node(project["id"], project["world_graph_id"], "worldbuilding", "火焰王国")
-    _add_edge(project["id"], char_id, world_id, "属于", "belongs_to")
+    char_id = _add_node(project["id"], project["character_graph_id"], "character", "Xiaoming")
+    world_id = _add_node(project["id"], project["world_graph_id"], "worldbuilding", "Flame Kingdom")
+    _add_edge(project["id"], char_id, world_id, "belongs to", "belongs_to")
 
-    # 从角色看：1 条跨子图引用，指向 world，方向 outgoing
+    # From the character's view: 1 cross-subgraph reference, pointing to world, direction outgoing
     resp = client.get(f"/api/projects/{project['id']}/nodes/{char_id}/cross_references").json()
     assert resp["section"] == "character"
     assert len(resp["references"]) == 1
     ref = resp["references"][0]
     assert ref["other_section"] == "world"
-    assert ref["other_title"] == "火焰王国"
+    assert ref["other_title"] == "Flame Kingdom"
     assert ref["direction"] == "outgoing"
-    assert ref["relation_label"] == "属于"
+    assert ref["relation_label"] == "belongs to"
 
-    # 从世界观看：同一条边，方向 incoming，指回 character
+    # From the worldbuilding view: the same edge, direction incoming, pointing back to character
     back = client.get(f"/api/projects/{project['id']}/nodes/{world_id}/cross_references").json()
     assert len(back["references"]) == 1
     assert back["references"][0]["other_section"] == "character"
@@ -77,9 +77,9 @@ def test_cross_graph_reference_visible_from_both_sides():
 
 def test_intra_graph_edge_not_counted_as_cross_reference():
     project = _project()
-    a = _add_node(project["id"], project["character_graph_id"], "character", "甲")
-    b = _add_node(project["id"], project["character_graph_id"], "character", "乙")
-    _add_edge(project["id"], a, b, "死敌", "conflicts_with")
+    a = _add_node(project["id"], project["character_graph_id"], "character", "A")
+    b = _add_node(project["id"], project["character_graph_id"], "character", "B")
+    _add_edge(project["id"], a, b, "nemesis", "conflicts_with")
 
     resp = client.get(f"/api/projects/{project['id']}/nodes/{a}/cross_references").json()
-    assert resp["references"] == []  # 同属 character 子图，不算跨子图引用
+    assert resp["references"] == []  # both in the character sub-graph, not a cross-subgraph reference

@@ -4,9 +4,9 @@ import type { CreativeNodeData } from '../../types/node'
 import NodeHandles from './NodeHandles.vue'
 
 /**
- * 灵感节点卡片。
+ * Idea node card.
  *
- * 灵感节点用于承接零散脑洞；画布上只展示摘要，完整内容由右侧详情面板编辑。
+ * Idea nodes capture scattered brainstorms; the canvas only shows a summary, while the full content is edited in the right-side detail panel.
  */
 defineProps<NodeProps<CreativeNodeData>>()
 </script>

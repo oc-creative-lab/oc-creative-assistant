@@ -1,21 +1,17 @@
 <script setup lang="ts">
-import { computed, onMounted, ref, watch } from 'vue'
+import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { useRoute } from 'vue-router'
 import { storeToRefs } from 'pinia'
 import { useCenterStageStore } from '../../stores/useCenterStageStore'
-import {
-  deleteNode as apiDeleteNode,
-  getNodeFields,
-  saveNodeFields,
-  updateNode,
-} from '../../api/projectApi'
+import { getNodeFields, saveNodeFields, updateNode } from '../../api/projectApi'
+import PlotCastRow from './PlotCastRow.vue'
 
 /**
- * Node detail — a stationery writing surface (second_revision 改点 A, W3).
+ * Node detail — a stationery writing surface (second_revision change A, W3).
  *
  * Reads the initial snapshot from useCenterStageStore.detailNode, lets the writer
- * edit title / body / tags / status + free-form attributes, and persists straight
- * to the backend. "Back to canvas" returns (SubgraphCanvas reloads on mode change).
+ * edit title / body / tags / status + free-form attributes, with debounced auto-save.
+ * "Back to canvas" returns (SubgraphCanvas reloads on mode change).
  */
 const props = defineProps<{ nodeId: string }>()
 const emit = defineEmits<{ return: [] }>()
@@ -25,6 +21,12 @@ const centerStage = useCenterStageStore()
 const { detailNode } = storeToRefs(centerStage)
 
 const projectId = String(route.params.projectId)
+const SAVE_DEBOUNCE_MS = 500
+
+let saveTimer: ReturnType<typeof setTimeout> | null = null
+let isSaving = false
+let saveQueued = false
+const isHydrating = ref(true)
 
 const TYPE_LABEL: Record<string, string> = {
   character: 'Character',
@@ -49,6 +51,7 @@ interface FieldRow {
 const fieldRows = ref<FieldRow[]>([])
 
 const typeLabel = computed(() => TYPE_LABEL[detailNode.value?.nodeType ?? ''] ?? 'Note')
+const isPlot = computed(() => detailNode.value?.nodeType === 'plot')
 
 function loadFromSnapshot() {
   const node = detailNode.value
@@ -56,6 +59,13 @@ function loadFromSnapshot() {
   body.value = node?.content ?? ''
   tagsText.value = (node?.tags ?? []).join(', ')
   status.value = node?.status ?? 'draft'
+}
+
+async function hydrate() {
+  isHydrating.value = true
+  loadFromSnapshot()
+  await loadFields()
+  isHydrating.value = false
 }
 
 async function loadFields() {
@@ -74,8 +84,20 @@ function removeField(index: number) {
   fieldRows.value.splice(index, 1)
 }
 
-async function handleSave() {
-  saveState.value = 'Saving…'
+function scheduleSave() {
+  if (isHydrating.value) return
+  if (saveTimer) clearTimeout(saveTimer)
+  saveTimer = setTimeout(() => {
+    void persist()
+  }, SAVE_DEBOUNCE_MS)
+}
+
+async function persist() {
+  if (isSaving) {
+    saveQueued = true
+    return
+  }
+
   const tags = tagsText.value
     .split(',')
     .map((t) => t.trim())
@@ -85,6 +107,9 @@ async function handleSave() {
     const key = row.key.trim()
     if (key) fields[key] = row.value
   }
+
+  isSaving = true
+  saveState.value = 'Saving…'
   try {
     await updateNode(projectId, props.nodeId, {
       title: title.value,
@@ -93,95 +118,103 @@ async function handleSave() {
       status: status.value,
     })
     await saveNodeFields(projectId, props.nodeId, fields)
-    saveState.value = `Saved · ${new Date().toLocaleTimeString()}`
+    saveState.value = 'Saved'
   } catch (e) {
     saveState.value = e instanceof Error ? `Save failed: ${e.message}` : 'Save failed'
-  }
-}
-
-async function handleDelete() {
-  if (!window.confirm('Delete this node? Connected edges will be removed too.')) return
-  try {
-    await apiDeleteNode(projectId, props.nodeId)
-    emit('return')
-  } catch (e) {
-    saveState.value = e instanceof Error ? `Delete failed: ${e.message}` : 'Delete failed'
+  } finally {
+    isSaving = false
+    if (saveQueued) {
+      saveQueued = false
+      void persist()
+    }
   }
 }
 
 onMounted(() => {
-  loadFromSnapshot()
-  void loadFields()
+  void hydrate()
 })
 watch(
   () => props.nodeId,
   () => {
-    loadFromSnapshot()
-    void loadFields()
+    void hydrate()
   },
 )
+
+watch([title, body, tagsText, status, fieldRows], () => {
+  scheduleSave()
+}, { deep: true })
+
+onBeforeUnmount(() => {
+  if (saveTimer) clearTimeout(saveTimer)
+})
 </script>
 
 <template>
-  <section class="detail">
+  <section class="detail" :class="{ 'detail--plot': isPlot }">
     <div class="detail__bar">
       <button type="button" class="detail__back" @click="emit('return')">← Back to canvas</button>
       <span class="detail__state">{{ saveState }}</span>
     </div>
 
-    <div class="detail__scroll">
-      <article class="sheet">
-        <p class="eyebrow sheet__eyebrow">{{ typeLabel }}</p>
+    <div class="detail__scroll" :class="{ 'detail__scroll--plot': isPlot }">
+      <div class="detail__content" :class="{ 'detail__content--plot': isPlot }">
+        <article class="sheet" :class="{ 'sheet--plot': isPlot }">
+          <div class="sheet__stack">
+            <p class="eyebrow sheet__eyebrow">{{ typeLabel }}</p>
 
-        <input
-          v-model="title"
-          class="sheet__title"
-          type="text"
-          placeholder="Untitled"
-          spellcheck="false"
-        />
+            <input
+              v-model="title"
+              class="sheet__title"
+              type="text"
+              placeholder="Untitled"
+              spellcheck="false"
+            />
 
-        <textarea
-          v-model="body"
-          class="sheet__body"
-          rows="10"
-          placeholder="Start writing — describe this character, place, or moment…"
-        ></textarea>
+            <textarea
+              v-model="body"
+              class="sheet__body"
+              :rows="isPlot ? 6 : 10"
+              placeholder="Start writing — describe this character, place, or moment…"
+            ></textarea>
 
-        <div class="sheet__meta">
-          <label class="sheet__meta-row">
-            <span class="eyebrow">Tags</span>
-            <input v-model="tagsText" type="text" placeholder="protagonist, act one" />
-          </label>
-          <label class="sheet__meta-row sheet__meta-row--status">
-            <span class="eyebrow">Status</span>
-            <select v-model="status">
-              <option value="draft">draft</option>
-              <option value="synced">synced</option>
-              <option value="outdated">outdated</option>
-            </select>
-          </label>
-        </div>
+            <div v-if="!isPlot" class="sheet__meta">
+              <label class="sheet__meta-row">
+                <span class="eyebrow">Tags</span>
+                <input v-model="tagsText" type="text" placeholder="protagonist, act one" />
+              </label>
+              <label class="sheet__meta-row sheet__meta-row--status">
+                <span class="eyebrow">Status</span>
+                <select v-model="status">
+                  <option value="draft">draft</option>
+                  <option value="synced">synced</option>
+                  <option value="outdated">outdated</option>
+                </select>
+              </label>
+            </div>
 
-        <div class="sheet__fields">
-          <div class="sheet__fields-head">
-            <span class="eyebrow">Attributes</span>
-            <button type="button" class="sheet__add" @click="addField">+ Add field</button>
+            <div class="sheet__fields">
+              <div class="sheet__fields-head">
+                <span class="eyebrow">Attributes</span>
+                <button type="button" class="sheet__add" @click="addField">+ Add field</button>
+              </div>
+              <p v-if="fieldRows.length === 0" class="sheet__hint">No attributes yet.</p>
+              <div v-for="(row, index) in fieldRows" :key="index" class="sheet__field">
+                <input v-model="row.key" class="sheet__field-key" placeholder="Faction" />
+                <span class="sheet__field-sep">·</span>
+                <input v-model="row.value" class="sheet__field-val" placeholder="Flame Kingdom" />
+                <button type="button" class="sheet__field-del" @click="removeField(index)">✕</button>
+              </div>
+            </div>
           </div>
-          <p v-if="fieldRows.length === 0" class="sheet__hint">No attributes yet.</p>
-          <div v-for="(row, index) in fieldRows" :key="index" class="sheet__field">
-            <input v-model="row.key" class="sheet__field-key" placeholder="Faction" />
-            <span class="sheet__field-sep">·</span>
-            <input v-model="row.value" class="sheet__field-val" placeholder="Flame Kingdom" />
-            <button type="button" class="sheet__field-del" @click="removeField(index)">✕</button>
-          </div>
-        </div>
 
-        <footer class="sheet__foot">
-          <button type="button" class="sheet__save" @click="handleSave">Save</button>
-          <button type="button" class="sheet__delete" @click="handleDelete">Delete node</button>
-        </footer>
-      </article>
+          <PlotCastRow
+            v-if="isPlot"
+            class="sheet__cast"
+            :project-id="projectId"
+            :plot-node-id="nodeId"
+          />
+        </article>
+      </div>
     </div>
   </section>
 </template>
@@ -189,11 +222,18 @@ watch(
 <style scoped>
 .detail {
   height: 100%;
-  display: grid;
-  grid-template-rows: auto minmax(0, 1fr);
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
   background: var(--app-bg);
 }
+
+.detail--plot {
+  overflow: hidden;
+}
+
 .detail__bar {
+  flex-shrink: 0;
   display: flex;
   align-items: center;
   justify-content: space-between;
@@ -201,6 +241,7 @@ watch(
   border-bottom: 1px solid var(--border);
   background: var(--panel);
 }
+
 .detail__back {
   border: none;
   background: none;
@@ -209,14 +250,18 @@ watch(
   font-size: 13px;
   font-weight: 500;
 }
+
 .detail__back:hover {
   color: var(--accent);
 }
+
 .detail__state {
   font-size: 12px;
   color: var(--muted);
 }
+
 .detail__scroll {
+  flex: 1;
   min-height: 0;
   overflow-y: auto;
   padding: 28px 24px 60px;
@@ -224,16 +269,35 @@ watch(
   justify-content: center;
 }
 
+.detail__scroll--plot {
+  padding: 14px 24px 0;
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+}
+
+.detail__content {
+  width: 100%;
+  max-width: 660px;
+  display: flex;
+  flex-direction: column;
+}
+
+.detail__content--plot {
+  flex: 1;
+  min-height: 0;
+  width: 100%;
+}
+
 /* —— the sheet of paper —— */
 .sheet {
   width: 100%;
-  max-width: 660px;
   padding: 44px 52px 40px;
   background: var(--paper);
   border: 1px solid var(--border);
   border-radius: 4px;
   box-shadow: var(--shadow-lg);
-  /* faint ruled lines + a warm paper wash */
   background-image:
     linear-gradient(var(--paper), var(--paper)),
     repeating-linear-gradient(
@@ -246,7 +310,38 @@ watch(
   background-clip: padding-box;
   position: relative;
 }
-/* a soft binding margin line on the left, like a letter pad */
+
+.sheet--plot {
+  flex: 1;
+  min-height: 0;
+  display: grid;
+  grid-template-rows: minmax(0, 1fr) auto;
+  overflow: hidden;
+  padding-bottom: 0;
+  border-radius: 4px 4px 0 0;
+  border-bottom: none;
+}
+
+.sheet__stack {
+  min-height: 0;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  padding-bottom: 8px;
+}
+
+.sheet--plot .sheet__body {
+  flex: 1 1 auto;
+  min-height: 5em;
+  resize: none;
+}
+
+.sheet__cast {
+  flex-shrink: 0;
+  padding-bottom: 24px;
+  overflow: visible;
+}
+
 .sheet::before {
   content: '';
   position: absolute;
@@ -256,9 +351,11 @@ watch(
   width: 1px;
   background: rgba(233, 130, 74, 0.25);
 }
+
 .sheet__eyebrow {
   margin: 0 0 10px;
 }
+
 .sheet__title {
   width: 100%;
   border: none;
@@ -270,12 +367,15 @@ watch(
   color: var(--text);
   padding: 0;
 }
+
 .sheet__title::placeholder {
   color: rgba(28, 25, 23, 0.25);
 }
+
 .sheet__title:focus {
   outline: none;
 }
+
 .sheet__body {
   width: 100%;
   margin-top: 14px;
@@ -284,12 +384,14 @@ watch(
   resize: vertical;
   font-family: var(--font-serif);
   font-size: 1.04rem;
-  line-height: 34px; /* aligns text to the ruled lines */
+  line-height: 34px;
   color: var(--text-soft);
 }
+
 .sheet__body:focus {
   outline: none;
 }
+
 .sheet__body::placeholder {
   color: rgba(28, 25, 23, 0.28);
 }
@@ -301,15 +403,18 @@ watch(
   padding-top: 18px;
   border-top: 1px solid rgba(28, 25, 23, 0.08);
 }
+
 .sheet__meta-row {
   display: flex;
   flex-direction: column;
   gap: 6px;
   flex: 1;
 }
+
 .sheet__meta-row--status {
   flex: 0 0 140px;
 }
+
 .sheet__meta-row input,
 .sheet__meta-row select {
   border: none;
@@ -319,6 +424,7 @@ watch(
   font-size: 0.92rem;
   color: var(--text);
 }
+
 .sheet__meta-row input:focus,
 .sheet__meta-row select:focus {
   outline: none;
@@ -328,12 +434,14 @@ watch(
 .sheet__fields {
   margin-top: 24px;
 }
+
 .sheet__fields-head {
   display: flex;
   align-items: center;
   justify-content: space-between;
   margin-bottom: 10px;
 }
+
 .sheet__add {
   border: none;
   background: none;
@@ -342,16 +450,19 @@ watch(
   font-size: 12px;
   font-weight: 600;
 }
+
 .sheet__hint {
   color: var(--muted);
   font-size: 13px;
 }
+
 .sheet__field {
   display: flex;
   align-items: center;
   gap: 8px;
   padding: 5px 0;
 }
+
 .sheet__field-key {
   width: 150px;
   border: none;
@@ -359,19 +470,23 @@ watch(
   font-weight: 600;
   color: var(--text);
 }
+
 .sheet__field-sep {
   color: var(--muted);
 }
+
 .sheet__field-val {
   flex: 1;
   border: none;
   background: transparent;
   color: var(--text-soft);
 }
+
 .sheet__field-key:focus,
 .sheet__field-val:focus {
   outline: none;
 }
+
 .sheet__field-del {
   border: none;
   background: none;
@@ -381,40 +496,8 @@ watch(
   opacity: 0;
   transition: opacity 0.15s;
 }
+
 .sheet__field:hover .sheet__field-del {
   opacity: 1;
-}
-
-.sheet__foot {
-  display: flex;
-  align-items: center;
-  gap: 12px;
-  margin-top: 32px;
-}
-.sheet__save {
-  padding: 9px 22px;
-  border-radius: 999px;
-  border: none;
-  background: var(--text);
-  color: #fff;
-  cursor: pointer;
-  font-weight: 600;
-  font-size: 0.9rem;
-}
-.sheet__save:hover {
-  background: var(--accent);
-}
-.sheet__delete {
-  padding: 9px 16px;
-  border-radius: 999px;
-  border: 1px solid var(--border-strong);
-  background: transparent;
-  color: var(--muted);
-  cursor: pointer;
-  font-size: 0.86rem;
-}
-.sheet__delete:hover {
-  color: var(--warm);
-  border-color: var(--warm);
 }
 </style>

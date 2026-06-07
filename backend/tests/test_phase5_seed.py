@@ -1,9 +1,9 @@
-"""first_revision 阶段 5 验收测试（种子机制）。
+"""first_revision phase 5 acceptance tests (seed mechanism).
 
-1. rebuild_seed 产出含 worldview/characters/plot/style 的种子 JSON，版本自增；
-2. load_context_node 能把最新种子读进 state.seed_context。
+1. rebuild_seed produces a seed JSON containing worldview/characters/plot/style, with the version auto-incrementing;
+2. load_context_node can read the latest seed into state.seed_context.
 
-用 stub provider 注入确定的 SeedOutput，避免依赖真实 LLM。
+A stub provider injects a deterministic SeedOutput to avoid depending on a real LLM.
 """
 
 import json
@@ -32,9 +32,9 @@ class _StubProvider:
 
 
 def _project_with_node() -> str:
-    project = client.post("/api/projects", json={"name": f"种子-{uuid.uuid4().hex[:6]}"}).json()
+    project = client.post("/api/projects", json={"name": f"seed-{uuid.uuid4().hex[:6]}"}).json()
     pid = project["id"]
-    # 直接塞一个节点，让 seed_compressor 有内容可压。
+    # Insert a node directly so seed_compressor has content to compress.
     with SessionLocal.begin() as db:
         db.add(
             NodeORM(
@@ -42,8 +42,8 @@ def _project_with_node() -> str:
                 project_id=pid,
                 graph_id=project["character_graph_id"],
                 node_type="character",
-                title="暮岩",
-                content="矮人铁匠, 身世存疑",
+                title="Duskstone",
+                content="A dwarven blacksmith with a questionable past",
             )
         )
     return pid
@@ -53,10 +53,10 @@ def test_rebuild_seed_produces_real_seed_and_bumps_version(monkeypatch):
     pid = _project_with_node()
 
     seed_out = SeedOutput(
-        worldview_summary="矮人铁匠部族的低魔世界",
-        main_characters=["暮岩"],
-        plot_outline="暮岩因身世与族群冲突",
-        style_notes="厚重内省",
+        worldview_summary="A low-magic world of dwarven blacksmith clans",
+        main_characters=["Duskstone"],
+        plot_outline="Duskstone clashes with the clan over his origins",
+        style_notes="Heavy and introspective",
     )
     monkeypatch.setattr(seed_mod, "get_llm_provider", lambda: _StubProvider(seed_out))
 
@@ -64,22 +64,22 @@ def test_rebuild_seed_produces_real_seed_and_bumps_version(monkeypatch):
     assert first.version == 1
     data = json.loads(first.seed_json)
     assert set(data.keys()) == {"worldview_summary", "main_characters", "plot_outline", "style_notes"}
-    assert data["main_characters"] == ["暮岩"]
+    assert data["main_characters"] == ["Duskstone"]
 
     second = rebuild_seed(pid)
-    assert second.version == 2  # 版本自增
+    assert second.version == 2  # version auto-increments
 
 
 def test_load_context_injects_latest_seed(monkeypatch):
     pid = _project_with_node()
-    seed_out = SeedOutput(worldview_summary="测试世界", main_characters=[], plot_outline="", style_notes="")
+    seed_out = SeedOutput(worldview_summary="Test World", main_characters=[], plot_outline="", style_notes="")
     monkeypatch.setattr(seed_mod, "get_llm_provider", lambda: _StubProvider(seed_out))
     rebuild_seed(pid)
 
-    # 建会话 + 一条消息，让 load_context 有 session 可加载。
+    # Create a session + one message so load_context has a session to load.
     session = client.post("/api/sessions", json={"project_id": pid, "title": "t"}).json()
     with SessionLocal.begin() as db:
         append_message(db, session_id=session["id"], role="user", content="hi")
 
     out = load_context_node({"session_id": session["id"], "selected_node_ids": []})
-    assert "测试世界" in out["seed_context"]
+    assert "Test World" in out["seed_context"]

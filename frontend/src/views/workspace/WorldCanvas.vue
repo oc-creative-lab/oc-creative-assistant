@@ -1,22 +1,21 @@
 <script setup lang="ts">
 import { storeToRefs } from 'pinia'
 import { useProjectStore } from '../../stores/useProjectStore'
-import SubgraphCanvas from '../../components/workspace/SubgraphCanvas.vue'
+import WorldNotesWorkspace from '../../components/workspace/world/WorldNotesWorkspace.vue'
 
 /**
- * 世界观视图（first_revision 阶段 3）：Vue Flow 画布，绑定 world sub-graph。
+ * Worldbuilding view: folder notes by default, optional tree canvas derived from hierarchy.
  */
 const { worldGraphId } = storeToRefs(useProjectStore())
 </script>
 
 <template>
-  <SubgraphCanvas
+  <WorldNotesWorkspace
     v-if="worldGraphId"
     :key="worldGraphId"
     :graph-id="worldGraphId"
-    :create-types="['worldbuilding']"
   />
-  <p v-else class="workspace-loading">正在加载世界观...</p>
+  <p v-else class="workspace-loading">Loading worldbuilding…</p>
 </template>
 
 <style scoped>

@@ -1,8 +1,7 @@
-import { nextTick, ref, type Ref } from 'vue'
+import { ref, type Ref } from 'vue'
 import { addEdge } from '@vue-flow/core'
 import type { Connection, Edge } from '@vue-flow/core'
 import type {
-  CreativeEdgeWaypoint,
   CreativeFlowEdge,
   CreativeFlowNode,
   CreativeGraphSnapshot,
@@ -17,17 +16,11 @@ import {
   normalizeEdge,
 } from '../utils/canvasRelations'
 
-const LAYOUT_START_X = 80
-const LAYOUT_START_Y = 80
-const LAYOUT_COLUMN_GAP = 340
-const LAYOUT_ROW_GAP = 180
-
 interface Options {
   nodes: Ref<CreativeFlowNode[]>
   edges: Ref<CreativeFlowEdge[]>
   flowShell: Ref<HTMLElement | null>
   selectedRelationType: Ref<CreativeRelationType>
-  fitView: (options?: { padding?: number; duration?: number }) => Promise<unknown> | void
   getViewport: () => { x: number; y: number; zoom: number }
   onGraphChanged: (snapshot: CreativeGraphSnapshot) => void
   onNodeAdded: (node: CreativeFlowNode) => void
@@ -36,11 +29,11 @@ interface Options {
 }
 
 /**
- * Canvas 图操作的核心 composable。
+ * The core composable for canvas graph operations.
  *
- * 集中所有"会改变 nodes / edges 内容"的交互: 新建节点、清空、自动布局、
- * 手动连线、拖动结束后的快照同步。所有 emit 都通过 options 注入的回调
- * 下放给宿主组件, 让本 composable 不耦合 Vue Flow 之外的业务事件。
+ * Centralizes all interactions that "change the content of nodes / edges": creating nodes, clearing, auto-layout,
+ * manual edge connection, and snapshot syncing after a drag ends. All emits are delegated to the host
+ * component via callbacks injected through options, keeping this composable decoupled from business events outside Vue Flow.
  */
 export function useCanvasGraph(options: Options) {
   const addNodeCount = ref(0)
@@ -71,118 +64,10 @@ export function useCanvasGraph(options: Options) {
   }
 
   /**
-   * 按 BFS 层级把所有节点分桶, 用于自动布局。
+   * Compute the canvas coordinates for a newly added node.
    *
-   * 入度为 0 的节点放第 0 层; 与任何边都不相连的孤儿放到末层。
-   * 不构造严格 DAG 也能给出"看起来合理"的层级。
-   *
-   * Returns:
-   *   Map<层号, 该层节点数组>。
-   */
-  function buildLayoutLayers() {
-    const allNodes = options.nodes.value
-    const allEdges = options.edges.value
-    const nodeIds = new Set(allNodes.map((node) => node.id))
-    const outgoing = new Map<string, string[]>()
-    const incomingCount = new Map<string, number>()
-    const layerByNodeId = new Map<string, number>()
-
-    for (const node of allNodes) {
-      outgoing.set(node.id, [])
-      incomingCount.set(node.id, 0)
-    }
-
-    for (const edge of allEdges) {
-      if (!nodeIds.has(edge.source) || !nodeIds.has(edge.target)) {
-        continue
-      }
-      outgoing.get(edge.source)?.push(edge.target)
-      incomingCount.set(edge.target, (incomingCount.get(edge.target) ?? 0) + 1)
-    }
-
-    const queue = allNodes
-      .filter((node) => (incomingCount.get(node.id) ?? 0) === 0)
-      .map((node) => node.id)
-
-    if (queue.length === 0 && allNodes[0]) {
-      queue.push(allNodes[0].id)
-    }
-
-    const visited = new Set<string>()
-
-    for (const nodeId of queue) {
-      layerByNodeId.set(nodeId, 0)
-      visited.add(nodeId)
-    }
-
-    for (let cursor = 0; cursor < queue.length; cursor += 1) {
-      const nodeId = queue[cursor]
-      const currentLayer = layerByNodeId.get(nodeId) ?? 0
-
-      for (const targetId of outgoing.get(nodeId) ?? []) {
-        if (!visited.has(targetId)) {
-          layerByNodeId.set(targetId, currentLayer + 1)
-          visited.add(targetId)
-          queue.push(targetId)
-        }
-      }
-    }
-
-    const fallbackLayer = Math.max(0, ...layerByNodeId.values()) + 1
-
-    for (const node of allNodes) {
-      if (!layerByNodeId.has(node.id)) {
-        layerByNodeId.set(node.id, fallbackLayer)
-      }
-    }
-
-    const layers = new Map<number, CreativeFlowNode[]>()
-
-    for (const node of allNodes) {
-      const layer = layerByNodeId.get(node.id) ?? 0
-      const layerNodes = layers.get(layer) ?? []
-      layerNodes.push(node)
-      layers.set(layer, layerNodes)
-    }
-
-    return layers
-  }
-
-  function handleAutoLayout() {
-    if (options.nodes.value.length === 0) return
-
-    const layers = buildLayoutLayers()
-
-    options.nodes.value = options.nodes.value.map((node) => {
-      const layer =
-        [...layers.entries()].find(([, layerNodes]) =>
-          layerNodes.some((item) => item.id === node.id),
-        )?.[0] ?? 0
-      const layerNodes = layers.get(layer) ?? []
-      const row = layerNodes.findIndex((item) => item.id === node.id)
-
-      return {
-        ...node,
-        sourcePosition: undefined,
-        targetPosition: undefined,
-        position: {
-          x: LAYOUT_START_X + layer * LAYOUT_COLUMN_GAP,
-          y: LAYOUT_START_Y + Math.max(row, 0) * LAYOUT_ROW_GAP,
-        },
-      }
-    })
-
-    emitGraphChanged()
-    void nextTick(() => {
-      void options.fitView({ padding: 0.24, duration: 300 })
-    })
-  }
-
-  /**
-   * 计算新增节点的画布坐标。
-   *
-   * 根据当前 viewport 反推画布坐标, 让节点落在用户正在查看的区域中心附近;
-   * 多次连续新建时按计数偏移, 避免叠在同一坐标。
+   * Back-computes the canvas coordinates from the current viewport so the node lands near the center of the area the user is viewing;
+   * offsets by a counter on repeated consecutive creations to avoid stacking at the same coordinate.
    */
   function getNextNodePosition() {
     const viewport = options.getViewport()
@@ -207,10 +92,10 @@ export function useCanvasGraph(options: Options) {
   }
 
   /**
-   * 就地更新某节点的展示数据（second_revision 改点 A：inline edit）。
+   * Update a node's display data in place (second_revision change A: inline edit).
    *
-   * 节点组件里 InlineEditableText 保存时调用本函数，更新 nodes.value 对应节点的
-   * data 字段并触发自动保存，走和拖拽 / 连线一致的"改 nodes.value 再 emit"通路。
+   * Called when InlineEditableText in the node component saves; updates the data field of the matching node in nodes.value
+   * and triggers auto-save, going through the same "mutate nodes.value then emit" path as dragging / connecting.
    */
   function updateNodeData(nodeId: string, patch: { title?: string; content?: string }) {
     let changed = false
@@ -230,13 +115,19 @@ export function useCanvasGraph(options: Options) {
     if (changed) emitGraphChanged()
   }
 
-  /** 删除单个节点及其相关边（右键菜单删除，second_revision 改点 A）。 */
+  /** Delete a single node and its related edges (right-click menu delete, second_revision change A). */
   function removeNode(nodeId: string) {
     options.edges.value = options.edges.value.filter(
       (edge) => edge.source !== nodeId && edge.target !== nodeId,
     )
     options.nodes.value = options.nodes.value.filter((node) => node.id !== nodeId)
     emitGraphChanged()
+  }
+
+  function removeEdge(edgeId: string) {
+    options.edges.value = options.edges.value.filter((edge) => edge.id !== edgeId)
+    emitGraphChanged()
+    options.onEdgeSelected('')
   }
 
   function handleClearCanvas() {
@@ -276,7 +167,7 @@ export function useCanvasGraph(options: Options) {
       label,
       sourceHandle: connection.sourceHandle ?? DEFAULT_SOURCE_HANDLE,
       targetHandle: connection.targetHandle ?? DEFAULT_TARGET_HANDLE,
-      type: 'smoothstep',
+      type: 'bezier',
       data: {
         label,
         relationType,
@@ -295,30 +186,32 @@ export function useCanvasGraph(options: Options) {
     emitGraphChanged()
   }
 
-  /**
-   * 写入用户拖拽得到的边 waypoint, 并触发自动保存。
-   *
-   * 由 OrthogonalEdge 通过 provide/inject 调用, 走和 handleConnect /
-   * handleNodeDragStop 一致的"先改 edges.value 再 emit"通路, 让自动保存的
-   * 触发口径保持单一。
-   */
-  function applyEdgeWaypoint(edgeId: string, waypoint: CreativeEdgeWaypoint) {
-    options.edges.value = options.edges.value.map((edge) =>
-      edge.id === edgeId
-        ? { ...edge, data: { ...(edge.data ?? {}), waypoint } }
-        : edge,
-    )
+  function updateEdgeRelation(edgeId: string, relationType: CreativeRelationType) {
+    const label = getRelationLabel(relationType)
+    options.edges.value = options.edges.value.map((edge) => {
+      if (edge.id !== edgeId) return edge
+      return normalizeEdge({
+        ...edge,
+        label,
+        data: {
+          ...(edge.data ?? {}),
+          label,
+          relationType,
+        },
+      })
+    })
     emitGraphChanged()
+    options.onEdgeSelected(edgeId)
   }
 
   return {
-    handleAutoLayout,
     handleCreateNode,
     handleClearCanvas,
     handleConnect,
     handleNodeDragStop,
-    applyEdgeWaypoint,
+    updateEdgeRelation,
     updateNodeData,
     removeNode,
+    removeEdge,
   }
 }

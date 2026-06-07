@@ -1,12 +1,14 @@
-"""LLM 调用的 Strategy Pattern 入口。
+"""Strategy Pattern entry point for LLM calls.
 
-把 LangChain / OpenAI SDK 的细节封在 Provider 内, agent 节点只看到统一的
-``chat`` (字符串) 与 ``structured`` (Pydantic) 两个方法, 屏蔽底层协议差异。
+Encapsulates the LangChain / OpenAI SDK details inside the Provider, so agent
+nodes only see two unified methods, ``chat`` (string) and ``structured``
+(Pydantic), shielding them from low-level protocol differences.
 
-DeepSeek / 通义等 OpenAI 兼容服务普遍不支持 ``response_format=json_schema``,
-真实 provider 显式固定 ``method="function_calling"`` 走 tool calls 协议,
-兼容性最广。Mock provider 完全脱离网络, 按 schema 名字返回登记好的样本,
-方便离线开发与 CI。
+OpenAI-compatible services like DeepSeek / Tongyi generally don't support
+``response_format=json_schema``, so the real provider explicitly pins
+``method="function_calling"`` to use the tool-calls protocol for the widest
+compatibility. The Mock provider is fully offline and returns registered samples
+keyed by schema name, which is convenient for offline development and CI.
 """
 
 from __future__ import annotations
@@ -29,10 +31,11 @@ TSchema = TypeVar("TSchema", bound=BaseModel)
 
 
 class LlmProvider(Protocol):
-    """LLM 调用的统一接口契约。
+    """The unified interface contract for LLM calls.
 
-    所有 agent 节点都通过本协议的实现来访问模型, Strategy Pattern 让 mock 与
-    真实 provider 可在 .env 中无缝切换, 不需要改业务代码。
+    Every agent node accesses the model through an implementation of this
+    protocol; the Strategy Pattern lets the mock and real providers swap
+    seamlessly via .env without changing business code.
     """
 
     def chat(self, messages: list[BaseMessage]) -> str: ...
@@ -53,15 +56,16 @@ class LlmProvider(Protocol):
 
 
 class OpenAICompatibleProvider:
-    """通过 OpenAI 兼容协议调用 DeepSeek / 通义 / OpenAI 官方等服务。
+    """Calls services like DeepSeek / Tongyi / official OpenAI via the OpenAI-compatible protocol.
 
-    底层使用 LangChain 的 ``ChatOpenAI``, 后续接 ToolNode / Checkpointer 时可以
-    直接复用 LangChain 生态, 不必自己手写工具调用循环。
+    Under the hood it uses LangChain's ``ChatOpenAI``, so when wiring up
+    ToolNode / Checkpointer later we can reuse the LangChain ecosystem directly
+    instead of hand-writing a tool-calling loop.
     """
 
     def __init__(self, settings: LlmSettings) -> None:
         if not settings.is_configured:
-            raise ValueError("OC_LLM_* 配置缺失, 无法初始化 OpenAI 兼容 provider")
+            raise ValueError("OC_LLM_* config is missing, cannot initialize the OpenAI-compatible provider")
 
         self._client = ChatOpenAI(
             base_url=settings.base_url,
@@ -76,10 +80,11 @@ class OpenAICompatibleProvider:
         return content if isinstance(content, str) else str(content)
 
     def chat_stream(self, messages: list[BaseMessage]) -> Iterator[str]:
-        """逐 chunk yield 文本 delta; LangChain ChatOpenAI 原生 .stream() 支持。
+        """Yield text deltas chunk by chunk; natively supported by LangChain ChatOpenAI's .stream().
 
-        空 chunk (例如 LLM 还在思考还没产 token) 直接跳过, 让上层只看到
-        真有内容的 token, 避免把 None / "" 灌进字符串累加。
+        Empty chunks (e.g. the LLM is still thinking and hasn't produced a token)
+        are skipped, so the upper layer only sees tokens with real content and we
+        avoid feeding None / "" into the string accumulation.
         """
         for chunk in self._client.stream(messages):
             content = chunk.content if isinstance(chunk, AIMessage) else chunk
@@ -99,7 +104,7 @@ class OpenAICompatibleProvider:
         messages: list[BaseMessage],
         tools: list[BaseTool],
     ) -> AIMessage:
-        """绑定工具调一次 LLM, 返回原生 AIMessage 让 tool_loop 解析 tool_calls。"""
+        """Bind tools and call the LLM once, returning the raw AIMessage so tool_loop can parse tool_calls."""
         bound = self._client.bind_tools(tools)
         response = bound.invoke(messages)
         if isinstance(response, AIMessage):
@@ -110,14 +115,14 @@ _MOCK_SAMPLES: dict[str, dict[str, Any]] = {
     "IntentClassification": {
         "intent": "inspiration",
         "confidence": 0.85,
-        "reasoning": "用户希望探索创作方向, 命中 inspiration 意图。",
+        "reasoning": "The user wants to explore creative directions, matching the inspiration intent.",
     },
     "InspirationOutput": {
-        "reasoning": "围绕已有矮人铁匠设定补充背景冲突, 让角色更立体。",
+        "reasoning": "Add background conflict around the existing dwarven-blacksmith setting to make the character more three-dimensional.",
         "suggestions": [
-            "为铁匠设计一段被族长流放的过往",
-            "引入一名挑战她技艺的年轻学徒",
-            "让她持有一件揭示先祖秘密的器物",
+            "Design a past for the blacksmith in which she was exiled by the clan chief",
+            "Introduce a young apprentice who challenges her craft",
+            "Have her hold an artifact that reveals an ancestral secret",
         ],
         "referenced_node_ids": [],
         "proposed_changes": [
@@ -126,87 +131,89 @@ _MOCK_SAMPLES: dict[str, dict[str, Any]] = {
                 "target_id": None,
                 "pending_id": "pending-1",
                 "payload": {
-                    "title": "暮岩",
-                    "content": "年轻矮人学徒, 师从主角, 暗中怀疑师父的过往",
+                    "title": "Duskstone",
+                    "content": "A young dwarven apprentice, studying under the protagonist, secretly suspicious of her master's past",
                     "node_type": "character",
                 },
-                "reason": "为主角引入冲突线",
+                "reason": "Introduce a conflict line for the protagonist",
             }
         ],
     },
     "ResearchOutput": {
-        "reasoning": "在已有 graph 中按主题汇总相关角色与世界观片段。",
-        "summary": "[mock] 该角色与现有族群存在历史纠葛, 核心冲突源自身份认同。",
+        "reasoning": "Summarize related characters and worldbuilding fragments by theme within the existing graph.",
+        "summary": "[mock] This character has historical entanglements with the existing clan; the core conflict stems from identity.",
         "referenced_node_ids": [],
         "proposed_changes": [],
     },
     "StructureOutput": {
-        "reasoning": "用户已选定的角色尚未与情节连接, 补一条交互线。",
-        "summary": "建议新增一条角色与族长之间的对抗交互线。",
+        "reasoning": "The character the user selected isn't yet connected to the plot; add an interaction line.",
+        "summary": "Recommend adding an opposing interaction line between the character and the clan chief.",
         "proposed_changes": [],
     },
     "SimulationOutput": {
-        "reasoning": "针对用户假设展开多条走向, 评估对现有节点的影响。",
+        "reasoning": "Lay out multiple directions for the user's hypothesis and assess the impact on existing nodes.",
         "branches": [
             {
-                "scenario": "她接受任务但留下后路",
+                "scenario": "She accepts the mission but leaves herself a way out",
                 "likelihood": "high",
-                "downstream_impacts": ["部族暂时和解", "学徒身份成谜"],
+                "downstream_impacts": ["The clan reconciles for now", "The apprentice's identity becomes a mystery"],
                 "affected_node_ids": [],
             }
         ],
     },
     "ChatAssemblerOutput": {
-        "reply_text": "[mock] 围绕铁匠的故事, 给你几个方向: 流放过往、年轻学徒、先祖器物。",
+        "reply_text": "[mock] For the blacksmith's story, here are a few directions: an exiled past, a young apprentice, an ancestral artifact.",
         "cited_node_ids": [],
-        "staging_summary": "我准备帮你新增 1 处, 等你确认。",
+        "staging_summary": "I'm ready to add 1 item for you, pending your confirmation.",
     },
     "ChatMetadataOutput": {
         "cited_node_ids": [],
-        "staging_summary": "我准备帮你新增 1 处, 等你确认。",
+        "staging_summary": "I'm ready to add 1 item for you, pending your confirmation.",
     },
         "SummaryOutput": {
-        "summary": "[mock] 用户与 agent 围绕主角的过往与族群冲突展开了多轮探讨, 已就主线方向达成基本共识。",
+        "summary": "[mock] The user and the agent had several rounds of discussion about the protagonist's past and the clan conflict, reaching basic consensus on the main direction.",
         "key_facts": [
-            "主角是矮人铁匠, 身世存疑",
-            "用户倾向于让冲突来自族群内部",
+            "The protagonist is a dwarven blacksmith with a questionable origin",
+            "The user leans toward having the conflict come from within the clan",
         ],
     },
     "StructuredExtractionOutput": {
-        "reasoning": "[mock] 从对话抽出一个角色与一个世界观设定。",
+        "reasoning": "[mock] Extracted one character and one worldbuilding setting from the conversation.",
         "entities": [
-            {"type": "character", "name": "暮岩", "attributes": {"身份": "矮人铁匠"}},
-            {"type": "world", "name": "铁炉部族", "attributes": {}},
+            {"type": "character", "name": "Duskstone", "attributes": {"role": "dwarven blacksmith"}},
+            {"type": "world", "name": "Ironforge Clan", "attributes": {}},
         ],
         "relations": [
-            {"source_name": "暮岩", "target_name": "铁炉部族", "label": "属于"},
+            {"source_name": "Duskstone", "target_name": "Ironforge Clan", "label": "belongs to"},
         ],
-        "deferred_fields": [{"entity": "暮岩", "field": "外貌"}],
+        "deferred_fields": [{"entity": "Duskstone", "field": "appearance"}],
     },
     "QuestionPlannerOutput": {
-        "reasoning": "[mock] 角色已有身份, 缺动机, 追问动机。",
-        "next_question": "暮岩为什么离开铁炉部族?",
-        "target_field": "动机",
+        "reasoning": "[mock] The character has an identity but lacks motivation; ask about motivation.",
+        "next_question": "Why did Duskstone leave the Ironforge Clan?",
+        "target_field": "motivation",
     },
     "SeedOutput": {
-        "worldview_summary": "[mock] 一个以矮人铁匠部族为核心的奇幻世界。",
-        "main_characters": ["暮岩"],
-        "plot_outline": "[mock] 主角因身世之谜与族群产生冲突。",
-        "style_notes": "厚重、内省的低魔奇幻基调。",
+        "worldview_summary": "[mock] A fantasy world centered on a clan of dwarven blacksmiths.",
+        "main_characters": ["Duskstone"],
+        "plot_outline": "[mock] The protagonist comes into conflict with the clan over the mystery of her origin.",
+        "style_notes": "A weighty, introspective low-fantasy tone.",
     },
     "WorkspaceInspirationOutput": {
-        "reasoning": "[mock] 用户在分享想法，给正向反馈。",
+        "reasoning": "[mock] The user is sharing an idea; give positive feedback.",
         "type": "feedback",
-        "content": "[mock] 这个方向很有意思，尤其是冲突来自内部，张力会很足。",
+        "content": "[mock] This direction is really interesting — especially with the conflict coming from within, the tension will be strong.",
     },
 }
 
 
 class MockProvider:
-    """离线确定性桩, 不发出任何网络请求。
+    """An offline, deterministic stub that makes no network requests.
 
-    根据目标 schema 名字返回 ``_MOCK_SAMPLES`` 里登记的样本, 让前端联调与单测
-    可以脱离 LLM。遇到未注册 schema 直接抛错, 暴露遗漏比静默返回 None 更安全。
+    Returns the sample registered in ``_MOCK_SAMPLES`` based on the target schema
+    name, so frontend integration and unit tests can run without an LLM. It raises
+    on an unregistered schema, since surfacing the omission is safer than silently
+    returning None.
     """
 
     def chat(self, messages: list[BaseMessage]) -> str:
@@ -218,7 +225,7 @@ class MockProvider:
         return f"[mock] received: {text[:60]}"
 
     def chat_stream(self, messages: list[BaseMessage]) -> Iterator[str]:
-        """按字符切分模拟 token stream, 让 mock 模式也能验证前端渐进渲染。"""
+        """Split by character to simulate a token stream, so mock mode can also verify the frontend's progressive rendering."""
         for ch in self.chat(messages):
             yield ch
 
@@ -230,7 +237,7 @@ class MockProvider:
         sample = _MOCK_SAMPLES.get(schema.__name__)
         if sample is None:
             raise ValueError(
-                f"MockProvider 缺少 {schema.__name__} 样本; 请在 _MOCK_SAMPLES 注册"
+                f"MockProvider is missing a {schema.__name__} sample; please register it in _MOCK_SAMPLES"
             )
         return schema.model_validate(sample)
 
@@ -239,5 +246,5 @@ class MockProvider:
         messages: list[BaseMessage],
         tools: list[BaseTool],
     ) -> AIMessage:
-        """Mock 模式跳过工具调用, 直接返回空回复让 tool_loop 立即退出。"""
+        """Mock mode skips tool calls and returns an empty reply so tool_loop exits immediately."""
         return AIMessage(content="")

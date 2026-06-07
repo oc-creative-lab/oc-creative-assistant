@@ -5,10 +5,11 @@ import { storeToRefs } from 'pinia'
 import { useLibraryStore } from '../stores/useLibraryStore'
 
 /**
- * 聊天入口（阶段 2）。
+ * Chat entry (stage 2).
  *
- * 选已有项目下拉 + “新建项目”，确认后跳 /chat/:projectId。
- * 复用 useLibraryStore，与项目库共享项目列表与创建逻辑。
+ * A dropdown to pick an existing project plus "New project"; on confirm it
+ * navigates to /chat/:projectId. Reuses useLibraryStore, sharing the project
+ * list and creation logic with the library.
  */
 const router = useRouter()
 const library = useLibraryStore()
@@ -27,7 +28,7 @@ onMounted(async () => {
 
 function enterChat(): void {
   if (!selectedId.value) return
-  router.push(`/chat/${selectedId.value}`)
+  router.push(`/workspace/${selectedId.value}`)
 }
 
 async function handleCreate(): Promise<void> {
@@ -36,7 +37,7 @@ async function handleCreate(): Promise<void> {
   const detail = await library.createProject({ name })
   isCreating.value = false
   newName.value = ''
-  router.push(`/chat/${detail.id}`)
+  router.push(`/workspace/${detail.id}`)
 }
 </script>
 

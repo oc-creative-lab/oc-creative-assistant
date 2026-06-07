@@ -3,9 +3,9 @@ import type { CreativeFlowEdge, CreativeFlowNode } from '../types/node'
 import { createNodeData } from '../utils/nodeFactory'
 
 /**
- * 《咒术回战》涉谷站线风格 mock 节点（与后端 `app/services/graph_seed.py` 默认示例对齐）。
+ * Jujutsu Kaisen Shibuya-station-line style mock nodes (aligned with the backend default sample in `app/services/graph_seed.py`).
  *
- * 设定：一个被咒力污染的地铁站，每到末班车后，站内广播会开始念出不存在的站名。
+ * Premise: a subway station polluted by cursed energy. After the last train each night, the station announcements begin calling out station names that do not exist.
  */
 export const mockGraphNodes: CreativeFlowNode[] = [
   {
@@ -16,11 +16,11 @@ export const mockGraphNodes: CreativeFlowNode[] = [
     targetPosition: Position.Left,
     data: {
       ...createNodeData('character'),
-      title: '虎杖检票员',
+      title: 'Yuji the Ticket Inspector',
       content:
-        '白天负责检票，晚上负责把逃票咒灵塞回闸机。因为吞过一张特级车票，偶尔会听见列车在胃里报站。',
-      typeLabel: '角色',
-      tags: ['角色', '检票员', '主角'],
+        'Checks tickets by day and stuffs fare-dodging curses back into the turnstiles by night. Having once swallowed a special-grade ticket, he occasionally hears a train calling out stations from inside his stomach.',
+      typeLabel: 'Character',
+      tags: ['Character', 'Ticket Inspector', 'Protagonist'],
       status: 'synced',
     },
   },
@@ -32,10 +32,10 @@ export const mockGraphNodes: CreativeFlowNode[] = [
     targetPosition: Position.Left,
     data: {
       ...createNodeData('character'),
-      title: '五条站长',
-      content: '戴着眼罩的神秘站长，能让所有乘客永远差一厘米刷不到卡。他声称这是“无限候车”。',
-      typeLabel: '角色',
-      tags: ['角色', '站长', '最强'],
+      title: 'Stationmaster Gojo',
+      content: 'A mysterious blindfolded stationmaster who can make every passenger forever fall one centimeter short of tapping their card. He calls it "Infinite Waiting".',
+      typeLabel: 'Character',
+      tags: ['Character', 'Stationmaster', 'The Strongest'],
       status: 'synced',
     },
   },
@@ -47,10 +47,10 @@ export const mockGraphNodes: CreativeFlowNode[] = [
     targetPosition: Position.Left,
     data: {
       ...createNodeData('character'),
-      title: '钉崎失物招领员',
-      content: '负责管理失物招领处，擅长用钉子把乘客遗失的怨念钉回原主人身上。',
-      typeLabel: '角色',
-      tags: ['角色', '失物招领', '咒具'],
+      title: 'Nobara the Lost-and-Found Clerk',
+      content: 'Runs the lost-and-found office and is skilled at using nails to pin passengers\' lost grudges back onto their original owners.',
+      typeLabel: 'Character',
+      tags: ['Character', 'Lost and Found', 'Cursed Tool'],
       status: 'synced',
     },
   },
@@ -62,10 +62,10 @@ export const mockGraphNodes: CreativeFlowNode[] = [
     targetPosition: Position.Left,
     data: {
       ...createNodeData('worldbuilding'),
-      title: '涉谷地下第零站台',
-      content: '地图上不存在的地铁站台，只在末班车之后开放。站牌会根据乘客最害怕的地方自动改名。',
-      typeLabel: '世界观',
-      tags: ['世界观', '车站', '诅咒空间'],
+      title: 'Shibuya Underground Platform Zero',
+      content: 'A subway platform that does not exist on any map, opening only after the last train. The station signs rename themselves to whatever place each passenger fears most.',
+      typeLabel: 'Worldbuilding',
+      tags: ['Worldbuilding', 'Station', 'Cursed Space'],
       status: 'synced',
     },
   },
@@ -77,10 +77,10 @@ export const mockGraphNodes: CreativeFlowNode[] = [
     targetPosition: Position.Left,
     data: {
       ...createNodeData('worldbuilding'),
-      title: '特级咒物：半价月票',
-      content: '传说只要使用这张月票，就能无限乘车。但代价是永远无法出站，只能在换乘通道里轮回。',
-      typeLabel: '世界观',
-      tags: ['世界观', '咒物', '月票'],
+      title: 'Special-Grade Cursed Object: The Half-Price Monthly Pass',
+      content: 'Legend says that with this monthly pass you can ride forever. The price is that you can never exit the station, doomed to loop endlessly through the transfer corridors.',
+      typeLabel: 'Worldbuilding',
+      tags: ['Worldbuilding', 'Cursed Object', 'Monthly Pass'],
       status: 'synced',
     },
   },
@@ -92,11 +92,11 @@ export const mockGraphNodes: CreativeFlowNode[] = [
     targetPosition: Position.Left,
     data: {
       ...createNodeData('worldbuilding'),
-      title: '午夜广播系统',
+      title: 'The Midnight Announcement System',
       content:
-        '每天 00:00 后，广播会用乘客亲人的声音报站。听到自己名字的人，下一站会被送往“终点站”。',
-      typeLabel: '世界观',
-      tags: ['世界观', '广播', '怪谈'],
+        'After 00:00 each day, the announcements call out stations in the voices of passengers\' loved ones. Anyone who hears their own name is sent to the "Final Stop" at the next station.',
+      typeLabel: 'Worldbuilding',
+      tags: ['Worldbuilding', 'Announcement', 'Urban Legend'],
       status: 'synced',
     },
   },
@@ -108,10 +108,10 @@ export const mockGraphNodes: CreativeFlowNode[] = [
     targetPosition: Position.Left,
     data: {
       ...createNodeData('plot'),
-      title: '末班车误入第零站台',
-      content: '虎杖检票员发现一列不在时刻表上的末班车停靠，车厢里全是没有影子的乘客。',
-      typeLabel: '剧情',
-      tags: ['剧情', '第一幕', '末班车'],
+      title: 'Last Train Strays onto Platform Zero',
+      content: 'Yuji the ticket inspector finds a last train that is not on any timetable pulling in, its cars full of passengers who cast no shadows.',
+      typeLabel: 'Plot',
+      tags: ['Plot', 'Act One', 'Last Train'],
       status: 'synced',
     },
   },
@@ -123,10 +123,10 @@ export const mockGraphNodes: CreativeFlowNode[] = [
     targetPosition: Position.Left,
     data: {
       ...createNodeData('plot'),
-      title: '半价月票苏醒',
-      content: '特级咒物半价月票在闸机中苏醒，要求所有乘客补票，补不上的人会被折叠进地铁线路图。',
-      typeLabel: '剧情',
-      tags: ['剧情', '冲突', '咒物觉醒'],
+      title: 'The Half-Price Monthly Pass Awakens',
+      content: 'The special-grade cursed object, the half-price monthly pass, awakens inside the turnstiles and demands that all passengers settle their fares; those who cannot are folded into the subway route map.',
+      typeLabel: 'Plot',
+      tags: ['Plot', 'Conflict', 'Cursed Object Awakening'],
       status: 'synced',
     },
   },
@@ -138,26 +138,26 @@ export const mockGraphNodes: CreativeFlowNode[] = [
     targetPosition: Position.Left,
     data: {
       ...createNodeData('plot'),
-      title: '终点站换乘仪式',
-      content: '五条站长决定封锁第零站台，钉崎则在失物招领处找到一枚属于“终点站”的旧站章。',
-      typeLabel: '剧情',
-      tags: ['剧情', '高潮', '封印'],
+      title: 'The Final Stop Transfer Ritual',
+      content: 'Stationmaster Gojo decides to lock down Platform Zero, while Nobara finds an old station seal belonging to the "Final Stop" in the lost-and-found office.',
+      typeLabel: 'Plot',
+      tags: ['Plot', 'Climax', 'Sealing'],
       status: 'synced',
     },
   },
 ]
 
-/** 《咒术回战》涉谷站线风格 mock 连线（与后端 `graph_seed.py` 一致）。 */
+/** Jujutsu Kaisen Shibuya-station-line style mock edges (consistent with the backend `graph_seed.py`). */
 export const mockGraphEdges: CreativeFlowEdge[] = [
   {
     id: 'edge-yuji-last-train',
     source: 'char-yuji-ticket',
     target: 'plot-last-train',
-    label: '发现异常',
+    label: 'discovers anomaly',
     type: 'smoothstep',
     markerEnd: MarkerType.ArrowClosed,
     data: {
-      label: '发现异常',
+      label: 'discovers anomaly',
       relationType: 'belongs_to',
     },
   },
@@ -165,11 +165,11 @@ export const mockGraphEdges: CreativeFlowEdge[] = [
     id: 'edge-gojo-final-transfer',
     source: 'char-gojo-stationmaster',
     target: 'plot-final-transfer',
-    label: '执行封锁',
+    label: 'enforces lockdown',
     type: 'smoothstep',
     markerEnd: MarkerType.ArrowClosed,
     data: {
-      label: '执行封锁',
+      label: 'enforces lockdown',
       relationType: 'belongs_to',
     },
   },
@@ -177,11 +177,11 @@ export const mockGraphEdges: CreativeFlowEdge[] = [
     id: 'edge-nobara-final-transfer',
     source: 'char-nobara-lostfound',
     target: 'plot-final-transfer',
-    label: '提供站章',
+    label: 'provides station seal',
     type: 'smoothstep',
     markerEnd: MarkerType.ArrowClosed,
     data: {
-      label: '提供站章',
+      label: 'provides station seal',
       relationType: 'belongs_to',
     },
   },
@@ -189,11 +189,11 @@ export const mockGraphEdges: CreativeFlowEdge[] = [
     id: 'edge-station-last-train',
     source: 'world-cursed-station',
     target: 'plot-last-train',
-    label: '发生地点',
+    label: 'takes place at',
     type: 'smoothstep',
     markerEnd: MarkerType.ArrowClosed,
     data: {
-      label: '发生地点',
+      label: 'takes place at',
       relationType: 'belongs_to',
     },
   },
@@ -201,11 +201,11 @@ export const mockGraphEdges: CreativeFlowEdge[] = [
     id: 'edge-ticket-awakening',
     source: 'world-ticket-curse',
     target: 'plot-ticket-awakening',
-    label: '核心咒物',
+    label: 'core cursed object',
     type: 'smoothstep',
     markerEnd: MarkerType.ArrowClosed,
     data: {
-      label: '核心咒物',
+      label: 'core cursed object',
       relationType: 'belongs_to',
     },
   },
@@ -213,11 +213,11 @@ export const mockGraphEdges: CreativeFlowEdge[] = [
     id: 'edge-last-train-ticket',
     source: 'plot-last-train',
     target: 'plot-ticket-awakening',
-    label: '引出',
+    label: 'leads to',
     type: 'smoothstep',
     markerEnd: MarkerType.ArrowClosed,
     data: {
-      label: '引出',
+      label: 'leads to',
       relationType: 'belongs_to',
     },
   },
@@ -225,11 +225,11 @@ export const mockGraphEdges: CreativeFlowEdge[] = [
     id: 'edge-ticket-final',
     source: 'plot-ticket-awakening',
     target: 'plot-final-transfer',
-    label: '升级为',
+    label: 'escalates into',
     type: 'smoothstep',
     markerEnd: MarkerType.ArrowClosed,
     data: {
-      label: '升级为',
+      label: 'escalates into',
       relationType: 'belongs_to',
     },
   },
@@ -237,11 +237,11 @@ export const mockGraphEdges: CreativeFlowEdge[] = [
     id: 'edge-world-announcement-plot-last-train-1777562934373-2',
     source: 'world-announcement',
     target: 'plot-last-train',
-    label: '触发怪谈',
+    label: 'triggers legend',
     type: 'smoothstep',
     markerEnd: MarkerType.ArrowClosed,
     data: {
-      label: '触发怪谈',
+      label: 'triggers legend',
       relationType: 'relates_to',
     },
   },

@@ -1,10 +1,10 @@
 # Pinia Stores
 
-跨路由共享状态（first_revision 决策 6）。单画布内的细粒度操作仍由 `composables/` 负责。
+Cross-route shared state (first_revision decision 6). Fine-grained operations within a single canvas are still handled by `composables/`.
 
-| Store | 职责 | 引入阶段 |
+| Store | Responsibility | Introduced in |
 | --- | --- | --- |
-| `useLibraryStore` | 项目列表 CRUD | 阶段 2 |
-| `useProjectStore` | 当前 project 元数据（name/description/三个 graph_id/最新 seed） | 阶段 2 |
-| `useGraphStore` | 当前打开的 sub-graph（nodes/edges/选中状态） | 阶段 3 |
-| `useChatStore` | 当前会话消息流 + staging 列表 + SSE 状态 | 阶段 4 |
+| `useLibraryStore` | Project list CRUD | Phase 2 |
+| `useProjectStore` | Current project metadata (name/description/three graph_ids/latest seed) | Phase 2 |
+| `useGraphStore` | Currently open sub-graph (nodes/edges/selection state) | Phase 3 |
+| `useChatStore` | Current session message stream + staging list + SSE state | Phase 4 |

@@ -7,9 +7,35 @@ import App from './App.vue'
 import { router } from './router'
 
 /**
- * 前端应用入口。
+ * Frontend application entry point.
  *
- * 多页架构重构后，根组件只挂载 <router-view>；跨路由共享状态走 Pinia，
- * 单画布内的细粒度操作仍由各 composable 负责（见 first_revision 决策 6）。
+ * After the multi-page refactor, the root component only mounts <router-view>;
+ * cross-route shared state goes through Pinia, while fine-grained operations
+ * within a single canvas remain the responsibility of individual composables
+ * (see first_revision decision 6).
  */
+const scrollHideTimers = new WeakMap<EventTarget, ReturnType<typeof setTimeout>>()
+
+document.addEventListener(
+  'scroll',
+  (event) => {
+    const target = event.target
+    if (!(target instanceof Element)) return
+
+    target.classList.add('is-scrolling')
+
+    const existing = scrollHideTimers.get(target)
+    if (existing) clearTimeout(existing)
+
+    scrollHideTimers.set(
+      target,
+      setTimeout(() => {
+        target.classList.remove('is-scrolling')
+        scrollHideTimers.delete(target)
+      }, 700),
+    )
+  },
+  true,
+)
+
 createApp(App).use(createPinia()).use(router).mount('#app')

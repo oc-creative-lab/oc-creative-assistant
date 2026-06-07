@@ -1,10 +1,13 @@
-"""LangGraph 持久化 Checkpointer 单例。
+"""LangGraph persistence Checkpointer singleton.
 
-把 AgentState 的中间快照写入独立的 sqlite 文件 (与业务库分离避免事务冲突);
-模块导入时不立刻建连接, 由 ``build_graph`` 在编译时按需触发。
+Writes AgentState intermediate snapshots to a dedicated sqlite file (separate
+from the business database to avoid transaction conflicts); the connection is
+not opened at import time, but triggered on demand by ``build_graph`` at
+compile time.
 
-``check_same_thread=False`` 是 FastAPI 多线程下的必要参数: SQLite 默认禁止
-跨线程共享连接, 关闭后由 SqliteSaver 自身的锁机制保证安全。
+``check_same_thread=False`` is a required parameter under FastAPI's
+multi-threaded model: SQLite by default forbids sharing a connection across
+threads, and once disabled, safety is guaranteed by SqliteSaver's own locking.
 """
 
 from __future__ import annotations
@@ -35,7 +38,7 @@ _ALLOWED_MSGPACK_MODULES: list[tuple[str, str]] = [
 
 @lru_cache(maxsize=1)
 def get_checkpointer() -> SqliteSaver:
-    """返回 LangGraph Checkpointer 单例。"""
+    """Return the LangGraph Checkpointer singleton."""
     from langgraph.checkpoint.serde.jsonplus import JsonPlusSerializer
 
     settings = get_agent_settings()

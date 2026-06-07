@@ -1,247 +1,365 @@
 .canvas-workspace {
-    min-width: 0;
-    min-height: 0;
-    display: grid;
-    grid-template-rows: auto minmax(0, 1fr);
-    background: var(--canvas-bg);
-  }
-  
-  .canvas-toolbar {
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-    gap: 12px;
-    padding: 8px 14px;
-    border-bottom: 1px solid var(--border);
-    background: var(--panel-strong);
-  }
-  
-  .mode-actions,
-  .canvas-actions {
-    display: flex;
-    align-items: center;
-    flex-wrap: wrap;
-    gap: 8px;
-  }
-  
-  .mode-actions button,
-  .canvas-actions button {
-    min-height: 30px;
-    padding: 0 12px;
-    border: 1px solid var(--border);
-    border-radius: 6px;
-    background: var(--panel);
-    color: var(--muted);
-    cursor: pointer;
-  }
-  
-  .mode-actions button:hover,
-  .canvas-actions button:hover {
-    border-color: var(--accent-border);
-    background: var(--accent-soft);
-    color: var(--accent);
-  }
-  
-  .interaction-hint {
-    color: var(--muted);
-    font-size: 0.84rem;
-  }
-  
-  .relation-picker {
-    display: inline-flex;
-    align-items: center;
-    gap: 6px;
-    color: var(--muted);
-    font-size: 0.84rem;
-  }
-  
-  /* 自定义下拉框组件样式 (与右侧边栏一致) */
-  .custom-select-container {
-    position: relative;
-    width: 120px;
-    user-select: none;
-  }
-  
-  .custom-select-trigger {
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-    width: 100%;
-    min-height: 30px;
-    padding: 0 10px;
-    border: 1px solid var(--border);
-    border-radius: 6px;
-    background-color: var(--panel);
-    color: var(--muted);
-    font-size: 0.84rem;
-    line-height: 1.5;
-    cursor: pointer;
-    transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
-    box-shadow: 0 1px 2px rgba(0, 0, 0, 0.02);
-  }
-  
-  .custom-select-trigger:hover {
-    border-color: var(--accent-border);
-    background: var(--accent-soft);
-    color: var(--accent);
-  }
-  
-  .custom-select-trigger.is-open {
-    border-color: var(--accent);
-    background-color: #ffffff;
-    box-shadow: 0 0 0 3px var(--accent-soft), 0 1px 2px rgba(0, 0, 0, 0.02);
-    color: var(--text);
-  }
-  
-  .custom-select-arrow {
-    width: 10px;
-    height: 6px;
-    background-color: currentColor;
-    clip-path: polygon(100% 0%, 0 0%, 50% 100%);
-    transition: transform 0.2s ease;
-  }
-  
-  .custom-select-trigger.is-open .custom-select-arrow {
-    transform: rotate(180deg);
-  }
-  
-  .custom-select-options {
-    position: absolute;
-    top: calc(100% + 4px);
-    left: 0;
-    right: 0;
-    z-index: 100;
-    max-height: 240px;
-    overflow-y: auto;
-    margin: 0;
-    padding: 6px;
-    list-style: none;
-    background-color: #ffffff;
-    border: 1px solid var(--border);
-    border-radius: 8px;
-    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.08), 0 2px 4px rgba(0, 0, 0, 0.04);
-    animation: dropdownFadeIn 0.15s ease-out forwards;
-  }
-  
-  @keyframes dropdownFadeIn {
-    from {
-      opacity: 0;
-      transform: translateY(-4px);
-    }
-    to {
-      opacity: 1;
-      transform: translateY(0);
-    }
-  }
-  
-  .custom-select-option {
-    padding: 8px 12px;
-    border-radius: 6px;
-    color: var(--text);
-    font-size: 0.84rem;
-    cursor: pointer;
-    transition: background-color 0.15s ease;
-  }
-  
-  .custom-select-option:hover {
-    background-color: var(--app-bg);
-  }
-  
-  .custom-select-option.is-selected {
-    background-color: var(--accent-soft);
-    color: var(--accent);
-    font-weight: 600;
-  }
-  
-  .canvas-actions button:first-child,
-  .canvas-actions button:nth-child(2) {
-    width: 32px;
-    padding: 0;
-    color: var(--text);
-    font-size: 1.05rem;
-    font-weight: 700;
-  }
-  
-  .canvas-actions button.danger {
-    color: #b42318;
-  }
-  
-  .flow-shell {
-    min-height: 0;
-  }
-  
-  .creative-flow {
-    width: 100%;
-    height: 100%;
-    background-color: var(--canvas-bg);
-    /* 梦幻点阵 + 两团柔光，像素感的点 + 极简的留白 */
-    background-image:
-      radial-gradient(circle at 18% 22%, rgba(167, 139, 250, 0.12), transparent 42%),
-      radial-gradient(circle at 82% 78%, rgba(251, 191, 36, 0.1), transparent 42%),
-      radial-gradient(var(--grid-line) 1.6px, transparent 1.6px);
-    background-size: 100% 100%, 100% 100%, 24px 24px;
-  }
-
-  :deep(.vue-flow__edge-path) {
-    stroke-width: 2.2;
-    stroke-linecap: round;
-  }
-  
-  :deep(.creative-edge.vue-flow__edge.animated .vue-flow__edge-path) {
-    stroke-dasharray: 8 6;
-  }
-  
-  :deep(.vue-flow__edge-text) {
-    font-size: 12px;
-  }
-  
-  :deep(.vue-flow__handle) {
-    width: 9px;
-    height: 9px;
-    border: 2px solid #ffffff;
-    background: var(--accent);
-    box-shadow: 0 0 0 1px var(--accent-border);
-    transition: transform 0.14s ease, background 0.14s ease;
-  }
-
-  :deep(.vue-flow__handle:hover) {
-    background: var(--warm);
-    transform: scale(1.25);
-  }
-  
-  :deep(.creative-edge.is-highlighted .vue-flow__edge-path),
-  :deep(.vue-flow__edge.is-highlighted .vue-flow__edge-path) {
-    animation: edgeHighlightPulse 1.4s ease-in-out 2 !important;
-  }
-  
-  @keyframes edgeHighlightPulse {
-    0%, 100% {
-      filter: drop-shadow(0 0 0 rgba(245, 158, 11, 0));
-    }
-    35%, 65% {
-      stroke: #f59e0b !important;
-      stroke-width: 6 !important;
-      filter:
-        drop-shadow(0 0 8px rgba(245, 158, 11, 1))
-        drop-shadow(0 0 18px rgba(245, 158, 11, 0.55));
-    }
-  }
-  
-  :deep(.creative-edge.is-highlighted .vue-flow__edge-textbg),
-  :deep(.vue-flow__edge.is-highlighted .vue-flow__edge-textbg) {
-    animation: edgeLabelBgHighlightPulse 1.4s ease-in-out 2;
-  }
-  
-  @keyframes edgeLabelBgHighlightPulse {
-    0%, 100% {
-    }
-    50% {
-      fill: #fef3c7 !important;
-      stroke: #f59e0b !important;
-      stroke-width: 2;
-    }
+  min-width: 0;
+  min-height: 0;
+  display: grid;
+  grid-template-rows: auto minmax(0, 1fr);
+  background: var(--canvas-bg);
+  /* Make the toolbar respond to the canvas's own width (which changes when the
+     side panels collapse/expand), not to the viewport width. */
+  container-type: inline-size;
+  container-name: canvas;
 }
-  
+
+.canvas-toolbar {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 10px;
+  row-gap: 8px;
+  padding: 7px 12px;
+  border-bottom: 1px solid var(--border);
+  background: var(--panel-strong);
+  min-height: 44px;
+}
+
+.toolbar-group {
+  display: flex;
+  align-items: center;
+  flex-wrap: nowrap;
+  gap: 8px;
+  flex-shrink: 0;
+}
+
+.toolbar-group--create :deep(.toolbar-create-btn) {
+  min-height: 30px;
+  padding: 0 12px;
+  border-radius: 6px;
+  border: 1px solid var(--accent);
+  color: var(--accent);
+  background: var(--panel);
+  cursor: pointer;
+  font-size: 0.84rem;
+  font-weight: 600;
+  white-space: nowrap;
+  transition:
+    background 0.16s ease,
+    color 0.16s ease,
+    border-color 0.16s ease;
+}
+
+.toolbar-group--create :deep(.toolbar-create-btn:hover) {
+  background: var(--accent-soft);
+  border-color: var(--accent-border);
+  color: var(--accent-deep, var(--accent));
+}
+
+.toolbar-group--status :deep(.toolbar-save-status) {
+  font-size: 0.78rem;
+  color: var(--muted);
+  white-space: nowrap;
+}
+
+.toolbar-sep {
+  width: 1px;
+  align-self: stretch;
+  margin: 4px 0;
+  background: var(--border);
+  flex-shrink: 0;
+}
+
+.toolbar-spacer {
+  flex: 1;
+  min-width: 8px;
+}
+
+/* Penciled interaction hint anchored to the bottom-left corner of the canvas. */
+.canvas-hint {
+  position: absolute;
+  left: 14px;
+  bottom: 12px;
+  z-index: 4;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  color: var(--muted);
+  opacity: 0.5;
+  font-size: 0.68rem;
+  font-style: normal;
+  letter-spacing: 0.01em;
+  line-height: 1.35;
+  pointer-events: none;
+  user-select: none;
+}
+
+.canvas-hint li {
+  display: grid;
+  grid-template-columns: 2.4rem 1fr;
+  column-gap: 6px;
+  align-items: baseline;
+}
+
+.canvas-hint__key {
+  font-weight: 600;
+  opacity: 0.85;
+}
+
+.relation-picker {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  color: var(--muted);
+  font-size: 0.84rem;
+  white-space: nowrap;
+}
+
+.toolbar-btn {
+  min-height: 30px;
+  padding: 0 12px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--panel);
+  color: var(--muted);
+  cursor: pointer;
+  font-size: 0.84rem;
+  white-space: nowrap;
+  transition:
+    border-color 0.16s ease,
+    background 0.16s ease,
+    color 0.16s ease;
+}
+
+.toolbar-btn:hover {
+  border-color: var(--accent-border);
+  background: var(--accent-soft);
+  color: var(--accent);
+}
+
+.toolbar-btn--icon {
+  width: 30px;
+  padding: 0;
+  color: var(--text);
+  font-size: 1.05rem;
+  font-weight: 700;
+}
+
+.toolbar-btn--danger {
+  color: #b42318;
+}
+
+.toolbar-btn--danger:hover {
+  border-color: rgba(180, 35, 24, 0.35);
+  background: rgba(180, 35, 24, 0.08);
+  color: #b42318;
+}
+
+/* Custom select (matches the right sidebar) */
+.custom-select-container {
+  position: relative;
+  width: 120px;
+  user-select: none;
+}
+
+.custom-select-trigger {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  width: 100%;
+  min-height: 30px;
+  padding: 0 10px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background-color: var(--panel);
+  color: var(--muted);
+  font-size: 0.84rem;
+  line-height: 1.5;
+  cursor: pointer;
+  transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.02);
+}
+
+.custom-select-trigger:hover {
+  border-color: var(--accent-border);
+  background: var(--accent-soft);
+  color: var(--accent);
+}
+
+.custom-select-trigger.is-open {
+  border-color: var(--accent);
+  background-color: #ffffff;
+  box-shadow: 0 0 0 3px var(--accent-soft), 0 1px 2px rgba(0, 0, 0, 0.02);
+  color: var(--text);
+}
+
+.custom-select-arrow {
+  width: 10px;
+  height: 6px;
+  background-color: currentColor;
+  clip-path: polygon(100% 0%, 0 0%, 50% 100%);
+  transition: transform 0.2s ease;
+}
+
+.custom-select-trigger.is-open .custom-select-arrow {
+  transform: rotate(180deg);
+}
+
+.custom-select-options {
+  position: absolute;
+  top: calc(100% + 4px);
+  left: 0;
+  right: 0;
+  z-index: 100;
+  max-height: 240px;
+  overflow-y: auto;
+  margin: 0;
+  padding: 6px;
+  list-style: none;
+  background-color: #ffffff;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.08), 0 2px 4px rgba(0, 0, 0, 0.04);
+  animation: dropdownFadeIn 0.15s ease-out forwards;
+}
+
+@keyframes dropdownFadeIn {
+  from {
+    opacity: 0;
+    transform: translateY(-4px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.custom-select-option {
+  padding: 8px 12px;
+  border-radius: 6px;
+  color: var(--text);
+  font-size: 0.84rem;
+  cursor: pointer;
+  transition: background-color 0.15s ease;
+}
+
+.custom-select-option:hover {
+  background-color: var(--app-bg);
+}
+
+.custom-select-option.is-selected {
+  background-color: var(--accent-soft);
+  color: var(--accent);
+  font-weight: 600;
+}
+
+.flow-shell {
+  position: relative;
+  min-height: 0;
+}
+
+.creative-flow {
+  width: 100%;
+  height: 100%;
+  background-color: var(--canvas-bg);
+  background-image:
+    radial-gradient(circle at 18% 22%, rgba(167, 139, 250, 0.12), transparent 42%),
+    radial-gradient(circle at 82% 78%, rgba(251, 191, 36, 0.1), transparent 42%),
+    radial-gradient(var(--grid-line) 1.6px, transparent 1.6px);
+  background-size: 100% 100%, 100% 100%, 24px 24px;
+}
+
+:deep(.vue-flow__pane) {
+  cursor: default;
+}
+
+:deep(.vue-flow__pane.selection) {
+  cursor: default;
+}
+
+.flow-shell.is-middle-pan-ready :deep(.vue-flow__pane) {
+  cursor: grab !important;
+}
+
+:deep(.vue-flow__pane.dragging) {
+  cursor: grabbing !important;
+}
+
+:deep(.vue-flow__pane.draggable) {
+  cursor: default;
+}
+
+:deep(.vue-flow__edge-path) {
+  stroke-width: 2.2;
+  stroke-linecap: round;
+}
+
+:deep(.creative-edge.vue-flow__edge.animated .vue-flow__edge-path) {
+  stroke-dasharray: 8 6;
+}
+
+:deep(.vue-flow__edge-text) {
+  font-size: 12px;
+}
+
+:deep(.vue-flow__handle) {
+  width: 9px;
+  height: 9px;
+  border: 2px solid #ffffff;
+  background: var(--accent);
+  box-shadow: 0 0 0 1px var(--accent-border);
+  transition: transform 0.14s ease, background 0.14s ease;
+}
+
+:deep(.vue-flow__handle:hover) {
+  background: var(--warm);
+  transform: scale(1.25);
+}
+
+:deep(.creative-edge.is-highlighted .vue-flow__edge-path),
+:deep(.vue-flow__edge.is-highlighted .vue-flow__edge-path) {
+  animation: edgeHighlightPulse 1.4s ease-in-out 2 !important;
+}
+
+:deep(.creative-edge.is-selected .vue-flow__edge-path),
+:deep(.vue-flow__edge.selected .vue-flow__edge-path) {
+  stroke-width: 3.2;
+  filter: drop-shadow(0 0 4px rgba(139, 92, 246, 0.45));
+}
+
+:deep(.creative-edge.is-selected .vue-flow__edge-text),
+:deep(.vue-flow__edge.selected .vue-flow__edge-text) {
+  font-weight: 800;
+}
+
+@keyframes edgeHighlightPulse {
+  0%, 100% {
+    filter: drop-shadow(0 0 0 rgba(245, 158, 11, 0));
+  }
+  35%, 65% {
+    stroke: #f59e0b !important;
+    stroke-width: 6 !important;
+    filter:
+      drop-shadow(0 0 8px rgba(245, 158, 11, 1))
+      drop-shadow(0 0 18px rgba(245, 158, 11, 0.55));
+  }
+}
+
+:deep(.creative-edge.is-highlighted .vue-flow__edge-textbg),
+:deep(.vue-flow__edge.is-highlighted .vue-flow__edge-textbg) {
+  animation: edgeLabelBgHighlightPulse 1.4s ease-in-out 2;
+}
+
+@keyframes edgeLabelBgHighlightPulse {
+  0%, 100% {
+  }
+  50% {
+    fill: #fef3c7 !important;
+    stroke: #f59e0b !important;
+    stroke-width: 2;
+  }
+}
+
 :deep(.vue-flow__node.is-highlighted) {
   animation: nodeHighlightPulse 1.4s ease-in-out 2;
 }
@@ -255,14 +373,20 @@
   }
 }
 
-@media (max-width: 640px) {
-    .canvas-toolbar {
-      align-items: stretch;
-      flex-direction: column;
-    }
-  
-    .mode-actions,
-    .canvas-actions {
-      align-items: stretch;
-    }
+/* Container queries key off the canvas's own width, so the toolbar reflows when
+   the side panels collapse/expand even though the viewport width is unchanged. */
+@container canvas (max-width: 720px) {
+  .toolbar-spacer {
+    display: none;
   }
+
+  .toolbar-sep {
+    display: none;
+  }
+}
+
+@container canvas (max-width: 460px) {
+  .canvas-hint {
+    display: none;
+  }
+}

@@ -1,7 +1,8 @@
-"""并行向量检索节点。
+"""Parallel vector retrieval node.
 
-复用 retrieval 模块的项目级检索能力, 跨 ChromaDB 三集合合并 top-k 命中。
-当前节点存在时同时跑图关系检索, 与向量结果合并去重。
+Reuses the retrieval module's project-level retrieval capability, merging top-k
+hits across ChromaDB's three collections. When current nodes exist, it also runs
+graph-relation retrieval and merges/deduplicates with the vector results.
 """
 
 from __future__ import annotations
@@ -25,7 +26,7 @@ DEFAULT_TOP_K = 5
 
 
 def parallel_retrieval_node(state: AgentState) -> dict[str, Any]:
-    """图关系上下文 + 向量上下文一次取齐, 写回合并视图供后续节点使用。"""
+    """Fetch graph-relation context + vector context in one go and write back the merged view for downstream nodes."""
     project_id = state.get("project_id", "")
     user_message = state.get("user_message", "").strip()
     current_nodes = state.get("current_nodes") or []

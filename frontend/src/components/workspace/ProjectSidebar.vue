@@ -11,10 +11,11 @@ import type { CreativeFlowNode, CreativeNodeType } from '../../types/node'
 import { nodeTypeOptions } from '../../utils/nodeFactory'
 
 /**
- * 左侧项目栏。
+ * Left-hand project sidebar.
  *
- * 本组件负责展示可创建的节点类型、项目记忆导航和轻量检索入口；graph 写入仍由
- * AppShell 统一处理，左侧只上抛创建和选中意图。
+ * Displays the node types that can be created, project-memory navigation, and a
+ * lightweight search entry point; graph writes are still handled centrally by
+ * AppShell, while the sidebar only emits create and select intents.
  */
 const props = defineProps<{
   projectId: string
@@ -67,17 +68,17 @@ const memoryGroups = computed(() =>
 
 
 /**
- * 截断节点正文，避免左侧记忆列表被长设定挤占。
+ * Truncate the node body so long settings don't crowd the left-hand memory list.
  *
  * Args:
- *   content: 节点完整正文。
+ *   content: The node's full body text.
  *
  * Returns:
- *   用于卡片预览的短摘要。
+ *   A short summary for the card preview.
  */
 function summarizeContent(content: string) {
   if (!content.trim()) {
-    return '暂无正文'
+    return 'No content yet'
   }
 
   return content.length > 72 ? `${content.slice(0, 72)}...` : content
@@ -89,17 +90,17 @@ function getNodeTypeLabel(type: string) {
 
 function getMemorySourceLabel(source: string) {
   if (source === 'both') {
-    return '图关系 + 语义'
+    return 'Graph + semantic'
   }
 
-  return source === 'graph' ? '图关系' : '语义相似'
+  return source === 'graph' ? 'Graph relation' : 'Semantic match'
 }
 
 /**
- * 请求创建指定类型的节点。
+ * Request creation of a node of the given type.
  *
  * Args:
- *   nodeType: 用户在左侧工具栏选择的节点类型。
+ *   nodeType: The node type the user selected in the left toolbar.
  */
 function handleCreateNode(nodeType: CreativeNodeType) {
   emit('createNode', nodeType)
@@ -110,9 +111,10 @@ function handleSelectNode(nodeId: string) {
 }
 
 /**
- * 加载当前选中节点的相关记忆。
+ * Load related memories for the currently selected node.
  *
- * 左侧只展示合并后的简洁记忆卡片；完整 prompt 和向量调试信息继续留在右侧面板。
+ * The left panel only shows the merged, concise memory cards; the full prompt and
+ * vector debug info remain in the right-hand panel.
  */
 async function handleLoadRelatedMemory() {
   if (!props.selectedNode) {
@@ -132,22 +134,23 @@ async function handleLoadRelatedMemory() {
     relatedMemoryItems.value = result.merged_context
   } catch (error) {
     relatedMemoryItems.value = []
-    relatedMemoryError.value = error instanceof Error ? error.message : '相关记忆加载失败'
+    relatedMemoryError.value = error instanceof Error ? error.message : 'Failed to load related memories'
   } finally {
     isRelatedMemoryLoading.value = false
   }
 }
 
 /**
- * 在项目级记忆中做语义搜索。
+ * Run a semantic search across project-level memory.
  *
- * 该入口不依赖当前节点，适合用户直接按问题查找已有 lore；索引错误只展示短提示。
+ * This entry point does not depend on the current node, so it suits searching
+ * existing lore directly by question; indexing errors only show a short hint.
  */
 async function handleSearchMemory() {
   const query = memorySearchQuery.value.trim()
 
   if (!props.projectId || !query) {
-    memorySearchError.value = '请输入要搜索的记忆问题'
+    memorySearchError.value = 'Enter a memory question to search'
     return
   }
 
@@ -166,7 +169,7 @@ async function handleSearchMemory() {
     }
   } catch (error) {
     memorySearchItems.value = []
-    memorySearchError.value = error instanceof Error ? error.message : '记忆搜索失败'
+    memorySearchError.value = error instanceof Error ? error.message : 'Memory search failed'
   } finally {
     isMemorySearching.value = false
   }
@@ -182,10 +185,10 @@ watch(
 </script>
 
 <template>
-  <!-- 左侧栏：负责节点类型、项目记忆导航和轻量检索入口 -->
+  <!-- Left sidebar: node types, project-memory navigation, and a lightweight search entry point -->
   <aside class="project-sidebar">
     <section class="sidebar-section">
-      <h2>节点类型</h2>
+      <h2>Node types</h2>
       <div class="node-type-list">
         <button
           v-for="option in nodeTypeOptions"
@@ -218,8 +221,8 @@ watch(
     <!-- </section> -->
 
     <section class="sidebar-section">
-      <h2>记忆列表</h2>
-      <p v-if="memoryGroups.length === 0" class="empty-copy">还没有节点，先从上方创建一个创作记忆。</p>
+      <h2>Memory list</h2>
+      <p v-if="memoryGroups.length === 0" class="empty-copy">No nodes yet — create a creative memory from above first.</p>
       <details v-for="group in memoryGroups" :key="group.type" class="memory-group" open>
         <summary>
           <span>{{ group.icon }} {{ group.label }}</span>
@@ -234,21 +237,21 @@ watch(
           @click="handleSelectNode(node.id)"
         >
           <strong>{{ node.data.title }}</strong>
-          <span>{{ node.data.status }} · {{ node.data.tags.join(' / ') || '无标签' }}</span>
+          <span>{{ node.data.status }} · {{ node.data.tags.join(' / ') || 'No tags' }}</span>
           <p>{{ summarizeContent(node.data.content) }}</p>
         </button>
       </details>
     </section>
 
     <section class="sidebar-section">
-      <h2>当前相关记忆</h2>
+      <h2>Related memories</h2>
       <template v-if="selectedNode">
-        <p class="context-copy">围绕「{{ selectedNode.data.title }}」查看图关系和语义相似记忆。</p>
+        <p class="context-copy">View graph relations and semantically similar memories around "{{ selectedNode.data.title }}".</p>
         <button type="button" class="secondary-button" :disabled="isRelatedMemoryLoading" @click="handleLoadRelatedMemory">
-          {{ isRelatedMemoryLoading ? '加载中...' : '查看相关记忆' }}
+          {{ isRelatedMemoryLoading ? 'Loading…' : 'View related memories' }}
         </button>
         <p v-if="relatedMemoryError" class="memory-error">{{ relatedMemoryError }}</p>
-        <p v-else-if="relatedMemoryItems.length === 0" class="empty-copy">点击按钮后展示与当前节点相关的记忆。</p>
+        <p v-else-if="relatedMemoryItems.length === 0" class="empty-copy">Click the button to show memories related to the current node.</p>
         <button
           v-for="item in relatedMemoryItems"
           :key="item.id"
@@ -261,16 +264,16 @@ watch(
           <p>{{ summarizeContent(item.content) }}</p>
         </button>
       </template>
-      <p v-else class="empty-copy">选择一个节点后，这里会显示相关记忆。</p>
+      <p v-else class="empty-copy">Select a node to see its related memories here.</p>
     </section>
 
     <section class="sidebar-section">
-      <h2>项目记忆搜索</h2>
+      <h2>Project memory search</h2>
       <div class="memory-search">
         <input
           v-model="memorySearchQuery"
           type="text"
-          placeholder="例如：谁和涉谷站线有关？"
+          placeholder="e.g. Who is connected to the Shibuya Station line?"
           @keydown.enter.prevent="handleSearchMemory"
         />
         <div class="custom-select-container">
@@ -279,7 +282,7 @@ watch(
             :class="{ 'is-open': isMemorySearchTypeSelectOpen }"
             @click="isMemorySearchTypeSelectOpen = !isMemorySearchTypeSelectOpen"
           >
-            <span>{{ memorySearchType === 'all' ? '全部类型' : (nodeTypeOptions.find(opt => opt.type === memorySearchType)?.label || memorySearchType) }}</span>
+            <span>{{ memorySearchType === 'all' ? 'All types' : (nodeTypeOptions.find(opt => opt.type === memorySearchType)?.label || memorySearchType) }}</span>
             <div class="custom-select-arrow"></div>
           </div>
           <ul class="custom-select-options" v-show="isMemorySearchTypeSelectOpen">
@@ -288,7 +291,7 @@ watch(
               :class="{ 'is-selected': memorySearchType === 'all' }"
               @click="memorySearchType = 'all'; isMemorySearchTypeSelectOpen = false"
             >
-              全部类型
+              All types
             </li>
             <li
               v-for="option in nodeTypeOptions"
@@ -302,11 +305,11 @@ watch(
           </ul>
         </div>
         <button type="button" :disabled="isMemorySearching" @click="handleSearchMemory">
-          {{ isMemorySearching ? '搜索中...' : '搜索记忆' }}
+          {{ isMemorySearching ? 'Searching…' : 'Search memory' }}
         </button>
       </div>
       <p v-if="memorySearchError" class="memory-error">{{ memorySearchError }}</p>
-      <p v-else-if="memorySearchItems.length === 0" class="empty-copy">输入问题后，在当前项目内检索已有 lore。</p>
+      <p v-else-if="memorySearchItems.length === 0" class="empty-copy">Enter a question to search existing lore within this project.</p>
       <button
         v-for="item in memorySearchItems"
         :key="item.id"

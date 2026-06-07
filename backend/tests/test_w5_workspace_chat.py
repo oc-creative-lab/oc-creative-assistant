@@ -1,4 +1,4 @@
-"""W5 验收：工作台被动灵感 agent + /workspace_chat SSE。"""
+"""W5 acceptance: workspace passive inspiration agent + /workspace_chat SSE."""
 
 import uuid
 
@@ -24,24 +24,24 @@ def _project() -> dict:
 
 
 def test_generate_workspace_output_typed(monkeypatch):
-    out = WorkspaceInspirationOutput(reasoning="卡壳", type="question", content="小明最怕什么?")
+    out = WorkspaceInspirationOutput(reasoning="stuck", type="question", content="What is Xiaoming most afraid of?")
     monkeypatch.setattr(wi, "get_llm_provider", lambda: _StubProvider(out))
-    result = wi.generate_workspace_output("p1", "我卡住了", [])
+    result = wi.generate_workspace_output("p1", "I'm stuck", [])
     assert result.type == "question"
-    assert "小明" in result.content
+    assert "Xiaoming" in result.content
 
 
 def test_workspace_chat_sse(monkeypatch):
-    out = WorkspaceInspirationOutput(reasoning="分享", type="feedback", content="这个反转很赞")
+    out = WorkspaceInspirationOutput(reasoning="sharing", type="feedback", content="That twist is great")
     monkeypatch.setattr(wi, "get_llm_provider", lambda: _StubProvider(out))
     project = _project()
     resp = client.post(
         f"/api/projects/{project['id']}/workspace_chat",
-        json={"message": "我想到一个反转", "quoted_node_ids": []},
+        json={"message": "I thought of a twist", "quoted_node_ids": []},
     )
     assert resp.status_code == 200
     body = resp.text
     assert '"type": "output"' in body
     assert '"output_type": "feedback"' in body
-    assert "这个反转很赞" in body
+    assert "That twist is great" in body
     assert '"type": "done"' in body

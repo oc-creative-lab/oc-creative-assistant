@@ -4,9 +4,9 @@ import type { CreativeNodeData } from '../../types/node'
 import NodeHandles from './NodeHandles.vue'
 
 /**
- * 结构整理节点卡片。
+ * Structure node card.
  *
- * 结构节点用于把多个素材整理成角色卡、关系摘要或剧情框架；当前只负责画布展示。
+ * Structure nodes organize multiple materials into character sheets, relationship summaries, or plot frameworks; for now they only handle canvas display.
  */
 defineProps<NodeProps<CreativeNodeData>>()
 </script>

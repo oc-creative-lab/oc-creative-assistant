@@ -1,8 +1,10 @@
-"""对话与 staging 的应用服务层。
+"""Application service layer for chat and staging.
 
-对外暴露语义化操作: 创建会话、追加消息、列消息、推进 staging 状态机。
-本模块不感知 LangGraph; Phase 4 会在 ``append_session_message`` 内调用
-agent_graph 触发完整推理链路, 当前阶段只做持久化 + 状态机。
+Exposes semantic operations: create session, append message, list messages,
+and advance the staging state machine. This module is not aware of LangGraph;
+Phase 4 will call agent_graph inside ``append_session_message`` to trigger the
+full reasoning chain, while the current phase only does persistence + state
+machine.
 """
 
 from __future__ import annotations
@@ -95,7 +97,7 @@ def _staging_to_payload(record: AgentStagingORM) -> AgentStagingPayload:
 
 
 def _group_by_batch(records: list[AgentStagingORM]) -> list[AgentStagingBatchPayload]:
-    """按 batch_id 聚合, 保持首次出现顺序; 同 batch 内保持 order_in_batch。"""
+    """Aggregate by batch_id, preserving first-appearance order; within a batch, preserve order_in_batch."""
     grouped: dict[str, list[AgentStagingORM]] = {}
     order: list[str] = []
     for record in records:
@@ -115,7 +117,7 @@ def _group_by_batch(records: list[AgentStagingORM]) -> list[AgentStagingBatchPay
 # ---- Session ----
 
 def create_session(payload: ChatSessionCreateRequest) -> ChatSessionPayload:
-    """创建新会话, 校验项目存在。"""
+    """Create a new session, verifying the project exists."""
     with SessionLocal.begin() as db:
         require_project(db, payload.project_id)
         record = insert_session(db, project_id=payload.project_id, title=payload.title)
@@ -123,7 +125,7 @@ def create_session(payload: ChatSessionCreateRequest) -> ChatSessionPayload:
 
 
 def list_sessions(project_id: str) -> list[ChatSessionPayload]:
-    """列出指定项目下的会话, 校验项目存在。"""
+    """List sessions under a given project, verifying the project exists."""
     with SessionLocal() as db:
         require_project(db, project_id)
         return [_session_to_payload(r) for r in list_project_sessions(db, project_id)]
@@ -135,8 +137,9 @@ def append_session_message(
     session_id: str,
     payload: ChatMessageCreateRequest,
 ) -> ChatMessagePayload:
-    """追加一条消息到指定会话, 不触发 agent_graph; 仅用于联调和单测,
-    生产对话流由 ``run_chat_turn`` 接管, 它在 graph 节点内部统一写入消息。"""
+    """Append a message to a given session without triggering agent_graph; used only for integration debugging and unit tests.
+    The production chat flow is handled by ``run_chat_turn``, which writes
+    messages uniformly inside the graph nodes."""
     with SessionLocal.begin() as db:
         require_session(db, session_id)
         record = append_message(
@@ -150,7 +153,7 @@ def append_session_message(
 
 
 def get_session_messages(session_id: str) -> list[ChatMessagePayload]:
-    """读取会话的全部消息。"""
+    """Read all messages of a session."""
     with SessionLocal() as db:
         require_session(db, session_id)
         return [_message_to_payload(r) for r in list_session_messages(db, session_id)]
@@ -162,7 +165,7 @@ def create_staging_batch(
     session_id: str,
     payload: AgentStagingBatchCreateRequest,
 ) -> AgentStagingBatchPayload:
-    """写入一批 staging; persistence_hub 与手动接口都走这条路径。"""
+    """Write a batch of staging; both persistence_hub and the manual interface go through this path."""
     with SessionLocal.begin() as db:
         session = require_session(db, session_id)
         require_message(db, payload.message_id)
@@ -184,7 +187,7 @@ def list_session_staging(
     session_id: str,
     status: str | None = None,
 ) -> list[AgentStagingBatchPayload]:
-    """按会话列出 staging, 自动按 batch 分组。"""
+    """List staging by session, automatically grouped by batch."""
     with SessionLocal() as db:
         require_session(db, session_id)
         records = list_staging_by_session(db, session_id, status)
@@ -195,7 +198,7 @@ def list_project_staging(
     project_id: str,
     status: str | None = None,
 ) -> list[AgentStagingBatchPayload]:
-    """按项目列出 staging, 自动按 batch 分组（ChatWorkspace 待审面板用）。"""
+    """List staging by project, automatically grouped by batch (used by the ChatWorkspace pending-review panel)."""
     with SessionLocal() as db:
         require_project(db, project_id)
         records = list_staging_by_project(db, project_id, status)
@@ -206,7 +209,7 @@ def resolve_staging_item(
     staging_id: str,
     payload: AgentStagingActionRequest,
 ) -> AgentStagingPayload:
-    """单条 staging 推进状态机, 接受 / 编辑时同步把变更落到画布。
+    """Advance the state machine for a single staging record; on accept / edit, also applies the change to the canvas.
     """
     upserted: list[tuple[str, str]] = []
     deleted: list[tuple[str, str]] = []
@@ -230,8 +233,9 @@ def resolve_staging_item(
         else:
             transition_staging(record, new_status="rejected")
 
-        # 单条接受 create_edge 时主动反查同 batch 已接受的 create_node, 重建
-        # pending_id_map; 其它 change_type 不需要 map, 留空 dict 即可。
+        # On single-record accept of create_edge, actively look up already-accepted
+        # create_node records in the same batch to rebuild the pending_id_map;
+        # other change_types do not need the map, so an empty dict is fine.
         pending_id_map: dict[str, str] = {}
         if record.change_type == "create_edge":
             siblings = list_staging_by_batch(db, record.batch_id)
@@ -261,14 +265,20 @@ def resolve_staging_batch(
     batch_id: str,
     payload: AgentStagingBatchActionRequest,
 ) -> list[AgentStagingPayload]:
-    """批量推进 staging; 已结案的项静默跳过, accept_all 时一并落到画布。
+    """Batch-advance staging; already-resolved items are silently skipped, and on accept_all they are also applied to the canvas.
 
-    create_edge 依赖 pending_id 解析到真实 node_id, pending_id_map 由两部分填充:
-    1. 进循环前先扫一遍 records, 把"先前单条接受过的 create_node"的
-       pending_id → target_id 反查进来, 防止本批的边因为前序节点已结案而跳过;
-    2. 循环里再正常累积本次 accept_all 新建 create_node 的映射。
-    没有这层预热, 用户混合"先单条接受 node、再全部接受剩余"时, 引用前序
-    pending_id 的边会被 _resolve_endpoint 当成伪 id, 静默跳过整条。
+    create_edge relies on resolving pending_id to a real node_id; the
+    pending_id_map is populated in two parts:
+    1. Before the loop, scan the records once to look up the pending_id ->
+       target_id of "previously single-record-accepted create_node" records, to
+       prevent this batch's edges from being skipped because a preceding node was
+       already resolved;
+    2. In the loop, normally accumulate the mapping of create_node records newly
+       created in this accept_all.
+    Without this priming, when the user mixes "first single-record accept a node,
+    then accept all the rest", edges referencing a preceding pending_id would be
+    treated as a fake id by _resolve_endpoint and the whole edge silently
+    skipped.
     """
     new_status = "accepted" if payload.action == "accept_all" else "rejected"
     upserted: list[tuple[str, str]] = []
@@ -314,14 +324,17 @@ def resolve_staging_batch(
 # ---- Agent turn ----
 
 def run_chat_turn(payload: ChatRequest) -> ChatResponse:
-    """执行 agent 完整推理链路, 返回装配后的回复 + staging 批次信息。
+    """Run the agent's full reasoning chain, returning the assembled reply + staging batch info.
 
-    本函数不在 graph.invoke 之前手动写 user_message; 写入由 persistence_hub
-    节点统一负责, 让消息时序与 LLM 推理过程严格对应同一事务边界。
+    This function does not manually write the user_message before graph.invoke;
+    the write is handled uniformly by the persistence_hub node, so that message
+    ordering strictly corresponds to the LLM reasoning process within the same
+    transaction boundary.
 
-    任何 graph 内部异常 (LLM timeout / 解析错 / 节点 KeyError) 都会被收敛成
-    200 + 兜底 ChatResponse, 让前端不至于撞 500 → fetch failed → 用户面前
-    一片空白; 真正定位问题靠后端日志的 exception traceback。
+    Any internal graph exception (LLM timeout / parse error / node KeyError) is
+    funneled into a 200 + fallback ChatResponse, so that the frontend does not
+    hit 500 -> fetch failed -> a blank screen in front of the user; actually
+    diagnosing the problem relies on the exception traceback in the backend logs.
     """
     with SessionLocal() as db:
         session = require_session(db, payload.session_id)
@@ -339,14 +352,16 @@ def run_chat_turn(payload: ChatRequest) -> ChatResponse:
                 "user_message": payload.user_message,
                 "selected_node_ids": list(payload.selected_node_ids),
                 "extraction_enabled": payload.extraction_enabled,
+                "web_search_mode": payload.web_search_mode,
+                "preferred_intent": payload.preferred_intent,
             },
             config=config,
         )
     except Exception as exc:  # noqa: BLE001
-        logger.exception("graph.invoke 失败, 返回兜底回复: %s", exc)
+        logger.exception("graph.invoke failed, returning fallback reply: %s", exc)
         return ChatResponse(
             message_id="",
-            reply_text="抱歉, 我这一轮在内部推理时出错了, 请再说一次, 或换种表述。",
+            reply_text="Sorry, something went wrong during my internal reasoning this round. Please say it again, or rephrase.",
             cited_node_ids=[],
             intent="",
             batch_id=None,
@@ -361,7 +376,7 @@ def run_chat_turn(payload: ChatRequest) -> ChatResponse:
     if assembler is None:
         return ChatResponse(
             message_id="",
-            reply_text="我这一轮没拿到合适的结果, 不如再多说几句你想要的方向?",
+            reply_text="I didn't get a suitable result this round. Why not tell me a bit more about the direction you're after?",
             cited_node_ids=[],
             intent=intent_name,
             batch_id=None,
@@ -380,7 +395,7 @@ def run_chat_turn(payload: ChatRequest) -> ChatResponse:
     )
 
 def _sync_indices(items: list[tuple[str, str]]) -> None:
-    """对刚落库的节点逐一触发 ChromaDB 同步; 事务必须先提交避免脏写。"""
+    """Trigger ChromaDB sync for each just-persisted node; the transaction must commit first to avoid dirty writes."""
     for project_id, node_id in items:
         node = read_project_node(project_id, node_id)
         if node is not None:
@@ -388,15 +403,17 @@ def _sync_indices(items: list[tuple[str, str]]) -> None:
 
 
 def _sync_deletions(items: list[tuple[str, str]]) -> None:
-    """对刚删的节点逐一从 ChromaDB 移除向量; 事务必须先提交避免脏写。
+    """Remove vectors from ChromaDB for each just-deleted node; the transaction must commit first to avoid dirty writes.
 
-    Chroma 故障不回滚 SQLite 删除: 主数据源已经移除, 残留向量再调一次
-    delete_node 即可清理, 日志保留排查线索即可。
+    A Chroma failure does not roll back the SQLite delete: the primary data
+    source has already removed it, and any leftover vector can be cleaned up by
+    calling delete_node once more; the log is kept just as a troubleshooting
+    clue.
     """
     for project_id, node_id in items:
         try:
             delete_node_vectors(project_id, node_id)
         except Exception as exc:  # noqa: BLE001
             logger.warning(
-                "delete chroma 失败 project=%s node=%s: %s", project_id, node_id, exc
+                "delete chroma failed project=%s node=%s: %s", project_id, node_id, exc
             )

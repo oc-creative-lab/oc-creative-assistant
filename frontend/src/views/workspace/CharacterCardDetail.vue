@@ -1,21 +1,29 @@
 <script setup lang="ts">
-import { computed, onMounted, ref, watch } from 'vue'
+import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { storeToRefs } from 'pinia'
 import { useProjectStore } from '../../stores/useProjectStore'
 import { useGraphStore } from '../../stores/useGraphStore'
 import {
+  deleteNode,
   getNodeCrossReferences,
   getNodeFields,
   saveNodeFields,
+  updateNode,
   type CrossReferenceItem,
 } from '../../api/projectApi'
+import { fileToScaledDataUrl } from '../../utils/imageDataUrl'
+import DocFieldsEditor, { type DocFieldRow } from '../../components/workspace/DocFieldsEditor.vue'
+
+const SAVE_DEBOUNCE_MS = 500
 
 /**
- * 角色卡详情（first_revision 决策 2，已获批准偏离 proposal）。
+ * Character card detail (first_revision decision 2, an approved deviation from the proposal).
  *
- * 顶部名字 + 简介；中部“自由字段”增删改（持久化到 node.meta JSON 的 fields 键）；
- * 底部“关系”区把该角色在 character sub-graph 里的出边以标签展示，不画连线。
+ * Top: name + summary; middle: add/edit/remove "free-form fields" (persisted to
+ * the fields key of node.meta JSON); bottom: the "relations" area shows this
+ * character's outgoing edges in the character sub-graph as tags, without
+ * drawing connecting lines.
  */
 const props = defineProps<{ charId: string }>()
 
@@ -28,14 +36,20 @@ const { characterGraphId } = storeToRefs(projectStore)
 const projectId = computed(() => String(route.params.projectId))
 const node = computed(() => graphStore.getNode(props.charId))
 
-interface FieldRow {
-  key: string
-  value: string
-}
-const fieldRows = ref<FieldRow[]>([])
+const fieldRows = ref<DocFieldRow[]>([])
+const title = ref('')
+const content = ref('')
+const avatar = ref('')
+const avatarInput = ref<HTMLInputElement | null>(null)
 const saveState = ref('')
+const isHydrating = ref(true)
+const isDeleting = ref(false)
 
-// 跨 sub-graph 反向引用（阶段 6）：该角色出现在故事线 / 所属世界观等。
+let saveTimer: ReturnType<typeof setTimeout> | null = null
+let isSaving = false
+let saveQueued = false
+
+// Cross sub-graph back-references (stage 6): where this character appears in the story / which worldbuilding it belongs to, etc.
 const crossRefs = ref<CrossReferenceItem[]>([])
 const plotRefs = computed(() => crossRefs.value.filter((r) => r.other_section === 'plot'))
 const worldRefs = computed(() => crossRefs.value.filter((r) => r.other_section === 'world'))
@@ -53,7 +67,7 @@ function openPlotNode() {
   router.push(`/workspace/${projectId.value}/plot`)
 }
 
-// 关系：该角色的出边 → 标签（关系名 + 目标角色名）。
+// Relations: this character's outgoing edges → tags (relation name + target character name).
 const relations = computed(() =>
   graphStore.outgoingEdges(props.charId).map((edge) => ({
     id: edge.id,
@@ -65,84 +79,198 @@ const relations = computed(() =>
 async function loadFields() {
   try {
     const result = await getNodeFields(projectId.value, props.charId)
-    fieldRows.value = Object.entries(result.fields).map(([key, value]) => ({ key, value }))
+    avatar.value = result.fields.avatar ?? ''
+    fieldRows.value = Object.entries(result.fields)
+      .filter(([key]) => key !== 'avatar')
+      .map(([key, value]) => ({ key, value }))
   } catch {
+    avatar.value = ''
     fieldRows.value = []
   }
 }
 
-function addField() {
-  fieldRows.value.push({ key: '', value: '' })
+function openAvatarPicker() {
+  avatarInput.value?.click()
 }
 
-function removeField(index: number) {
-  fieldRows.value.splice(index, 1)
+async function handleAvatarChange(event: Event) {
+  const input = event.target as HTMLInputElement
+  const file = input.files?.[0]
+  input.value = ''
+  if (!file) return
+  if (!file.type.startsWith('image/')) {
+    saveState.value = 'Please choose an image file'
+    return
+  }
+  try {
+    avatar.value = await fileToScaledDataUrl(file, 640, 0.85)
+    scheduleSave()
+  } catch (error) {
+    saveState.value = error instanceof Error ? error.message : 'Failed to load image'
+  }
 }
 
-async function handleSave() {
-  saveState.value = 'Saving…'
+function fieldsFromRows(): Record<string, string> {
   const fields: Record<string, string> = {}
+  if (avatar.value) fields.avatar = avatar.value
   for (const row of fieldRows.value) {
     const key = row.key.trim()
     if (key) fields[key] = row.value
   }
+  return fields
+}
+
+function scheduleSave() {
+  if (isHydrating.value) return
+  if (saveTimer) clearTimeout(saveTimer)
+  saveTimer = setTimeout(() => {
+    void persistAll()
+  }, SAVE_DEBOUNCE_MS)
+}
+
+async function persistAll() {
+  if (isSaving) {
+    saveQueued = true
+    return
+  }
+
+  isSaving = true
+  saveState.value = 'Saving…'
   try {
-    await saveNodeFields(projectId.value, props.charId, fields)
-    saveState.value = `Saved · ${new Date().toLocaleTimeString()}`
-  } catch (e) {
-    saveState.value = e instanceof Error ? `Save failed: ${e.message}` : 'Save failed'
+    await updateNode(projectId.value, props.charId, {
+      title: title.value.trim() || 'Untitled Character',
+      content: content.value,
+    })
+    await saveNodeFields(projectId.value, props.charId, fieldsFromRows())
+    if (characterGraphId.value) {
+      await graphStore.load(characterGraphId.value, true)
+    }
+    saveState.value = 'Saved'
+  } catch (error) {
+    saveState.value = error instanceof Error ? `Save failed: ${error.message}` : 'Save failed'
+  } finally {
+    isSaving = false
+    if (saveQueued) {
+      saveQueued = false
+      void persistAll()
+    }
   }
 }
 
-// sub-graph 未加载时（直接访问详情 URL / 刷新）按 characterGraphId 兜底加载。
+async function hydrate() {
+  if (!node.value) return
+  isHydrating.value = true
+  title.value = node.value.title
+  content.value = node.value.content ?? ''
+  await loadFields()
+  isHydrating.value = false
+}
+
+async function handleDelete() {
+  const charTitle = title.value.trim() || node.value?.title || 'this character'
+  const confirmed = window.confirm(`Delete "${charTitle}"? Related edges will be removed too.`)
+  if (!confirmed || isDeleting.value) return
+
+  if (saveTimer) {
+    clearTimeout(saveTimer)
+    saveTimer = null
+  }
+
+  isDeleting.value = true
+  try {
+    await deleteNode(projectId.value, props.charId)
+    if (characterGraphId.value) {
+      await graphStore.load(characterGraphId.value, true)
+    }
+    router.push(`/workspace/${projectId.value}/characters`)
+  } catch (error) {
+    saveState.value = error instanceof Error ? `Delete failed: ${error.message}` : 'Delete failed'
+  } finally {
+    isDeleting.value = false
+  }
+}
+
 watch(
   characterGraphId,
-  (id) => {
-    if (id) void graphStore.load(id)
+  async (id) => {
+    if (!id) return
+    await graphStore.load(id)
+    await hydrate()
   },
   { immediate: true },
 )
 
 onMounted(() => {
-  void loadFields()
   void loadCrossRefs()
+  void hydrate()
 })
+
 watch(
   () => props.charId,
   () => {
-    void loadFields()
+    void hydrate()
     void loadCrossRefs()
   },
 )
+
+watch([title, content, fieldRows], () => {
+  scheduleSave()
+}, { deep: true })
+
+onBeforeUnmount(() => {
+  if (saveTimer) clearTimeout(saveTimer)
+})
 </script>
 
 <template>
   <section class="char-detail">
-    <button type="button" class="char-detail__back" @click="router.push(`/workspace/${projectId}/characters`)">
-      ← Characters
-    </button>
-
-    <header class="char-detail__head">
-      <h2>{{ node?.title ?? 'Character' }}</h2>
-      <p class="char-detail__content">{{ node?.content || 'No summary' }}</p>
+    <header class="char-detail__topbar">
+      <button type="button" class="char-detail__back" @click="router.push(`/workspace/${projectId}/characters`)">
+        ← Characters
+      </button>
+      <span v-if="saveState" class="char-detail__state">{{ saveState }}</span>
     </header>
 
-    <div class="char-detail__section">
-      <div class="char-detail__section-head">
-        <h3>Attributes</h3>
-        <button type="button" class="char-detail__add" @click="addField">+ Add field</button>
+    <input
+      ref="avatarInput"
+      class="char-detail__file-input"
+      type="file"
+      accept="image/*"
+      @change="handleAvatarChange"
+    />
+
+    <header class="char-detail__head">
+      <div
+        class="char-detail__avatar"
+        role="button"
+        tabindex="0"
+        :aria-label="avatar ? 'Double-click to change avatar' : 'Double-click to upload avatar'"
+        title="Double-click to change avatar"
+        @dblclick.stop="openAvatarPicker"
+        @keydown.enter="openAvatarPicker"
+      >
+        <img v-if="avatar" :src="avatar" :alt="title || 'Character avatar'" />
+        <span v-else class="char-detail__avatar-placeholder">+</span>
       </div>
-      <p v-if="fieldRows.length === 0" class="char-detail__hint">No attributes yet — add one.</p>
-      <div v-for="(row, index) in fieldRows" :key="index" class="char-detail__row">
-        <input v-model="row.key" class="char-detail__key" placeholder="Field (e.g. Faction)" />
-        <input v-model="row.value" class="char-detail__value" placeholder="Value" />
-        <button type="button" class="char-detail__del" @click="removeField(index)">Remove</button>
+      <div class="char-detail__intro">
+        <input
+          v-model="title"
+          class="char-detail__title"
+          type="text"
+          placeholder="Character name"
+          spellcheck="false"
+        />
+        <textarea
+          v-model="content"
+          class="char-detail__summary"
+          rows="2"
+          placeholder="Add a summary…"
+          spellcheck="true"
+        />
       </div>
-      <div class="char-detail__actions">
-        <button type="button" class="char-detail__save" @click="handleSave">Save</button>
-        <span class="char-detail__state">{{ saveState }}</span>
-      </div>
-    </div>
+    </header>
+
+    <DocFieldsEditor v-model="fieldRows" />
 
     <div class="char-detail__section">
       <h3>Relations</h3>
@@ -178,6 +306,17 @@ watch(
         </div>
       </template>
     </div>
+
+    <footer class="char-detail__footer">
+      <button
+        type="button"
+        class="char-detail__delete"
+        :disabled="isDeleting"
+        @click="handleDelete"
+      >
+        {{ isDeleting ? 'Deleting…' : 'Delete character' }}
+      </button>
+    </footer>
   </section>
 </template>
 
@@ -189,82 +328,104 @@ watch(
   flex-direction: column;
   gap: 20px;
 }
+.char-detail__topbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
 .char-detail__back {
-  align-self: flex-start;
   font-size: 13px;
   color: var(--muted, #888);
   background: none;
   border: none;
   cursor: pointer;
 }
-.char-detail__head h2 {
-  font-size: 22px;
+.char-detail__file-input {
+  display: none;
 }
-.char-detail__content {
-  color: #666;
+.char-detail__head {
+  display: flex;
+  gap: 16px;
+  align-items: flex-start;
+}
+.char-detail__avatar {
+  flex-shrink: 0;
+  width: 72px;
+  height: 72px;
+  padding: 0;
+  border: 1px dashed var(--border, #ddd);
+  border-radius: 999px;
+  overflow: hidden;
+  background: var(--panel-strong, #fafafa);
+  cursor: pointer;
+}
+.char-detail__avatar img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+.char-detail__avatar-placeholder {
+  display: grid;
+  place-items: center;
+  width: 100%;
+  height: 100%;
+  font-size: 28px;
+  color: var(--muted, #888);
+}
+.char-detail__intro {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.char-detail__title {
+  width: 100%;
+  margin: 0;
+  padding: 0;
+  border: none;
+  background: transparent;
+  font-size: 22px;
+  font-weight: 700;
+  color: var(--text);
+  cursor: text;
+}
+.char-detail__title:focus {
+  outline: none;
+}
+.char-detail__summary {
+  width: 100%;
+  margin: 0;
+  padding: 0;
+  border: none;
+  background: transparent;
+  resize: vertical;
   font-size: 14px;
   line-height: 1.6;
-  margin-top: 6px;
+  color: var(--text-soft, #666);
+  cursor: text;
+  min-height: 3.2em;
+}
+.char-detail__summary:focus {
+  outline: none;
+  color: var(--text);
+}
+.char-detail__summary::placeholder,
+.char-detail__title::placeholder {
+  color: var(--muted, #aaa);
 }
 .char-detail__section {
   display: flex;
   flex-direction: column;
   gap: 10px;
 }
-.char-detail__section-head {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-}
 .char-detail__hint {
   color: var(--muted, #888);
   font-size: 13px;
 }
-.char-detail__row {
-  display: flex;
-  gap: 8px;
-}
-.char-detail__key,
-.char-detail__value {
-  padding: 6px 10px;
-  border: 1px solid var(--border, #ddd);
-  border-radius: 8px;
-  font: inherit;
-}
-.char-detail__key {
-  width: 160px;
-}
-.char-detail__value {
-  flex: 1;
-}
-.char-detail__del {
-  background: none;
-  border: none;
-  color: #dc2626;
-  font-size: 12px;
-  cursor: pointer;
-}
-.char-detail__add {
-  font-size: 13px;
-  color: var(--accent);
-  background: none;
-  border: none;
-  cursor: pointer;
-}
-.char-detail__actions {
-  display: flex;
-  align-items: center;
-  gap: 12px;
-}
-.char-detail__save {
-  padding: 8px 18px;
-  border-radius: 8px;
-  border: 1px solid var(--accent);
-  background: var(--accent);
-  color: #fff;
-  cursor: pointer;
-}
 .char-detail__state {
+  flex-shrink: 0;
   font-size: 12px;
   color: var(--muted, #888);
 }
@@ -294,5 +455,29 @@ watch(
 .char-detail__xref-label {
   font-size: 13px;
   color: var(--muted, #666);
+}
+.char-detail__footer {
+  display: flex;
+  justify-content: flex-end;
+  margin-top: 8px;
+  padding-top: 20px;
+  border-top: 1px solid var(--border, #e5e7eb);
+}
+.char-detail__delete {
+  padding: 8px 14px;
+  border: 1px solid #fca5a5;
+  border-radius: 8px;
+  background: #fff;
+  color: #dc2626;
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+}
+.char-detail__delete:hover:not(:disabled) {
+  background: #fef2f2;
+}
+.char-detail__delete:disabled {
+  opacity: 0.6;
+  cursor: wait;
 }
 </style>

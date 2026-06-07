@@ -1,0 +1,58 @@
+<script setup lang="ts">
+import { computed } from 'vue'
+import { EdgeLabelRenderer, getBezierPath, type EdgeProps } from '@vue-flow/core'
+import type { CreativeEdgeData } from '../../../types/node'
+
+const props = defineProps<EdgeProps<CreativeEdgeData>>()
+
+const path = computed(() =>
+  getBezierPath({
+    sourceX: props.sourceX,
+    sourceY: props.sourceY,
+    sourcePosition: props.sourcePosition,
+    targetX: props.targetX,
+    targetY: props.targetY,
+    targetPosition: props.targetPosition,
+  }),
+)
+
+const edgePath = computed(() => path.value[0])
+const labelX = computed(() => path.value[1])
+const labelY = computed(() => path.value[2])
+/** EdgeProps.label is a union (string | VNode | …); only render plain-string labels. */
+const labelText = computed(() => (typeof props.label === 'string' ? props.label : ''))
+</script>
+
+<template>
+  <path
+    :id="id"
+    :d="edgePath"
+    :marker-end="markerEnd"
+    :style="style"
+    class="vue-flow__edge-path"
+    fill="none"
+  />
+
+  <EdgeLabelRenderer v-if="labelText.trim()">
+    <div
+      class="vue-flow__edge-text-wrapper"
+      :style="{
+        transform: `translate(-50%, -50%) translate(${labelX}px, ${labelY}px)`,
+      }"
+    >
+      <span class="vue-flow__edge-text" :style="labelStyle">{{ labelText }}</span>
+    </div>
+  </EdgeLabelRenderer>
+</template>
+
+<style scoped>
+.vue-flow__edge-text-wrapper {
+  position: absolute;
+  pointer-events: none;
+  padding: 2px 6px;
+  border-radius: 4px;
+  background: rgba(255, 255, 255, 0.92);
+  font-size: 12px;
+  font-weight: 700;
+}
+</style>

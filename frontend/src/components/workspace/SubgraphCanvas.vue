@@ -16,20 +16,21 @@ import type { CreativeNodeType } from '../../types/node'
 import CanvasWorkspace from '../canvas/CanvasWorkspace.vue'
 import NodeDetailView from './NodeDetailView.vue'
 
-// 工作台保存后 debounce 30s 触发种子重建（first_revision 阶段 5 触发器之一）。
+// After a workspace save, debounce 30s before triggering a seed rebuild (one of the first_revision phase 5 triggers).
 const SEED_REBUILD_DEBOUNCE_MS = 30000
 const HIGHLIGHT_DURATION_MS = 2600
 
 /**
- * 单 sub-graph 画布（first_revision 阶段 3）。
+ * Single sub-graph canvas (first_revision phase 3).
  *
- * 复用现有 CanvasWorkspace（Vue Flow）+ AgentSidebar（节点/边详情编辑）+
- * useGraphPersistence/useGraphMutations，仅把加载/保存注入为 sub-graph 维度。
- * 不修改这些组件/composable 的内部逻辑，只组合它们并绑定到 graphId。
+ * Reuses the existing CanvasWorkspace (Vue Flow) + AgentSidebar (node/edge detail
+ * editing) + useGraphPersistence/useGraphMutations, only injecting load/save at the
+ * sub-graph level. It does not change the internal logic of these
+ * components/composables, just composes them and binds to graphId.
  */
 const props = defineProps<{
   graphId: string
-  /** 该视图允许新建的节点类型（故事线只建 plot、世界观只建 worldbuilding）。 */
+  /** Node types this view allows creating (the story view only creates plot, worldbuilding only creates worldbuilding). */
   createTypes: CreativeNodeType[]
 }>()
 
@@ -42,7 +43,7 @@ const graphRefresh = injectWorkspaceGraphRefresh()
 let seedTimer: ReturnType<typeof setTimeout> | null = null
 let highlightClearTimer: ReturnType<typeof setTimeout> | null = null
 
-/** 保存成功后排程一次种子重建；连续保存只保留最后一次。 */
+/** Schedule one seed rebuild after a successful save; consecutive saves keep only the last. */
 function scheduleSeedRebuild() {
   const projectId = projectStore.detail?.id
   if (!projectId) return
@@ -81,8 +82,9 @@ const createNodeRequest = ref<{ type: CreativeNodeType; nonce: number } | null>(
 const highlightedNodeIds = ref<string[]>([])
 const highlightedEdgeIds = ref<string[]>([])
 
-// 详情编辑已迁出右栏（second_revision 改点 B）：右栏改为 AI 输出区，节点详情
-// 走中栏 NodeDetailView(W3)，标题/简介走 inline edit(W2)。这里仅保留键盘删除。
+// Detail editing has moved out of the right column (second_revision change B): the right
+// column is now the AI output area, node detail goes through the center NodeDetailView (W3),
+// and title/summary use inline edit (W2). Only keyboard deletion is kept here.
 const { handleGlobalKeydown } = useGraphMutations({
   graphSnapshot,
   selectedNodeId,
@@ -165,11 +167,11 @@ watch(selectedNodeId, (nodeId) => {
 onMounted(() => {
   window.addEventListener('keydown', handleGlobalKeydown, true)
   graphRefresh?.register(handleGraphRefreshNeeded)
-  centerStage.returnToCanvas() // 进入画布视图时复位，避免残留上一个视图的详情态
+  centerStage.returnToCanvas() // Reset when entering the canvas view, to avoid leftover detail state from the previous view
   void reload()
 })
 
-// 从节点详情返回画布时重新加载，确保详情页的编辑已反映到画布。
+// Reload when returning from node detail to the canvas, to ensure detail-page edits are reflected on the canvas.
 watch(
   () => centerStage.mode,
   (mode, old) => {
@@ -185,7 +187,7 @@ onBeforeUnmount(() => {
   if (highlightClearTimer) clearTimeout(highlightClearTimer)
 })
 
-// 在同一 WorkspaceShell 内切换 plot↔world 时 graphId 变化，需要重新加载。
+// When switching plot↔world within the same WorkspaceShell, graphId changes and a reload is needed.
 watch(
   () => props.graphId,
   () => {
@@ -196,28 +198,17 @@ watch(
 </script>
 
 <template>
-  <transition name="stage" mode="out-in">
+  <transition name="stage" mode="out-in" class="subgraph-stage">
   <NodeDetailView
     v-if="centerStage.mode === 'detail' && centerStage.detailNodeId"
     :node-id="centerStage.detailNodeId"
     @return="centerStage.returnToCanvas()"
   />
   <div v-else class="subgraph-canvas">
-    <div class="subgraph-canvas__toolbar">
-      <button
-        v-for="button in createButtons"
-        :key="button.type"
-        type="button"
-        class="subgraph-canvas__create"
-        @click="requestCreateNode(button.type)"
-      >
-        + New {{ button.label }}
-      </button>
-      <span class="subgraph-canvas__save">{{ isSaving ? 'Saving…' : saveState }}</span>
-    </div>
     <div class="subgraph-canvas__body">
       <CanvasWorkspace
         :selected-node-id="selectedNodeId"
+        :selected-edge-id="selectedEdgeId"
         :initial-nodes="graphNodes"
         :initial-edges="graphEdges"
         :graph-version="graphVersion"
@@ -228,42 +219,43 @@ watch(
         @node-selected="selectNode"
         @edge-selected="selectEdge"
         @graph-changed="handleGraphChanged"
-      />
+      >
+        <template #toolbar-leading>
+          <button
+            v-for="button in createButtons"
+            :key="button.type"
+            type="button"
+            class="toolbar-create-btn"
+            @click="requestCreateNode(button.type)"
+          >
+            + New {{ button.label }}
+          </button>
+        </template>
+        <template #toolbar-trailing>
+          <span class="toolbar-save-status">{{ isSaving ? 'Saving…' : saveState }}</span>
+        </template>
+      </CanvasWorkspace>
     </div>
   </div>
   </transition>
 </template>
 
 <style scoped>
+.subgraph-stage {
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  min-height: 0;
+  height: 100%;
+}
 .subgraph-canvas {
   height: 100%;
   display: grid;
-  grid-template-rows: 44px minmax(0, 1fr);
-}
-.subgraph-canvas__toolbar {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  padding: 0 12px;
-  border-bottom: 1px solid var(--border, #e5e7eb);
-}
-.subgraph-canvas__create {
-  padding: 6px 12px;
-  border-radius: 8px;
-  border: 1px solid var(--accent);
-  color: var(--accent);
-  background: var(--app-bg, #fff);
-  cursor: pointer;
-  font-size: 13px;
-}
-.subgraph-canvas__save {
-  margin-left: auto;
-  font-size: 12px;
-  color: var(--muted, #888);
+  grid-template-rows: minmax(0, 1fr);
 }
 .subgraph-canvas__body {
   min-height: 0;
-  /* 单格 grid 让 CanvasWorkspace 撑满高度，否则 Vue Flow 高度塌成 0、画布不显示 */
+  /* A single-cell grid lets CanvasWorkspace fill the full height; otherwise Vue Flow collapses to 0 height and the canvas doesn't show */
   display: grid;
 }
 </style>

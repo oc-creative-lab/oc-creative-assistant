@@ -4,14 +4,14 @@ import path from 'node:path'
 import process from 'node:process'
 import { fileURLToPath } from 'node:url'
 
-// 仓库根目录（脚本位于 scripts/，上一级为项目根）。
+// Repository root (the script lives in scripts/; its parent is the project root).
 const rootDir = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..')
-// 后端本地环境变量文件；用于在不改系统环境的前提下固定打包用 Python（如 PYTHON_BIN）。
+// Backend local environment variable file; used to pin the Python used for packaging (e.g. PYTHON_BIN) without changing the system environment.
 const backendEnvPath = path.join(rootDir, 'backend', '.env')
 
 /**
- * 极简 .env 解析：只支持 KEY=VALUE，忽略空行与 # 注释。
- * 用于读取 backend/.env 中的 PYTHON_BIN / OC_BACKEND_PYTHON，与 dotenv 行为近似但不依赖额外包。
+ * Minimal .env parser: supports only KEY=VALUE, ignoring blank lines and # comments.
+ * Used to read PYTHON_BIN / OC_BACKEND_PYTHON from backend/.env; behaves similarly to dotenv but without depending on an extra package.
  *
  * @param {string} filePath
  * @returns {Record<string, string>}
@@ -42,13 +42,13 @@ function parseEnvFile(filePath) {
   return values
 }
 
-// 模块加载时读一次，供 resolvePythonCommand 使用（相对路径以 rootDir 为准）。
+// Read once at module load for use by resolvePythonCommand (relative paths are resolved against rootDir).
 const backendEnv = parseEnvFile(backendEnvPath)
 
 /**
- * 给定 conda / venv 等「环境根目录」前缀，返回该平台下的 python 可执行文件绝对路径。
+ * Given an "environment root directory" prefix such as a conda / venv, return the absolute path to the python executable for this platform.
  *
- * @param {string} prefix 例如 conda 的 env 目录或 miniconda 根下的 envs/oc
+ * @param {string} prefix e.g. a conda env directory or envs/oc under the miniconda root
  */
 function getPythonExecutable(prefix) {
   return path.join(
@@ -58,8 +58,8 @@ function getPythonExecutable(prefix) {
 }
 
 /**
- * 从 PATH 里各目录推断可能的 conda「安装根」（base 所在层），供查找 envs/<name>。
- * 启发式规则：识别 .../Library/bin、.../Scripts|bin、或路径下已有 envs/<OC_CONDA_ENV|oc>。
+ * Infer possible conda "install roots" (the level where base resides) from the directories in PATH, for locating envs/<name>.
+ * Heuristics: recognize .../Library/bin, .../Scripts|bin, or a path that already contains envs/<OC_CONDA_ENV|oc>.
  *
  * @returns {string[]}
  */
@@ -95,9 +95,9 @@ function discoverCondaBasesFromPath() {
 }
 
 /**
- * 在若干 conda 根候选下查找名为 OC_CONDA_ENV（默认 oc）的环境对应的 python。
+ * Search the candidate conda roots for the python belonging to the environment named OC_CONDA_ENV (default oc).
  *
- * @returns {string | null} 找到则返回可执行文件路径，否则 null
+ * @returns {string | null} the executable path if found, otherwise null
  */
 function resolveNamedCondaPython() {
   const envName = process.env.OC_CONDA_ENV ?? 'oc'
@@ -131,15 +131,15 @@ function resolveNamedCondaPython() {
 }
 
 /**
- * 决定调用 PyInstaller 时使用的 Python，优先级（高 → 低）：
- * 1. 进程环境 PYTHON_BIN / OC_BACKEND_PYTHON
- * 2. backend/.env 中同名键（便于本机固定解释器而不提交到 git）
- * 3. 已激活且非 base 的 conda 环境（CONDA_PREFIX）
- * 4. conda 下名为 OC_CONDA_ENV（默认 oc）的环境
- * 5. 仅 CONDA_PREFIX（含 base）
- * 6. 系统 PATH 上的 python.exe / python3
+ * Decide which Python to use when invoking PyInstaller, in priority order (high -> low):
+ * 1. Process environment PYTHON_BIN / OC_BACKEND_PYTHON
+ * 2. The same-named keys in backend/.env (convenient for pinning the interpreter locally without committing to git)
+ * 3. An activated, non-base conda environment (CONDA_PREFIX)
+ * 4. The conda environment named OC_CONDA_ENV (default oc)
+ * 5. CONDA_PREFIX alone (including base)
+ * 6. python.exe / python3 on the system PATH
  *
- * 建议稳定打包时在 backend/.env 或环境中设置 PYTHON_BIN 指向项目 venv。
+ * For stable packaging it is recommended to set PYTHON_BIN in backend/.env or the environment, pointing to the project venv.
  *
  * @returns {string}
  */
@@ -178,11 +178,11 @@ function resolvePythonCommand() {
 }
 
 /**
- * 在仓库根目录下执行子进程；非 0 退出码视为构建失败并 reject。
+ * Run a child process in the repository root; a non-zero exit code is treated as a build failure and rejects.
  *
  * @param {string} command
  * @param {string[]} args
- * @param {string} name 仅用于错误信息
+ * @param {string} name used only for error messages
  */
 function run(command, args, name) {
   return new Promise((resolve, reject) => {
@@ -211,7 +211,7 @@ function run(command, args, name) {
 const pythonCommand = resolvePythonCommand()
 console.log(`[backend-build] Using Python: ${pythonCommand}`)
 
-// --onedir：生成 oc-creative-backend.exe + _internal，供 Electron extraResources 拷贝。
+// --onedir: produce oc-creative-backend.exe + _internal for Electron extraResources to copy.
 await run(
   pythonCommand,
   [
@@ -228,7 +228,7 @@ await run(
     'backend/build',
     '--specpath',
     'backend',
-    // PyInstaller 需要显式包含 uvicorn 的动态导入模块，否则可执行文件启动后会缺依赖。
+    // PyInstaller needs uvicorn's dynamically imported modules to be included explicitly, otherwise the executable will be missing dependencies at startup.
     '--hidden-import',
     'uvicorn.logging',
     '--hidden-import',
@@ -239,7 +239,7 @@ await run(
     'uvicorn.protocols.websockets.auto',
     '--hidden-import',
     'uvicorn.lifespan.on',
-    // ChromaDB 和 OpenAI SDK 都是运行时懒导入；这里显式收集，避免打包后向量库不可用。
+    // ChromaDB and the OpenAI SDK are both lazily imported at runtime; collect them explicitly here so the vector store is not unavailable after packaging.
     '--collect-all',
     'chromadb',
     '--hidden-import',

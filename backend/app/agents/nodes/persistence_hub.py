@@ -1,14 +1,16 @@
-"""持久化中枢节点。
+"""Persistence hub node.
 
-每轮把以下副作用分两段独立事务落库:
-1. user_message 独立入库 (单独事务); 即使后续 chat_assembler 失败, 用户消息
-   也已经 commit, 下一轮 recent_messages 不会出现单边断档。
-2. assembler_output 存在时, 在第二段事务里追加 assistant_message; 当轮
-   agent 输出含 proposed_changes 的话, 同事务内写入同一 batch_id 的
-   AgentStaging, 等用户在前端 staging 面板接受 / 编辑 / 拒绝。
+Each turn persists the following side effects in two independent transactions:
+1. user_message is persisted independently (a separate transaction); even if the
+   later chat_assembler fails, the user message is already committed, so next
+   turn's recent_messages won't have a one-sided gap.
+2. When assembler_output exists, the second transaction appends the
+   assistant_message; if this turn's agent output contains proposed_changes,
+   the same transaction writes AgentStaging records under the same batch_id,
+   awaiting the user to accept / edit / reject them in the frontend staging panel.
 
-session 不存在时整体静默跳过, 让 graph.invoke 仍能返回一份 in-memory 的
-assembler_output 给调用方做兜底。
+When the session is missing, the whole node silently skips, letting graph.invoke
+still return an in-memory assembler_output to the caller as a fallback.
 """
 
 from __future__ import annotations
@@ -28,13 +30,14 @@ _OUTPUT_KEY_BY_INTENT: dict[str, str] = {
     "research": "research_output",
     "structure": "structure_output",
 }
-"""仅这三类 agent 会产出 proposed_changes; simulation 物理隔离, 不进。"""
+"""Only these three agent types produce proposed_changes; simulation is physically isolated and does not participate."""
 
 
 def _collect_proposed_changes(state: AgentState) -> tuple[list[ProposedChange], str]:
-    """从当前 intent 对应 agent 的输出里取 proposed_changes; 没有就回空列表。
+    """Take proposed_changes from the output of the agent matching the current intent; return an empty list if none.
 
-    agent_type 取 intent.primary, 让 staging 表能按 agent 来源分组展示。
+    agent_type takes intent.primary, so the staging table can group its display
+    by agent source.
     """
     intent = state.get("intent")
     primary = intent.primary if intent is not None else ""
@@ -51,7 +54,7 @@ def _collect_proposed_changes(state: AgentState) -> tuple[list[ProposedChange], 
 
 
 def _to_staging_items(changes: list[ProposedChange]) -> list[AgentStagingCreateItem]:
-    """ProposedChange (agent 内部模型) → AgentStagingCreateItem (持久化模型)。"""
+    """ProposedChange (agent internal model) -> AgentStagingCreateItem (persistence model)."""
     return [
         AgentStagingCreateItem(
             change_type=change.change_type,
@@ -73,7 +76,7 @@ def persistence_hub_node(state: AgentState) -> dict[str, Any]:
     if not session_id:
         return {}
 
-    # 第一段事务: 用户消息独立入库, 与 assembler 成败解耦
+    # First transaction: user message persisted independently, decoupled from the assembler's success/failure
     with SessionLocal.begin() as db:
         if db.get(ChatSessionORM, session_id) is None:
             return {}
@@ -86,13 +89,15 @@ def persistence_hub_node(state: AgentState) -> dict[str, Any]:
     proposed_changes, agent_type = _collect_proposed_changes(state)
     staging_items = _to_staging_items(proposed_changes)
 
-    # 第二段事务: assistant_message 与 staging 共享同一事务, 保证消息与
-    # batch 的引用一致性 (staging 行 message_id 必然指向真实存在的消息)
+    # Second transaction: assistant_message and staging share the same transaction,
+    # guaranteeing referential consistency between message and batch (a staging
+    # row's message_id always points to a really existing message)
     with SessionLocal.begin() as db:
         meta: dict[str, Any] = {
             "agent_type": agent_type,
             "cited_node_ids": list(assembler.cited_node_ids),
             "staging_summary": assembler.staging_summary,
+            "web_sources": [item.model_dump() for item in assembler.web_sources],
         }
         assistant_message = append_message(
             db,

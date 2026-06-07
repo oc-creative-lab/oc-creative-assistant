@@ -3,10 +3,10 @@ import type { AgentStagingBatchDto } from '../../api/chatApi'
 import StagingItemCard from './StagingItemCard.vue'
 
 /**
- * staging 批次列表。
+ * Staging batch list.
  *
- * 同一 Agent turn 产生的变更聚合在一个 batch 里, 提供"接受全部"和
- * "拒绝全部"快捷操作; 也允许用户对单条做更精细的处理。
+ * Changes produced in the same Agent turn are grouped into one batch, offering
+ * "accept all" and "reject all" shortcuts; it also lets the user handle individual items more granularly.
  */
 defineProps<{
   batches: AgentStagingBatchDto[]
@@ -21,19 +21,19 @@ const emit = defineEmits<{
 <template>
   <section v-if="batches.length > 0" class="staging-panel">
     <header class="staging-panel__head">
-      <h3>待确认变更</h3>
-      <span class="staging-panel__count">{{ batches.length }} 批</span>
+      <h3>Pending changes</h3>
+      <span class="staging-panel__count">{{ batches.length }} batches</span>
     </header>
 
     <div v-for="batch in batches" :key="batch.batch_id" class="staging-batch">
       <header class="staging-batch__head">
-        <span>本批 {{ batch.items.length }} 项</span>
+        <span>{{ batch.items.length }} items in this batch</span>
         <div class="staging-batch__actions">
           <button type="button" @click="emit('resolveBatch', batch.batch_id, 'accept_all')">
-            全部接受
+            Accept all
           </button>
           <button type="button" class="ghost" @click="emit('resolveBatch', batch.batch_id, 'reject_all')">
-            全部拒绝
+            Reject all
           </button>
         </div>
       </header>

@@ -1,13 +1,13 @@
 import type { CSSProperties } from 'vue'
 import type { Edge, EdgeMarkerType, Position } from '@vue-flow/core'
 
-/** 当前画布支持的节点类型，需要与后端 DTO、节点工厂和 Vue Flow 插槽名保持一致。 */
+/** Node types currently supported by the canvas; must stay consistent with the backend DTO, the node factory and the Vue Flow slot names. */
 export type CreativeNodeType = 'character' | 'plot' | 'worldbuilding' | 'idea' | 'research' | 'structure'
 
-/** 节点同步状态，目前用于表达未来 RAG/Agent 处理后的 UI 状态。 */
+/** Node sync status, currently used to express the future UI state after RAG/Agent processing. */
 export type CreativeNodeStatus = 'draft' | 'synced' | 'outdated'
 
-/** 连线关系类型表达创作语义，而不是工作流执行顺序。 */
+/** Edge relation types express creative semantics, not workflow execution order. */
 export type CreativeRelationType =
   | 'relates_to'
   | 'causes'
@@ -16,7 +16,7 @@ export type CreativeRelationType =
   | 'references'
   | 'develops_into'
 
-/** 连线关系类型的展示选项。 */
+/** Display options for edge relation types. */
 export const RELATION_TYPE_OPTIONS: Array<{ value: CreativeRelationType; label: string }> = [
   { value: 'relates_to', label: 'relates to' },
   { value: 'causes', label: 'causes' },
@@ -27,30 +27,34 @@ export const RELATION_TYPE_OPTIONS: Array<{ value: CreativeRelationType; label: 
 ]
 
 /**
- * 节点业务数据。
+ * Node business data.
  *
- * 该结构会随 graph 一起持久化；`isActive` 只是前端选中态，不写入后端。
+ * This structure is persisted together with the graph; `isActive` is purely a frontend selection state and is not written to the backend.
  */
 export interface CreativeNodeData {
-  /** 节点标题，用于画布卡片和右侧详情编辑。 */
+  /** Node title, used for the canvas card and the right-hand detail editor. */
   title: string
-  /** 节点完整内容，画布只展示摘要，右侧面板负责编辑全文。 */
+  /** Full node content; the canvas only shows a summary, while the right-hand panel handles editing the full text. */
   content: string
-  /** 节点业务类型，放在 data 中是为了让右侧编辑区不依赖 Vue Flow 外层 type。 */
+  /** The node's business type, placed in data so the right-hand editor does not depend on Vue Flow's outer type. */
   nodeType: CreativeNodeType
-  /** 标签用于后续筛选和 RAG 索引，目前先作为字符串数组保存。 */
+  /** Tags are used for later filtering and RAG indexing; for now they are stored as a string array. */
   tags: string[]
-  /** 同步状态当前只是 UI 占位，不代表真的接入了 ChromaDB 或 Agent。 */
+  /** The sync status is currently just a UI placeholder and does not mean ChromaDB or the Agent is actually wired in. */
   status: CreativeNodeStatus
-  /** 展示用图标，避免节点组件反复写类型映射。 */
+  /** Display icon, so node components do not repeatedly write type mappings. */
   icon: string
-  /** 展示用类型标签，避免节点组件反复写类型映射。 */
+    /** Display type label, so node components do not repeatedly write type mappings. */
   typeLabel: string
-  /** 前端选中态，只服务画布渲染，不参与持久化。 */
+  /** Worldbuilding folder parent; null means a root tree. Other node types ignore this field. */
+  parentId?: string | null
+  /** Sibling order under the same parent in the world folder tree. */
+  sortOrder?: number
+  /** Frontend selection state, serving canvas rendering only and not part of persistence. */
   isActive?: boolean
 }
 
-/** 业务节点在 Vue Flow 中的最小形态，避免把运行时字段直接扩散到应用状态。 */
+/** The minimal form of a business node in Vue Flow, to avoid spreading runtime fields directly into application state. */
 export interface CreativeFlowNode {
   id: string
   type: CreativeNodeType
@@ -64,12 +68,12 @@ export interface CreativeFlowNode {
   data: CreativeNodeData
 }
 
-/** 业务边只保存恢复画布所需的字段；markerEnd 是前端渲染补充项。 */
+/** A business edge only stores the fields needed to restore the canvas; markerEnd is a frontend rendering supplement. */
 export interface CreativeFlowEdge {
   id: string
   source: string
   target: string
-  /** Vue Flow 内置 label 字段负责画布上的直接展示。 */
+  /** Vue Flow's built-in label field handles direct display on the canvas. */
   label?: string
   sourceHandle?: string | null
   targetHandle?: string | null
@@ -86,28 +90,28 @@ export interface CreativeFlowEdge {
 
 export interface CreativeEdgeWaypoint {
   orientation: 'horizontal' | 'vertical'
-  /** 中段 perp 坐标 — vertical: x; horizontal: y。 */
+  /** Perp coordinate of the middle segment - vertical: x; horizontal: y. */
   middle: number
-  /** 靠 source 那段的 perp 坐标 — vertical: y; horizontal: x。 */
+  /** Perp coordinate of the segment near source - vertical: y; horizontal: x. */
   nearSource?: number
-  /** 靠 target 那段的 perp 坐标 — vertical: y; horizontal: x。 */
+  /** Perp coordinate of the segment near target - vertical: y; horizontal: x. */
   nearTarget?: number
 }
 
-/** 连线业务数据。 */
+/** Edge business data. */
 export interface CreativeEdgeData {
-  /** 连线标签是用户可编辑的创作关系文本。 */
+  /** The edge label is user-editable creative relation text. */
   label: string
-  /** 关系类型用于后续筛选、结构整理和 RAG 检索扩展。 */
+  /** The relation type is used for later filtering, structure organization and RAG retrieval expansion. */
   relationType: CreativeRelationType
-  /** 用户拖拽自定义的中段位置; 未设置时按 source/target 几何关系自动算。 */
+  /** The user's custom-dragged middle position; when unset, it is computed automatically from the source/target geometry. */
   waypoint?: CreativeEdgeWaypoint
 }
 
-/** 需要传给 Vue Flow 工具函数时使用的兼容类型。 */
+/** Compatibility type used when passing to Vue Flow utility functions. */
 export type VueFlowCompatibleEdge = Edge & CreativeFlowEdge
 
-/** AppShell 和 CanvasWorkspace 之间传递的可保存 graph 快照。 */
+/** The savable graph snapshot passed between AppShell and CanvasWorkspace. */
 export interface CreativeGraphSnapshot {
   nodes: CreativeFlowNode[]
   edges: CreativeFlowEdge[]

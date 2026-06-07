@@ -7,22 +7,22 @@ const bundleDir = path.join(rootDir, 'electron', '.bundle')
 const frontendDistDir = path.join(rootDir, 'frontend', 'dist')
 const backendDistDir = path.join(rootDir, 'backend', 'dist', 'oc-creative-backend')
 
-// 若缺少必要构建产物则提前失败。
+// Fail early if a required build artifact is missing.
 function ensureExists(targetPath, label) {
   if (!fs.existsSync(targetPath)) {
     throw new Error(`${label} not found at ${targetPath}`)
   }
 }
 
-// 先确认前端和后端构建产物都已存在。
+// First confirm that both the frontend and backend build artifacts exist.
 ensureExists(frontendDistDir, 'frontend build output')
 ensureExists(backendDistDir, 'backend build output')
 
-// 重新创建临时 Electron 打包目录。
-// 该目录是构建产物，可安全清空；不要把用户数据放在 electron/.bundle 下。
+// Recreate the temporary Electron packaging directory.
+// This directory is a build artifact and can be safely cleared; do not put user data under electron/.bundle.
 fs.rmSync(bundleDir, { recursive: true, force: true })
 fs.mkdirSync(bundleDir, { recursive: true })
 
-// 将前端和后端产物复制到 Electron resources 目录。
+// Copy the frontend and backend artifacts into the Electron resources directory.
 fs.cpSync(frontendDistDir, path.join(bundleDir, 'frontend'), { recursive: true })
 fs.cpSync(backendDistDir, path.join(bundleDir, 'backend'), { recursive: true })

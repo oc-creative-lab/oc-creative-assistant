@@ -1,7 +1,9 @@
-"""FastAPI 应用入口。
+"""FastAPI application entry point.
 
-本模块负责创建应用、注册 CORS、中间件、路由和启动初始化。具体业务逻辑位于
-`app.services`，数据库连接位于 `app.db`，向量索引位于 `app.indexing`。
+This module is responsible for creating the app, registering CORS, middleware,
+routes, and startup initialization. The actual business logic lives in
+`app.services`, the database connection in `app.db`, and the vector index in
+`app.indexing`.
 """
 
 from fastapi import FastAPI
@@ -13,11 +15,13 @@ from app.api.routes.projects import router as projects_router
 from app.api.routes.rag import router as rag_router
 from app.api.routes.system import router as system_router
 from app.db.database import init_db
+from app.services.graph_store import ensure_default_project
 
 
 app = FastAPI(title="OC Creative Assistant Backend")
 
-# Electron 打包时渲染进程可能来自 file://，开发态来自 localhost；只放行这两类本地来源。
+# When packaged with Electron the renderer process may come from file://, and in
+# dev mode from localhost; only allow these two kinds of local origins.
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["null"],
@@ -30,13 +34,15 @@ app.add_middleware(
 
 @app.on_event("startup")
 async def startup() -> None:
-    """应用启动时初始化 SQLite 表，保证 Electron 拉起后 API 可直接使用。"""
+    """Initialize the SQLite tables on app startup, so the API is ready to use as soon as Electron launches it."""
     init_db()
+    ensure_default_project()
 
 
 app.include_router(system_router)
-# graph_router 必须在 projects_router 之前注册：它的字面量路由 /api/projects/default
-# 否则会被 projects_router 的动态路由 /api/projects/{project_id} 抢先匹配成 404。
+# graph_router must be registered before projects_router: its literal route
+# /api/projects/default would otherwise be matched first by projects_router's
+# dynamic route /api/projects/{project_id} and turned into a 404.
 app.include_router(graph_router)
 app.include_router(projects_router)
 app.include_router(rag_router)

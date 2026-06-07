@@ -1,20 +1,20 @@
 <script setup lang="ts">
-import { nodeTypeOptions } from '../../utils/nodeFactory'
 import type { CreativeNodeType } from '../../types/node'
 
 /**
- * 画布右键菜单（second_revision 改点 A）。
+ * Canvas right-click context menu.
  *
- * menuType='blank'：在鼠标位置新建节点（按当前 sub-graph 允许的类型）。
- * menuType='node'：编辑详情 / 复制 / 删除 / 复制到对话框。
- * position:fixed + z-index:9999，盖过节点与画布。
+ * menuType='blank': create a new node at the cursor position (using the types allowed by the current sub-graph).
+ * menuType='node': edit details / duplicate / delete / copy to composer.
+ * position:fixed + z-index:9999, sits above nodes and the canvas.
  */
 defineProps<{
   show: boolean
   x: number
   y: number
-  menuType: 'blank' | 'node'
+  menuType: 'blank' | 'node' | 'edge'
   createTypes: CreativeNodeType[]
+  edgeLabel?: string
 }>()
 const emit = defineEmits<{
   create: [type: CreativeNodeType]
@@ -22,6 +22,7 @@ const emit = defineEmits<{
   duplicate: []
   remove: []
   quote: []
+  changeRelation: []
   close: []
 }>()
 
@@ -31,27 +32,36 @@ function labelOf(type: CreativeNodeType): string {
 </script>
 
 <template>
-  <div v-if="show" class="ctx-menu" :style="{ left: `${x}px`, top: `${y}px` }">
-    <template v-if="menuType === 'blank'">
-      <button
-        v-for="type in createTypes"
-        :key="type"
-        type="button"
-        class="ctx-menu__item"
-        @click="emit('create', type)"
-      >
-        + New {{ labelOf(type) }}
-      </button>
-    </template>
-    <template v-else>
-      <button type="button" class="ctx-menu__item" @click="emit('edit')">Edit</button>
-      <button type="button" class="ctx-menu__item" @click="emit('duplicate')">Duplicate</button>
-      <button type="button" class="ctx-menu__item" @click="emit('quote')">Copy to composer</button>
-      <button type="button" class="ctx-menu__item ctx-menu__item--danger" @click="emit('remove')">
-        Delete
-      </button>
-    </template>
-  </div>
+  <Teleport to="body">
+    <div v-if="show" class="ctx-menu" :style="{ left: `${x}px`, top: `${y}px` }" @contextmenu.prevent>
+      <template v-if="menuType === 'blank'">
+        <button
+          v-for="type in createTypes"
+          :key="type"
+          type="button"
+          class="ctx-menu__item"
+          @click="emit('create', type)"
+        >
+          + New {{ labelOf(type) }}
+        </button>
+      </template>
+      <template v-else-if="menuType === 'edge'">
+        <p v-if="edgeLabel" class="ctx-menu__caption">{{ edgeLabel }}</p>
+        <button type="button" class="ctx-menu__item" @click="emit('changeRelation')">Change relation</button>
+        <button type="button" class="ctx-menu__item ctx-menu__item--danger" @click="emit('remove')">
+          Delete edge
+        </button>
+      </template>
+      <template v-else>
+        <button type="button" class="ctx-menu__item" @click="emit('edit')">Edit</button>
+        <button type="button" class="ctx-menu__item" @click="emit('duplicate')">Duplicate</button>
+        <button type="button" class="ctx-menu__item" @click="emit('quote')">Copy to composer</button>
+        <button type="button" class="ctx-menu__item ctx-menu__item--danger" @click="emit('remove')">
+          Delete
+        </button>
+      </template>
+    </div>
+  </Teleport>
 </template>
 
 <style scoped>
@@ -66,6 +76,15 @@ function labelOf(type: CreativeNodeType): string {
   box-shadow: 0 8px 24px rgba(0, 0, 0, 0.16);
   display: flex;
   flex-direction: column;
+}
+.ctx-menu__caption {
+  margin: 0;
+  padding: 6px 12px 4px;
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--muted, #888);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
 }
 .ctx-menu__item {
   text-align: left;

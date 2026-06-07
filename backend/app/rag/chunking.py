@@ -1,5 +1,6 @@
-"""RAG 文本切分预留模块。
+"""Reserved module for RAG text chunking.
 
-当前 PoC 直接以节点为检索粒度，没有额外 chunk 逻辑。保留该模块是为了后续接入
-长文档、素材库或章节文本时有清晰扩展位置。
+The current PoC retrieves at node granularity directly, without any extra chunking
+logic. This module is kept so that there is a clear place to extend later when
+integrating long documents, material libraries, or chapter text.
 """

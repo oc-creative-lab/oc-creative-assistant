@@ -1,6 +1,8 @@
 import { defineStore } from 'pinia'
 
-/** 底部对话框里引用的节点（second_revision 改点 C）。 */
+export type WebSearchMode = 'auto' | 'on' | 'off'
+
+/** A node quoted in the bottom dialog box (second_revision change C). */
 export interface QuotedNodeRef {
   id: string
   type: string // 'character' | 'plot' | 'world' ...
@@ -8,16 +10,24 @@ export interface QuotedNodeRef {
 }
 
 /**
- * 底部 Composer 状态：引用节点卡片 + 输入框文本。
+ * Bottom Composer state: quoted node cards + input box text.
  *
- * 选中节点 → 复制到对话框 → 以可叉掉的小卡片显示在输入框上方。
+ * Select a node → copy it to the dialog box → show it as a dismissible small card above the input box.
  */
 export const useComposerStore = defineStore('composer', {
   state: () => ({
     references: [] as QuotedNodeRef[],
     input: '',
+    collapsed: false,
+    /** auto = heuristic; on = force web search; off = disable web search */
+    webSearchMode: 'auto' as WebSearchMode,
   }),
   actions: {
+    cycleWebSearchMode() {
+      const order: WebSearchMode[] = ['auto', 'on', 'off']
+      const index = order.indexOf(this.webSearchMode)
+      this.webSearchMode = order[(index + 1) % order.length]
+    },
     addReferences(refs: QuotedNodeRef[]) {
       const existing = new Set(this.references.map((r) => r.id))
       refs.forEach((r) => {
@@ -26,6 +36,9 @@ export const useComposerStore = defineStore('composer', {
     },
     removeReference(id: string) {
       this.references = this.references.filter((r) => r.id !== id)
+    },
+    setCollapsed(value: boolean) {
+      this.collapsed = value
     },
     clear() {
       this.references = []

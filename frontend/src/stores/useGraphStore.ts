@@ -4,11 +4,11 @@ import type { GraphEdgeDto, GraphNodeDto } from '../api/graphApi'
 import { loadSubgraph } from '../api/graphApi'
 
 /**
- * 当前打开的 sub-graph store（first_revision 决策 6 / 阶段 3）。
+ * Currently open sub-graph store (first_revision decision 6 / phase 3).
  *
- * 主要服务角色卡两路由（CharacterCardList ↔ CharacterCardDetail）共享同一份
- * sub-graph 数据，避免详情页二次全量拉取。Plot/World 画布走 useGraphPersistence
- * 的注入式加载，不依赖本 store。
+ * Mainly serves the two Character-card routes (CharacterCardList ↔ CharacterCardDetail), letting them share the same
+ * sub-graph data and avoiding a second full fetch on the detail page. The Plot/World canvases use useGraphPersistence's
+ * injected loading and do not depend on this store.
  */
 export const useGraphStore = defineStore('graph', () => {
   const graphId = ref('')
@@ -17,7 +17,7 @@ export const useGraphStore = defineStore('graph', () => {
   const isLoading = ref(false)
   const error = ref('')
 
-  /** 按 graph_id 加载 sub-graph；已是当前 graph 时可强制刷新。 */
+  /** Load a sub-graph by graph_id; can force-refresh when it is already the current graph. */
   async function load(targetGraphId: string, force = false): Promise<void> {
     if (!force && graphId.value === targetGraphId && nodes.value.length > 0) return
     isLoading.value = true
@@ -28,7 +28,7 @@ export const useGraphStore = defineStore('graph', () => {
       nodes.value = graph.nodes
       edges.value = graph.edges
     } catch (e) {
-      error.value = e instanceof Error ? e.message : 'sub-graph 加载失败'
+      error.value = e instanceof Error ? e.message : 'Failed to load sub-graph'
       nodes.value = []
       edges.value = []
     } finally {
@@ -36,12 +36,12 @@ export const useGraphStore = defineStore('graph', () => {
     }
   }
 
-  /** 取单个节点（详情页用）。 */
+  /** Get a single node (used by the detail page). */
   function getNode(nodeId: string): GraphNodeDto | undefined {
     return nodes.value.find((node) => node.id === nodeId)
   }
 
-  /** 取某节点的出边（角色关系，以标签形式展示，不画线）。 */
+  /** Get a node's outgoing edges (Character relations, shown as labels rather than drawn lines). */
   function outgoingEdges(nodeId: string): GraphEdgeDto[] {
     return edges.value.filter((edge) => edge.source === nodeId)
   }

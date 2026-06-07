@@ -7,18 +7,18 @@ import type {
 import { requestJson } from './http'
 
 /**
- * 项目 API 客户端（first_revision 阶段 1）。
+ * Project API client (first_revision phase 1).
  *
- * 与后端 /api/projects/* 对应。sub-graph 的节点/边读写仍走 graphApi 的
- * loadSubgraph / saveSubgraph（按 graph_id）。
+ * Maps to the backend /api/projects/*. Reading/writing sub-graph nodes/edges still goes through
+ * graphApi's loadSubgraph / saveSubgraph (by graph_id).
  */
 
-/** 列出全部项目（项目库卡片）。 */
+/** List all projects (project library cards). */
 export async function listProjects(): Promise<ProjectSummary[]> {
   return requestJson<ProjectSummary[]>('/api/projects')
 }
 
-/** 创建项目，后端自动创建三个 sub-graph。 */
+/** Create a project; the backend automatically creates three sub-graphs. */
 export async function createProject(payload: ProjectCreatePayload): Promise<ProjectDetail> {
   return requestJson<ProjectDetail>('/api/projects', {
     method: 'POST',
@@ -26,15 +26,15 @@ export async function createProject(payload: ProjectCreatePayload): Promise<Proj
   })
 }
 
-/** 读取项目详情（含三个 graph_id 与最新种子）。 */
+/** Read project details (including the three graph_ids and the latest seed). */
 export async function getProjectDetail(projectId: string): Promise<ProjectDetail> {
   return requestJson<ProjectDetail>(`/api/projects/${projectId}`)
 }
 
-/** 更新项目 name / description（项目概览页编辑简介用）。 */
+/** Update the project name / description / cover image (used by the overview page to edit the summary). */
 export async function updateProject(
   projectId: string,
-  payload: { name?: string; description?: string },
+  payload: { name?: string; description?: string; cover_image?: string },
 ): Promise<ProjectDetail> {
   return requestJson<ProjectDetail>(`/api/projects/${projectId}`, {
     method: 'PATCH',
@@ -42,7 +42,7 @@ export async function updateProject(
   })
 }
 
-/** 读取节点自由字段（角色卡）。 */
+/** Read a node's free-form fields (Character card). */
 export async function getNodeFields(
   projectId: string,
   nodeId: string,
@@ -50,7 +50,7 @@ export async function getNodeFields(
   return requestJson(`/api/projects/${projectId}/nodes/${nodeId}/fields`)
 }
 
-/** 整体替换节点自由字段（角色卡）。 */
+/** Wholly replace a node's free-form fields (Character card). */
 export async function saveNodeFields(
   projectId: string,
   nodeId: string,
@@ -62,7 +62,7 @@ export async function saveNodeFields(
   })
 }
 
-/** 一条跨 sub-graph 引用。 */
+/** A single cross-sub-graph reference. */
 export interface CrossReferenceItem {
   edge_id: string
   other_node_id: string
@@ -73,14 +73,14 @@ export interface CrossReferenceItem {
   direction: 'outgoing' | 'incoming'
 }
 
-/** 节点在其它 sub-graph 中被引用的位置（first_revision 阶段 6）。 */
+/** Where a node is referenced in other sub-graphs (first_revision phase 6). */
 export interface CrossReferenceResponse {
   node_id: string
   section: 'plot' | 'character' | 'world' | null
   references: CrossReferenceItem[]
 }
 
-/** 更新节点字段（内联卡片"编辑" + 节点详情页共用，复用 graph 的 PATCH node 端点）。 */
+/** Update node fields (shared by the inline card "Edit" + the node detail page, reusing the graph's PATCH node endpoint). */
 export async function updateNode(
   projectId: string,
   nodeId: string,
@@ -98,12 +98,46 @@ export async function updateNode(
   })
 }
 
-/** 删除节点（对话内联卡片"拒绝/撤销"用）。 */
+/** Delete a node (used by the chat inline card "Reject/Undo"). */
 export async function deleteNode(projectId: string, nodeId: string): Promise<void> {
   await requestJson<void>(`/api/projects/${projectId}/nodes/${nodeId}`, { method: 'DELETE' })
 }
 
-/** 读取节点的跨 sub-graph 反向引用。 */
+export interface ProjectEdgePayload {
+  id: string
+  source: string
+  target: string
+  label?: string
+  relationType?: string
+  sourceHandle?: string | null
+  targetHandle?: string | null
+  type?: string
+  animated?: boolean
+}
+
+/** Create a cross-sub-graph edge (e.g. plot node → character node). */
+export async function createProjectEdge(
+  projectId: string,
+  edge: ProjectEdgePayload,
+): Promise<ProjectEdgePayload> {
+  return requestJson<ProjectEdgePayload>(`/api/projects/${projectId}/edges`, {
+    method: 'POST',
+    body: JSON.stringify({
+      label: '',
+      relationType: 'relates_to',
+      type: 'bezier',
+      animated: false,
+      ...edge,
+    }),
+  })
+}
+
+/** Remove a single edge by id. */
+export async function deleteProjectEdge(projectId: string, edgeId: string): Promise<void> {
+  await requestJson<void>(`/api/projects/${projectId}/edges/${edgeId}`, { method: 'DELETE' })
+}
+
+/** Read a node's cross-sub-graph back-references. */
 export async function getNodeCrossReferences(
   projectId: string,
   nodeId: string,
@@ -113,17 +147,17 @@ export async function getNodeCrossReferences(
   )
 }
 
-/** 级联删除项目。 */
+/** Cascade-delete a project. */
 export async function deleteProject(projectId: string): Promise<void> {
   await requestJson<void>(`/api/projects/${projectId}`, { method: 'DELETE' })
 }
 
-/** 读取项目当前种子；尚无种子时后端返回 404。 */
+/** Read the project's current seed; the backend returns 404 when no seed exists yet. */
 export async function getProjectSeed(projectId: string): Promise<ProjectSeed> {
   return requestJson<ProjectSeed>(`/api/projects/${projectId}/seed`)
 }
 
-/** 强制重建项目种子，版本自增。 */
+/** Force-rebuild the project seed, incrementing the version. */
 export async function rebuildProjectSeed(projectId: string): Promise<ProjectSeed> {
   return requestJson<ProjectSeed>(`/api/projects/${projectId}/seed/rebuild`, {
     method: 'POST',

@@ -4,10 +4,10 @@ const path = require('node:path')
 const { spawn } = require('node:child_process')
 const { app, BrowserWindow, shell } = require('electron')
 
-// 打包态由 Electron 主进程托管后端进程；开发态通常复用外部 uvicorn。
+// In packaged mode the Electron main process hosts the backend process; in dev mode it usually reuses an external uvicorn.
 let backendProcess = null
 
-// 规范化端口输入，不合法时回退到默认值。
+// Normalize the port input, falling back to the default value when it is invalid.
 function resolvePort(rawPort, fallback) {
   const parsedPort = Number(rawPort)
 
@@ -18,7 +18,7 @@ function resolvePort(rawPort, fallback) {
   return fallback
 }
 
-// 解析开发模式下要加载的前端入口地址。
+// Resolve the frontend entry URL to load in development mode.
 function resolveRendererUrl() {
   const host = process.env.FRONTEND_DEV_HOST ?? '127.0.0.1'
   const port = process.env.FRONTEND_DEV_PORT ?? '5174'
@@ -26,17 +26,17 @@ function resolveRendererUrl() {
   return process.env.ELECTRON_RENDERER_URL ?? `http://${host}:${port}`
 }
 
-// 根据主机和端口拼出本地 HTTP 基础地址。
+// Build the local HTTP base URL from the host and port.
 function buildHttpUrl(host, port) {
   return `http://${host}:${port}`
 }
 
-// 根据后端基础地址拼出 health 接口地址。
+// Build the health endpoint URL from the backend base URL.
 function buildHealthUrl(baseUrl) {
   return `${baseUrl.replace(/\/$/, '')}/health`
 }
 
-// 探测本机某个端口当前是否可用。
+// Check whether a given local port is currently available.
 async function isPortFree(host, port) {
   return new Promise((resolve) => {
     const server = net.createServer()
@@ -53,7 +53,7 @@ async function isPortFree(host, port) {
   })
 }
 
-// 从首选端口开始向后查找可用端口。
+// Search upward from the preferred port for an available one.
 async function findAvailablePort(host, preferredPort, maxAttempts = 20) {
   for (let offset = 0; offset < maxAttempts; offset += 1) {
     const candidatePort = preferredPort + offset
@@ -68,7 +68,7 @@ async function findAvailablePort(host, preferredPort, maxAttempts = 20) {
   )
 }
 
-// 轮询等待某个 HTTP 地址可访问。
+// Poll until a given HTTP URL becomes reachable.
 async function waitForUrl(url, timeoutMs = 30_000, intervalMs = 500) {
   const startedAt = Date.now()
 
@@ -89,12 +89,12 @@ async function waitForUrl(url, timeoutMs = 30_000, intervalMs = 500) {
   throw new Error(`Timed out waiting for ${url}`)
 }
 
-// 解析打包后前端入口文件在 resources 中的位置。
+// Resolve the location of the packaged frontend entry file within resources.
 function getBundledFrontendEntry() {
   return path.join(process.resourcesPath, 'frontend', 'index.html')
 }
 
-// 解析打包后后端可执行文件在 resources 中的位置。
+// Resolve the location of the packaged backend executable within resources.
 function getBundledBackendExecutable() {
   const executableName = process.platform === 'win32'
     ? 'oc-creative-backend.exe'
@@ -103,7 +103,7 @@ function getBundledBackendExecutable() {
   return path.join(process.resourcesPath, 'backend', executableName)
 }
 
-// 解析打包态后端数据目录；portable 跟随 exe，安装版跟随当前用户。
+// Resolve the packaged backend data directory; portable follows the exe, the installed version follows the current user.
 function resolveBundledBackendDataDir() {
   const portableExecutableDir = process.env.PORTABLE_EXECUTABLE_DIR
 
@@ -114,7 +114,7 @@ function resolveBundledBackendDataDir() {
   return app.getPath('userData')
 }
 
-// 在应用退出时停止已启动的后端进程。
+// Stop the started backend process when the app exits.
 function stopBundledBackend() {
   if (!backendProcess || backendProcess.killed) {
     return
@@ -127,7 +127,7 @@ function stopBundledBackend() {
   }
 }
 
-// 启动打包后的后端，并等待 health 检查通过。
+// Start the packaged backend and wait for the health check to pass.
 async function startBundledBackend() {
   const backendHost = process.env.BACKEND_HOST ?? '127.0.0.1'
   const preferredBackendPort = resolvePort(process.env.BACKEND_PORT, 9000)
@@ -141,8 +141,8 @@ async function startBundledBackend() {
     throw new Error(`Bundled backend executable not found at ${executablePath}`)
   }
 
-  // 后端实际端口可能因占用而后移，最终地址会通过 preload 注入给前端。
-  // 数据目录由 Electron 显式传入，避免后端写进 portable 的临时解包目录。
+  // The backend's actual port may shift if it is occupied; the final URL is injected into the frontend via preload.
+  // The data directory is passed explicitly by Electron to prevent the backend from writing into the portable build's temporary extraction directory.
   backendProcess = spawn(
     executablePath,
     ['--host', backendHost, '--port', String(selectedBackendPort)],
@@ -172,10 +172,10 @@ async function startBundledBackend() {
   return backendUrl
 }
 
-// 根据开发态或打包态选择对应的运行配置。
+// Select the appropriate runtime config based on development or packaged mode.
 async function resolveRuntimeConfig() {
   if (!app.isPackaged) {
-    // 开发态不自动拉起后端，由 scripts/dev-desktop.mjs 或外部服务提供地址。
+    // In dev mode the backend is not auto-started; its URL is provided by scripts/dev-desktop.mjs or an external service.
     return {
       backendUrl: process.env.BACKEND_BASE_URL ?? null,
       rendererUrl: resolveRendererUrl(),
@@ -190,7 +190,7 @@ async function resolveRuntimeConfig() {
   }
 }
 
-// 加载开发态前端，失败时回退到内联错误页。
+// Load the development frontend, falling back to an inline error page on failure.
 async function loadRenderer(mainWindow, rendererUrl) {
   try {
     console.log(`[electron] Loading renderer from ${rendererUrl}`)
@@ -243,12 +243,12 @@ async function loadRenderer(mainWindow, rendererUrl) {
   }
 }
 
-// 判断一个地址是否为外部 HTTP(S) 链接。
+// Determine whether a URL is an external HTTP(S) link.
 function isHttpUrl(url) {
   return /^https?:/i.test(url)
 }
 
-// 判断链接是否仍属于当前前端来源。
+// Determine whether a link still belongs to the current frontend origin.
 function hasSameOrigin(url, rendererOrigin) {
   try {
     return new URL(url).origin === rendererOrigin
@@ -257,7 +257,7 @@ function hasSameOrigin(url, rendererOrigin) {
   }
 }
 
-// 将外部链接交给系统浏览器，限制应用内导航范围。
+// Hand external links to the system browser and limit in-app navigation scope.
 function wireExternalNavigation(mainWindow, rendererUrl) {
   const rendererOrigin = rendererUrl ? new URL(rendererUrl).origin : null
 
@@ -291,7 +291,7 @@ function wireExternalNavigation(mainWindow, rendererUrl) {
   })
 }
 
-// 创建主窗口，并把后端地址注入到渲染进程。
+// Create the main window and inject the backend URL into the renderer process.
 async function createWindow(runtimeConfig) {
   const mainWindow = new BrowserWindow({
     width: 1440,
@@ -302,7 +302,7 @@ async function createWindow(runtimeConfig) {
     autoHideMenuBar: true,
     webPreferences: {
       preload: path.join(__dirname, 'preload.cjs'),
-      // 渲染进程保持浏览器隔离模型，只通过 preload 暴露必要配置。
+      // The renderer process keeps the browser isolation model, exposing only the necessary config via preload.
       contextIsolation: true,
       nodeIntegration: false,
       sandbox: true,
@@ -324,13 +324,13 @@ async function createWindow(runtimeConfig) {
   await mainWindow.loadFile(bundledFrontendEntry)
 }
 
-// 进程退出前先清理后端子进程。
+// Clean up the backend child process before the process exits.
 app.on('before-quit', () => {
   app.isQuitting = true
   stopBundledBackend()
 })
 
-// 应用准备完成后初始化运行配置并打开首个窗口。
+// Once the app is ready, initialize the runtime config and open the first window.
 app.whenReady().then(async () => {
   if (process.platform === 'win32') {
     app.setAppUserModelId('com.occreativeassistant.app')
@@ -346,7 +346,7 @@ app.whenReady().then(async () => {
   })
 })
 
-// 在非 macOS 平台上，窗口全部关闭后退出应用。
+// On non-macOS platforms, quit the app once all windows are closed.
 app.on('window-all-closed', () => {
   stopBundledBackend()
 

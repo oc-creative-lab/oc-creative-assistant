@@ -1,18 +1,23 @@
-"""把已结案的 staging 落到画布。
+"""Apply resolved staging records to the canvas.
 
-调用方负责把 staging 状态推到 ``accepted`` / ``edited``; 本模块只负责把
-payload 翻译成 NodeORM/EdgeORM, 在同一事务内 flush 到 SQLite。
+The caller is responsible for transitioning staging status to ``accepted`` /
+``edited``; this module only translates the payload into NodeORM/EdgeORM and
+flushes it to SQLite within the same transaction.
 
-支持的变更类型:
-- ``create_node``: 写 NodeORM, 标记 AI 来源, 同 batch 内的 pending_id 在
-  返回时由调用方累积进 ``pending_id_map``; 同时把生成的 node_id 回写到
-  ``record.target_id``, 让跨 HTTP 请求的单条接受 create_edge 也能从 DB 反查
-- ``create_edge``: 写 EdgeORM; source / target 既可以是真实 node_id, 也可以
-  是同 batch 内 create_node 的 pending_id; 端点失效或 LLM 编造时静默跳过,
-  避免触发 SQLite 外键约束炸事务
+Supported change types:
+- ``create_node``: writes a NodeORM, tags it as AI-sourced; pending_ids within
+  the same batch are accumulated into ``pending_id_map`` by the caller on
+  return; the generated node_id is also written back to ``record.target_id`` so
+  that a single-record accept of create_edge across HTTP requests can look it up
+  from the DB
+- ``create_edge``: writes an EdgeORM; source / target can be either a real
+  node_id or the pending_id of a create_node within the same batch; silently
+  skipped when an endpoint is invalid or fabricated by the LLM, to avoid
+  blowing up the transaction on a SQLite foreign key constraint
 
-ChromaDB 同步必须在事务提交后做, 因此本模块只返回新写入的 node_id, 由
-调用方在事务关闭后逐一触发 ``safe_sync_node_index``。
+ChromaDB sync must happen after the transaction commits, so this module only
+returns the newly written node_ids; the caller triggers
+``safe_sync_node_index`` for each one after the transaction closes.
 """
 
 from __future__ import annotations
@@ -31,7 +36,7 @@ logger = logging.getLogger(__name__)
 
 _ACCEPTED_STATUSES = {"accepted", "edited"}
 
-# section → ProjectORM 上对应的 graph_id 字段名。
+# section -> the corresponding graph_id attribute name on ProjectORM.
 _GRAPH_ID_ATTR_BY_SECTION = {
     "plot": "plot_graph_id",
     "character": "character_graph_id",
@@ -40,9 +45,10 @@ _GRAPH_ID_ATTR_BY_SECTION = {
 
 
 def _resolve_graph_id(db: Session, project_id: str, node_type: str) -> str | None:
-    """按 node_type 找出该节点应归属的 sub-graph id（first_revision 决策 1）。
+    """Find the sub-graph id this node should belong to based on node_type (first_revision decision 1).
 
-    项目尚未迁移出 sub-graph（理论上不会发生）时返回 None，节点退化为无 graph_id。
+    Returns None if the project has not yet migrated to sub-graphs (which should
+    not happen in theory), in which case the node degrades to having no graph_id.
     """
     project = db.get(ProjectORM, project_id)
     if project is None:
@@ -56,15 +62,17 @@ def apply_staging_record(
     record: AgentStagingORM,
     pending_id_map: dict[str, str] | None = None,
 ) -> tuple[str | None, str | None]:
-    """把单条 staging 落到画布。
+    """Apply a single staging record to the canvas.
 
     Returns:
-        (upserted_node_id, deleted_node_id) 两元组:
-        - upserted_node_id: create_node / update_node 落库后的真实 id, 调用方
-          用于在事务关闭后触发 ChromaDB 重新嵌入;
-        - deleted_node_id: delete_node 命中的真实 id, 调用方用于在事务关闭后
-          把对应向量从 ChromaDB 移除, 避免残留。
-        其它 change_type 一律返回 (None, None)。
+        An (upserted_node_id, deleted_node_id) tuple:
+        - upserted_node_id: the real id after create_node / update_node is
+          persisted, used by the caller to trigger ChromaDB re-embedding after
+          the transaction closes;
+        - deleted_node_id: the real id matched by delete_node, used by the caller
+          to remove the corresponding vector from ChromaDB after the transaction
+          closes, avoiding leftovers.
+        All other change_types return (None, None).
     """
     if record.status not in _ACCEPTED_STATUSES:
         return None, None
@@ -95,15 +103,17 @@ def apply_staging_record(
 
 
 def _apply_create_node(db: Session, record: AgentStagingORM, payload: dict[str, Any]) -> str:
-    """把 staging.payload 翻译成新节点。
+    """Translate staging.payload into a new node.
 
-    把生成的 node_id 回写到 record.target_id, 让后续"单条接受 create_edge"
-    能从 DB 反查 pending_id → 真实 node_id (跨 HTTP 请求复用映射)。
-    target_id 在 create_node 语义里本来就是空的, 复用这个字段不破坏语义。
+    Writes the generated node_id back to record.target_id so that a later
+    "single-record accept of create_edge" can look up pending_id -> real node_id
+    from the DB (reusing the mapping across HTTP requests). target_id is empty by
+    definition in create_node semantics, so reusing this field does not break
+    anything.
     """
     node_id = uuid.uuid4().hex
 
-    title = str(payload.get("title") or "AI 建议节点")
+    title = str(payload.get("title") or "AI suggested node")
     content = str(payload.get("content") or "")
     node_type = str(payload.get("node_type") or "character")
 
@@ -115,7 +125,7 @@ def _apply_create_node(db: Session, record: AgentStagingORM, payload: dict[str, 
             node_type=node_type,
             title=title,
             content=content,
-            meta={"tags": ["AI 建议"], "status": "synced"},
+            meta={"tags": ["AI suggestion"], "status": "synced"},
             position_x=120.0,
             position_y=120.0,
             sort_order=9999,
@@ -132,10 +142,12 @@ def _resolve_endpoint(
     raw_id: str | None,
     pending_id_map: dict[str, str],
 ) -> str | None:
-    """把 payload 里的 source / target 翻译成画布上真实的 node_id。
+    """Translate the source / target in the payload into a real node_id on the canvas.
 
-    优先匹配同批新建节点的 pending_id; 否则按真实 id 查 NodeORM 并校验项目归属;
-    任何一步失败都返回 None, 让调用方决定如何降级 (本模块选择静默跳过)。
+    Prefers matching the pending_id of a node newly created in the same batch;
+    otherwise looks up NodeORM by real id and verifies project ownership; returns
+    None if any step fails, letting the caller decide how to degrade (this module
+    chooses to silently skip).
     """
     if not raw_id:
         return None
@@ -155,7 +167,7 @@ def _apply_create_edge(
     payload: dict[str, Any],
     pending_id_map: dict[str, str],
 ) -> None:
-    """把 staging.payload 翻译成新边; 端点解析失败时记一条 warning 后跳过。"""
+    """Translate staging.payload into a new edge; logs a warning and skips when endpoint resolution fails."""
     src_raw = payload.get("source")
     tgt_raw = payload.get("target")
     source = _resolve_endpoint(db, record.project_id, src_raw, pending_id_map)
@@ -163,7 +175,7 @@ def _apply_create_edge(
 
     if source is None or target is None:
         logger.warning(
-            "create_edge 跳过: staging=%s project=%s source=%r->%r target=%r->%r",
+            "create_edge skipped: staging=%s project=%s source=%r->%r target=%r->%r",
             record.id, record.project_id, src_raw, source, tgt_raw, target,
         )
         return
@@ -193,11 +205,12 @@ def _apply_update_node(
     record: AgentStagingORM,
     payload: dict[str, Any],
 ) -> str | None:
-    """把 staging.payload 合并到现有节点; 目标节点不存在或越权时静默跳过。
+    """Merge staging.payload into an existing node; silently skips if the target node does not exist or is out of scope.
 
-    LLM 经常用 update_node 给已有节点补设定; payload 只允许覆盖白名单字段,
-    其它字段 (id / project_id / position 等) 必须由用户在前端编辑, 防止 AI
-    误改画布坐标或归属。
+    The LLM often uses update_node to flesh out settings for an existing node;
+    the payload may only overwrite whitelisted fields. Other fields (id /
+    project_id / position, etc.) must be edited by the user in the frontend, to
+    prevent the AI from accidentally changing canvas coordinates or ownership.
     """
     target_id = record.target_id
     if not target_id:
@@ -216,21 +229,23 @@ def _apply_update_node(
 
 
 def _apply_delete_node(db: Session, record: AgentStagingORM) -> str | None:
-    """删除节点; 返回被删 node_id 供调用方同步 ChromaDB, 失败/越权返回 None。
+    """Delete a node; returns the deleted node_id for the caller to sync ChromaDB, or None on failure/out-of-scope.
 
-    DB 侧已配 ondelete=CASCADE + PRAGMA foreign_keys=ON, 边会自动级联清除;
-    这里手动 delete 边作为"防止环境忘开 PRAGMA"的双保险, 不依赖外键也能保证
-    画布上不会出现指向已删节点的孤儿边。
+    The DB is already configured with ondelete=CASCADE + PRAGMA foreign_keys=ON,
+    so edges are cascaded automatically; manually deleting edges here is a
+    belt-and-suspenders safeguard against "the environment forgetting to enable
+    the PRAGMA", guaranteeing no orphan edges pointing at a deleted node remain
+    on the canvas even without foreign keys.
     """
     target_id = record.target_id
     if not target_id:
-        logger.warning("delete_node 跳过: staging=%s 没有 target_id", record.id)
+        logger.warning("delete_node skipped: staging=%s has no target_id", record.id)
         return None
 
     node = db.get(NodeORM, target_id)
     if node is None or node.project_id != record.project_id:
         logger.warning(
-            "delete_node 跳过: staging=%s 节点 %s 不在项目 %s 内",
+            "delete_node skipped: staging=%s node %s is not in project %s",
             record.id, target_id, record.project_id,
         )
         return None
@@ -249,11 +264,13 @@ def _apply_delete_edge(
     record: AgentStagingORM,
     payload: dict[str, Any],
 ) -> None:
-    """删除单条边。
+    """Delete a single edge.
 
-    优先用 record.target_id 精确锁定 (前端单条接受时由 staging 流程写入);
-    退化策略: 用 payload.(source, target, relation_type) 在项目内匹配第一条边。
-    匹配不到时静默跳过, 避免 LLM 编一个不存在的 edge_id 触发 500。
+    Prefers using record.target_id for an exact lookup (written by the staging
+    flow on a single-record frontend accept); fallback strategy: match the first
+    edge within the project by payload.(source, target, relation_type). Silently
+    skips when nothing matches, to avoid the LLM fabricating a nonexistent
+    edge_id and triggering a 500.
     """
     edge = None
     if record.target_id:
@@ -277,7 +294,7 @@ def _apply_delete_edge(
 
     if edge is None:
         logger.warning(
-            "delete_edge 跳过: staging=%s 无法定位目标边 target_id=%r payload=%s",
+            "delete_edge skipped: staging=%s could not locate target edge target_id=%r payload=%s",
             record.id, record.target_id, payload,
         )
         return

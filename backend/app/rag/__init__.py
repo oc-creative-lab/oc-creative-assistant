@@ -1,1 +1,1 @@
-"""RAG 上下文构建与 prompt 相关逻辑包。"""
+"""Package for RAG context construction and prompt-related logic."""

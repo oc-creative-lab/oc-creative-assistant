@@ -17,12 +17,13 @@ interface RelationEdgeStyle {
 }
 
 /**
- * 关系类型 → 视觉样式查表。
+ * Relation type -> visual style lookup table.
  *
- * 颜色 / 浅底色 / 是否流动动画对应 stroke、label 背景和 animated 属性。
- * 用 record 而非 switch 是为了后续新增关系类型时只改这一个地方。
+ * Color / light background / whether to animate flow map to the stroke, label
+ * background and animated properties. A record is used instead of a switch so
+ * that adding a new relation type later only requires changing this one place.
  */
-// 配色统一落在 紫 / 橙 / 玫(张力) / 灰 家族，呼应整体梦幻调性。
+// The palette stays within the purple / orange / rose (tension) / gray family to echo the overall dreamy tone.
 const relationEdgeStyles: Record<CreativeRelationType, RelationEdgeStyle> = {
   relates_to: { color: '#a29bc4', labelBg: '#f6f4fb' },
   causes: { color: '#f59e0b', labelBg: '#fff7ed' },
@@ -33,7 +34,7 @@ const relationEdgeStyles: Record<CreativeRelationType, RelationEdgeStyle> = {
 }
 
 export function getRelationLabel(relationType: CreativeRelationType): string {
-  return RELATION_TYPE_OPTIONS.find((option) => option.value === relationType)?.label ?? '关联'
+  return RELATION_TYPE_OPTIONS.find((option) => option.value === relationType)?.label ?? 'related'
 }
 
 export function getRelationStyle(relationType: CreativeRelationType): RelationEdgeStyle {
@@ -41,18 +42,20 @@ export function getRelationStyle(relationType: CreativeRelationType): RelationEd
 }
 
 /**
- * 克隆节点并写入前端展示态。
+ * Clone a node and write in the frontend presentation state.
  *
- * Vue Flow 会在交互过程中修改节点对象, 这里避免直接修改父组件传入的 props。
- * highlighted 集合控制"刚出现的节点"短暂闪光, 选中态由 selectedNodeId 决定。
+ * Vue Flow mutates node objects during interactions, so this avoids mutating the
+ * props passed in by the parent component directly. The highlighted set controls
+ * the brief flash of "just-appeared nodes", while the selected state is determined
+ * by selectedNodeId.
  *
  * Args:
- *   node: 来源节点。
- *   selectedNodeId: 当前选中的节点 ID。
- *   highlighted: 当前应该闪光的节点 ID 集合。
+ *   node: The source node.
+ *   selectedNodeId: The ID of the currently selected node.
+ *   highlighted: The set of node IDs that should currently flash.
  *
  * Returns:
- *   带有展示态字段的节点副本。
+ *   A copy of the node with presentation-state fields.
  */
 export function cloneNode(
   node: CreativeFlowNode,
@@ -67,22 +70,24 @@ export function cloneNode(
 }
 
 /**
- * 补齐连线的展示字段和业务关系类型。
+ * Fill in an edge's presentation fields and business relation type.
  *
- * 用于从后端、父组件或 Vue Flow 回传连线后, 统一补齐 markerEnd、stroke、
- * label 背景等视觉字段, 并保证 sourceHandle / targetHandle / type 等
- * 必须字段不会丢失。
+ * Used after an edge is returned from the backend, the parent component or Vue
+ * Flow, to uniformly fill in visual fields such as markerEnd, stroke and label
+ * background, and to ensure required fields like sourceHandle / targetHandle /
+ * type are not lost.
  *
  * Args:
- *   edge: 原始连线。
- *   highlighted: 当前应该闪光的连线 ID 集合; 缺省为空集 (用于保存快照场景)。
+ *   edge: The raw edge.
+ *   highlighted: The set of edge IDs that should currently flash; defaults to an empty set (for the save-snapshot scenario).
  *
  * Returns:
- *   可稳定渲染并可保存的连线对象。
+ *   An edge object that renders stably and can be saved.
  */
 export function normalizeEdge(
   edge: CreativeFlowEdge,
   highlighted: Set<string> = new Set(),
+  selected = false,
 ): CreativeFlowEdge {
   const relationType = edge.data?.relationType ?? DEFAULT_RELATION_TYPE
   const label = edge.data?.label || edge.label || getRelationLabel(relationType)
@@ -91,14 +96,16 @@ export function normalizeEdge(
     'creative-edge',
     `creative-edge--${relationType}`,
     highlighted.has(edge.id) ? 'is-highlighted' : '',
+    selected ? 'is-selected' : '',
   ].filter(Boolean)
 
   return {
     ...edge,
+    selected,
     label,
     sourceHandle: edge.sourceHandle ?? DEFAULT_SOURCE_HANDLE,
     targetHandle: edge.targetHandle ?? DEFAULT_TARGET_HANDLE,
-    type: 'orthogonal',
+    type: 'bezier',
     markerEnd: {
       type: MarkerType.ArrowClosed,
       color: relationStyle.color,
@@ -116,7 +123,7 @@ export function normalizeEdge(
       fill: relationStyle.labelBg,
       stroke: relationStyle.color,
     },
-    interactionWidth: 0,
+    interactionWidth: 24,
     data: {
       ...(edge.data ?? {}),
       label,

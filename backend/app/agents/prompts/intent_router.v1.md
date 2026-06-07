@@ -1,48 +1,68 @@
-把用户最新一轮消息归类到下面其中之一:
-- inspiration: 发散思路、补设定、开放探索 (例如"还能再写些什么")
-- research: 在已有项目里查询 / 总结 / 对比 (例如"我写过哪些角色"), 或者
-            查询任何"外部事实 / 实时信息" (例如天气、新闻、历史事实、武器
-            形制、外部模型规格), 这类问题 research agent 会调 web_search 工具回答
-- structure: 批量新增节点和连线、建关系 (例如"帮我把 X 和 Y 建关系")
-- simulation: 推演 "如果...会怎样" 类假设题
-- small_talk: 寒暄 / 闲聊 / 简短确认 ("好的"、"谢谢"等), 以及"你是谁 / 你能做什么
-            / 现在几点 / 今天几号"这类只需常识或运行时信息的自省问题
+Classify the user's latest turn of messages into one of the following:
+- inspiration: brainstorming, adding settings, open-ended exploration (e.g. "what else could I write")
+- research: querying / summarizing / comparing within the existing project (e.g. "which characters
+            have I written"), or querying any "external fact / real-time information" (e.g. weather,
+            news, historical facts, weapon forms, external model specs); the research agent will
+            call the web_search tool to answer this kind of question
+- structure: bulk-adding nodes and edges, building relations (e.g. "help me build a relation
+            between X and Y")
+- simulation: deductive "what if... would happen" hypothetical questions
+- small_talk: pleasantries / chitchat / short confirmations ("okay", "thanks", etc.), as well as
+            introspective questions that only need common sense or runtime info, like "who are you
+            / what can you do / what time is it / what's today's date"
 
-confidence: 0-1 之间的浮点, 表示判断把握; 不确定时给 0.5。
-reasoning: 30 字以内的判断依据。
+**Important override:** If the message mixes a greeting with a **project / story / canvas
+content question** (e.g. "hello, can you see my story?", "你好，看得到这个故事吗",
+"what plot nodes do I have"), classify as **research**, not small_talk. The substantive
+question wins over the greeting.
+
+confidence: a float between 0-1, indicating how sure the judgment is; give 0.5 when uncertain.
+reasoning: the basis for the judgment, within 30 words.
 
 ---
 
-## 分类示例 (few-shot)
+## Classification Examples (few-shot)
 
-### 示例 1
-**最新消息**: "帮我把艾琳和导师建一条师徒关系"
-**输出**: `{"primary":"structure","confidence":0.95,"reasoning":"显式要求'建关系', 属于批量新增连线"}`
+### Example 1
+**Latest message**: "help me build a mentorship relation between Erin and her mentor"
+**Output**: `{"primary":"structure","confidence":0.95,"reasoning":"explicitly asks to 'build a relation', counts as bulk-adding an edge"}`
 
-### 示例 2
-**最新消息**: "我项目里都有哪些角色"
-**输出**: `{"primary":"research","confidence":0.95,"reasoning":"枚举查询, 属于知识库考据"}`
+### Example 2
+**Latest message**: "which characters do I have in my project"
+**Output**: `{"primary":"research","confidence":0.95,"reasoning":"enumeration query, counts as knowledge-base lookup"}`
 
-### 示例 3
-**最新消息**: "如果导师早些揭穿真相会怎样"
-**输出**: `{"primary":"simulation","confidence":0.95,"reasoning":"含'如果...会怎样', 假设题"}`
+### Example 3
+**Latest message**: "what would happen if the mentor revealed the truth earlier"
+**Output**: `{"primary":"simulation","confidence":0.95,"reasoning":"contains 'what if... would happen', a hypothetical"}`
 
-### 示例 4
-**最新消息**: "围绕艾琳还能补什么"
-**输出**: `{"primary":"inspiration","confidence":0.9,"reasoning":"开放性发散, 寻求建议"}`
+### Example 4
+**Latest message**: "what else can I add around Erin"
+**Output**: `{"primary":"inspiration","confidence":0.9,"reasoning":"open-ended brainstorming, seeking suggestions"}`
 
-### 示例 5
-**最新消息**: "好的, 谢谢"
-**输出**: `{"primary":"small_talk","confidence":0.95,"reasoning":"简短确认 / 致谢"}`
+### Example 5
+**Latest message**: "okay, thanks"
+**Output**: `{"primary":"small_talk","confidence":0.95,"reasoning":"short confirmation / thanks"}`
 
-### 示例 6
-**最新消息**: "今天上海天气怎么样"
-**输出**: `{"primary":"research","confidence":0.9,"reasoning":"外部实时事实, research agent 通过 web_search 回答"}`
+### Example 6
+**Latest message**: "what's the weather in Shanghai today"
+**Output**: `{"primary":"research","confidence":0.9,"reasoning":"external real-time fact, research agent answers via web_search"}`
 
-### 示例 7
-**最新消息**: "中世纪长剑形制有哪几种"
-**输出**: `{"primary":"research","confidence":0.9,"reasoning":"现实考据, 需要 web_search 外部资料"}`
+### Example 7
+**Latest message**: "what types of medieval longsword forms are there"
+**Output**: `{"primary":"research","confidence":0.9,"reasoning":"real-world research, needs web_search external material"}`
 
-### 示例 8
-**最新消息**: "你是什么模型 / 今天几号"
-**输出**: `{"primary":"small_talk","confidence":0.85,"reasoning":"自省/运行时信息, 不需要任何工具调用"}`
+### Example 8
+**Latest message**: "what model are you / what's today's date"
+**Output**: `{"primary":"small_talk","confidence":0.85,"reasoning":"introspective/runtime info, no tool call needed"}`
+
+### Example 9
+**Latest message**: "你好，看得到这个故事吗"
+**Output**: `{"primary":"research","confidence":0.92,"reasoning":"asks whether agent can see story content in the project; substantive lookup, not chit-chat"}`
+
+### Example 10
+**Latest message**: "hi, what plot beats have I written so far"
+**Output**: `{"primary":"research","confidence":0.95,"reasoning":"enumeration/summary of existing plot nodes in the project"}`
+
+### Example 11
+**Latest message**: "如果去买水是用什么支付呢"
+**Output**: `{"primary":"research","confidence":0.9,"reasoning":"asks which payment method applies under the project's written world rules, not open-ended brainstorming"}`

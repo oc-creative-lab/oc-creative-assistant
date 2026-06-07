@@ -7,7 +7,7 @@ const rootDir = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..')
 const npmCommand = process.platform === 'win32' ? 'npm.cmd' : 'npm'
 const nodeCommand = process.execPath
 
-// 执行子命令，并在失败时中断整条构建流水线。
+// Run a subcommand and abort the entire build pipeline on failure.
 function run(command, args, name) {
   return new Promise((resolve, reject) => {
     const useShell = process.platform === 'win32' && /\.cmd$/i.test(command)
@@ -34,7 +34,7 @@ function run(command, args, name) {
   })
 }
 
-// 按顺序构建前端、后端、资源目录和最终 Electron 安装包。
+// Build the frontend, backend, resources directory, and final Electron installer in order.
 await run(npmCommand, ['--prefix', 'frontend', 'run', 'build'], 'frontend build')
 await run(nodeCommand, ['scripts/build-backend.mjs'], 'backend build')
 await run(nodeCommand, ['scripts/prepare-electron-package.mjs'], 'electron bundle prepare')

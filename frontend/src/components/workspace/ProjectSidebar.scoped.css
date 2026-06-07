@@ -8,7 +8,7 @@
     background: var(--panel);
   }
   
-  /* 自定义滚动条样式 */
+  /* Custom scrollbar */
   .project-sidebar::-webkit-scrollbar {
     width: 6px;
   }
@@ -273,7 +273,7 @@
     font-size: 0.82rem;
   }
   
-  /* 自定义下拉框组件样式 (与右侧边栏一致) */
+  /* Custom select (matches the right sidebar) */
   .custom-select-container {
     position: relative;
     width: 100%;

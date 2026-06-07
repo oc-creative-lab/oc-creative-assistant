@@ -9,17 +9,17 @@ export interface NodeTypeOption {
   description: string
 }
 
-/** 左侧节点工具栏展示的节点类型配置。 */
+/** Node type configuration shown in the left-hand node toolbar. */
 export const nodeTypeOptions: NodeTypeOption[] = [
-  { type: 'idea', icon: '💡', label: '灵感节点', description: '记录脑洞、初始想法、待扩展灵感' },
-  { type: 'character', icon: '👤', label: '角色节点', description: '记录角色设定、动机和关系' },
-  { type: 'worldbuilding', icon: '🌍', label: '世界观节点', description: '记录世界规则、场景和组织' },
-  { type: 'plot', icon: '🧩', label: '剧情节点', description: '记录事件、冲突、转折和结果' },
-  { type: 'research', icon: '📚', label: '资料节点', description: '记录资料摘要、来源和参考' },
-  { type: 'structure', icon: '🗂', label: '结构整理节点', description: '整理角色卡、关系图和剧情框架' },
+  { type: 'idea', icon: '💡', label: 'Idea node', description: 'Capture brainstorms, initial ideas and inspiration to expand later' },
+  { type: 'character', icon: '👤', label: 'Character node', description: 'Capture character profiles, motivations and relationships' },
+  { type: 'worldbuilding', icon: '🌍', label: 'Worldbuilding node', description: 'Capture world rules, settings and organizations' },
+  { type: 'plot', icon: '🧩', label: 'Plot node', description: 'Capture events, conflicts, turning points and outcomes' },
+  { type: 'research', icon: '📚', label: 'Research node', description: 'Capture research summaries, sources and references' },
+  { type: 'structure', icon: '🗂', label: 'Structure node', description: 'Organize character cards, relationship maps and plot frameworks' },
 ]
 
-/* 新增节点类型时需要同步补齐这里、Vue Flow 节点插槽和后端 DTO 类型。 */
+/* When adding a new node type, this place, the Vue Flow node slot and the backend DTO type all need to be filled in together. */
 const nodeDefaults: Record<
   CreativeNodeType,
   {
@@ -33,75 +33,75 @@ const nodeDefaults: Record<
 > = {
   idea: {
     idPrefix: 'idea-draft',
-    title: '未命名灵感',
-    content: '在这里记录一个新的创作灵感……',
-    typeLabel: '灵感',
+    title: 'Untitled Idea',
+    content: 'Capture a new creative idea here...',
+    typeLabel: 'Idea',
     icon: '💡',
-    tags: ['灵感'],
+    tags: ['Idea'],
   },
   character: {
     idPrefix: 'char-draft',
-    title: '未命名角色',
-    content: '在这里记录角色动机、关系和背景……',
-    typeLabel: '角色',
+    title: 'Untitled Character',
+    content: 'Capture the character\'s motivations, relationships and background here...',
+    typeLabel: 'Character',
     icon: '👤',
-    tags: ['角色'],
+    tags: ['Character'],
   },
   worldbuilding: {
     idPrefix: 'world-draft',
-    title: '未命名世界观',
-    content: '在这里记录世界规则、场景或组织设定……',
-    typeLabel: '世界观',
+    title: 'Untitled Worldbuilding',
+    content: 'Capture world rules, settings or organization details here...',
+    typeLabel: 'Worldbuilding',
     icon: '🌍',
-    tags: ['世界观'],
+    tags: ['Worldbuilding'],
   },
   plot: {
     idPrefix: 'plot-draft',
-    title: '未命名剧情',
-    content: '在这里记录事件、冲突、转折和结果……',
-    typeLabel: '剧情',
+    title: 'Untitled Plot',
+    content: 'Capture events, conflicts, turning points and outcomes here...',
+    typeLabel: 'Plot',
     icon: '🧩',
-    tags: ['剧情'],
+    tags: ['Plot'],
   },
   research: {
     idPrefix: 'research-draft',
-    title: '未命名资料',
-    content: '在这里记录资料摘要或参考来源……',
-    typeLabel: '资料',
+    title: 'Untitled Research',
+    content: 'Capture research summaries or reference sources here...',
+    typeLabel: 'Research',
     icon: '📚',
-    tags: ['资料'],
+    tags: ['Research'],
   },
   structure: {
     idPrefix: 'structure-draft',
-    title: '未命名结构',
-    content: '在这里整理角色卡、关系图或剧情框架……',
-    typeLabel: '结构整理',
+    title: 'Untitled Structure',
+    content: 'Organize character cards, relationship maps or plot frameworks here...',
+    typeLabel: 'Structure',
     icon: '🗂',
-    tags: ['结构'],
+    tags: ['Structure'],
   },
 }
 
 /**
- * 读取节点类型配置。
+ * Read the node type configuration.
  *
  * Args:
- *   type: 业务节点类型。
+ *   type: The business node type.
  *
  * Returns:
- *   匹配的工具栏配置；未知类型降级为第一个配置。
+ *   The matching toolbar configuration; unknown types fall back to the first configuration.
  */
 export function getNodeTypeOption(type: CreativeNodeType): NodeTypeOption {
   return nodeTypeOptions.find((option) => option.type === type) ?? nodeTypeOptions[0]
 }
 
 /**
- * 创建节点业务数据默认值。
+ * Create the default business data for a node.
  *
  * Args:
- *   type: 业务节点类型。
+ *   type: The business node type.
  *
  * Returns:
- *   可写入 CreativeFlowNode.data 的默认数据。
+ *   Default data that can be written into CreativeFlowNode.data.
  */
 export function createNodeData(type: CreativeNodeType): CreativeNodeData {
   const defaults = nodeDefaults[type]
@@ -118,17 +118,17 @@ export function createNodeData(type: CreativeNodeType): CreativeNodeData {
 }
 
 /**
- * 创建新的画布节点。
+ * Create a new canvas node.
  *
- * PoC 阶段点击节点工具栏会直接生成本地节点，不触发 Agent、RAG 或后端 LLM 调用。
+ * In the PoC stage, clicking the node toolbar generates a local node directly, without triggering an Agent, RAG or a backend LLM call.
  *
  * Args:
- *   type: 业务节点类型。
- *   index: 当前会话内的新增节点序号，用于降低 ID 冲突概率。
- *   position: 新节点在画布中的坐标。
+ *   type: The business node type.
+ *   index: The sequence number of the newly added node within the current session, used to reduce the chance of ID collisions.
+ *   position: The coordinates of the new node on the canvas.
  *
  * Returns:
- *   Vue Flow 可渲染的业务节点。
+ *   A business node that Vue Flow can render.
  */
 export function createCreativeNode(
   type: CreativeNodeType,
@@ -148,15 +148,15 @@ export function createCreativeNode(
 }
 
 /**
- * 将 graph 节点转换为旧项目列表条目。
+ * Convert a graph node into a legacy project list item.
  *
- * 该兼容入口仍供 mock 和旧侧栏数据结构使用，内容来源已经迁移到新的 content/tags 字段。
+ * This compatibility entry point is still used by the mock and legacy sidebar data structures; the content source has already been migrated to the new content/tags fields.
  *
  * Args:
- *   node: 前端业务节点。
+ *   node: The frontend business node.
  *
  * Returns:
- *   旧项目列表使用的摘要条目。
+ *   The summary item used by the legacy project list.
  */
 export function toProjectItem(node: CreativeFlowNode): ProjectItem {
   return {
@@ -169,13 +169,13 @@ export function toProjectItem(node: CreativeFlowNode): ProjectItem {
 }
 
 /**
- * 获取节点类型所属的左侧分组。
+ * Get the left-hand group that a node type belongs to.
  *
  * Args:
- *   type: 业务节点类型。
+ *   type: The business node type.
  *
  * Returns:
- *   旧项目列表分组 ID。
+ *   The legacy project list group ID.
  */
 export function getProjectGroupIdForNodeType(type: CreativeNodeType): ProjectGroupId {
   const groupMap: Record<CreativeNodeType, ProjectGroupId> = {
@@ -191,22 +191,22 @@ export function getProjectGroupIdForNodeType(type: CreativeNodeType): ProjectGro
 }
 
 /**
- * 从当前 graph 节点构建左侧项目分组。
+ * Build the left-hand project groups from the current graph nodes.
  *
  * Args:
- *   nodes: 当前画布节点列表。
+ *   nodes: The current list of canvas nodes.
  *
  * Returns:
- *   按业务类型分组后的项目条目。
+ *   Project items grouped by business type.
  */
 export function buildProjectGroupsFromNodes(nodes: CreativeFlowNode[]): ProjectGroup[] {
   const groups: ProjectGroup[] = [
-    { id: 'ideas', title: '灵感', items: [] },
-    { id: 'characters', title: '角色', items: [] },
-    { id: 'worldbuilding', title: '世界观', items: [] },
-    { id: 'plot', title: '剧情', items: [] },
-    { id: 'research', title: '资料', items: [] },
-    { id: 'structure', title: '结构整理', items: [] },
+    { id: 'ideas', title: 'Idea', items: [] },
+    { id: 'characters', title: 'Character', items: [] },
+    { id: 'worldbuilding', title: 'Worldbuilding', items: [] },
+    { id: 'plot', title: 'Plot', items: [] },
+    { id: 'research', title: 'Research', items: [] },
+    { id: 'structure', title: 'Structure', items: [] },
   ]
 
   for (const node of nodes) {

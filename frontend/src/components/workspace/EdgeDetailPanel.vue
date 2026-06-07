@@ -8,10 +8,11 @@ import {
 } from '../../types/node'
 
 /**
- * 连线详情面板。
+ * Edge detail panel.
  *
- * 提供方向反转、关系类型切换和标签编辑; 节点查找仅用来展示起终点标题,
- * 真正的连线落库由上层在 emit('edgeUpdated') 后统一处理。
+ * Provides direction reversal, relation-type switching, and label editing; node
+ * lookup is only used to display the source/target titles. The actual edge
+ * persistence is handled by the parent after emit('edgeUpdated').
  */
 const props = defineProps<{
   selectedEdge: CreativeFlowEdge
@@ -49,7 +50,7 @@ const targetNodeTitle = computed(
 )
 
 function getRelationLabel(relationType: CreativeRelationType) {
-  return RELATION_TYPE_OPTIONS.find((option) => option.value === relationType)?.label ?? '关联'
+  return RELATION_TYPE_OPTIONS.find((option) => option.value === relationType)?.label ?? 'Related'
 }
 
 function updateEdge(partial: Partial<CreativeFlowEdge['data']>) {
@@ -86,23 +87,23 @@ function reverseSelectedEdge() {
 <template>
   <div class="edge-detail-panel">
     <section class="detail-header">
-      <p>当前连线</p>
+      <p>Current edge</p>
       <h2>{{ selectedEdge.data.label }}</h2>
     </section>
 
     <section class="detail-panel">
       <dl class="edge-meta">
         <div>
-          <dt>起点节点</dt>
+          <dt>Source node</dt>
           <dd>{{ sourceNodeTitle }}</dd>
         </div>
         <div>
-          <dt>终点节点</dt>
+          <dt>Target node</dt>
           <dd>{{ targetNodeTitle }}</dd>
         </div>
       </dl>
 
-      <label for="edge-relation">连线关系类型</label>
+      <label for="edge-relation">Relation type</label>
       <div class="custom-select-container">
         <div
           class="custom-select-trigger"
@@ -125,7 +126,7 @@ function reverseSelectedEdge() {
         </ul>
       </div>
 
-      <label for="edge-label">连线标签</label>
+      <label for="edge-label">Edge label</label>
       <div class="input-wrapper">
         <input
           id="edge-label"
@@ -135,8 +136,8 @@ function reverseSelectedEdge() {
         />
       </div>
 
-      <button type="button" class="secondary-action" @click="reverseSelectedEdge">反转方向</button>
-      <button type="button" class="danger" @click="emit('edgeDeleted', selectedEdge.id)">删除连线</button>
+      <button type="button" class="secondary-action" @click="reverseSelectedEdge">Reverse direction</button>
+      <button type="button" class="danger" @click="emit('edgeDeleted', selectedEdge.id)">Delete edge</button>
     </section>
   </div>
 </template>

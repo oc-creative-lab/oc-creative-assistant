@@ -2,12 +2,14 @@
 import { useCenterStageStore } from '../../stores/useCenterStageStore'
 
 /**
- * 中栏舞台控制器（second_revision 改点 A）。
+ * Center-stage controller (second_revision change A).
  *
- * W1：占位。W3 在此根据 useCenterStageStore.mode 在画布与节点详情之间切换：
+ * W1: placeholder. In W3 this switches between the canvas and node detail based on
+ * useCenterStageStore.mode:
  *   <CanvasWorkspace v-if="mode==='canvas'" /> ⇄ <NodeDetailView v-else />
- * 当前画布视图仍由各 sub-graph 路由视图(PlotCanvas/WorldCanvas)直接渲染，
- * 本组件在 W3 接入双击进详情的能力。
+ * The canvas view is currently rendered directly by each sub-graph route view
+ * (PlotCanvas/WorldCanvas); in W3 this component wires up the double-click-to-detail
+ * capability.
  */
 const store = useCenterStageStore()
 defineExpose({ store })

@@ -1,10 +1,17 @@
-/** 旧项目列表分组 id，保留给 mock/兼容代码；左侧主入口已改为节点工具栏。 */
+/** Legacy project list group id, kept for mock/compatibility code; the left-hand main entry has been switched to the node toolbar. */
 export type ProjectGroupId = 'ideas' | 'characters' | 'worldbuilding' | 'plot' | 'research' | 'structure'
 
-/** 右侧 Agent 面板的工作模式。 */
+/** Working mode of the right-hand Agent panel. */
 export type AgentMode = 'inspiration' | 'research' | 'structure'
 
-/** sidebar、当前节点卡片和 Agent 面板共享的节点摘要形态。 */
+export const AGENT_MODE_LABELS: Record<AgentMode | 'auto', { label: string; hint: string }> = {
+  auto: { label: 'Auto', hint: 'Agent picks research / inspiration / structure from your message' },
+  research: { label: 'Research', hint: 'Look up characters, world, and story already in the project' },
+  inspiration: { label: 'Inspire', hint: 'Brainstorm ideas and follow-up questions; may auto-capture new concepts' },
+  structure: { label: 'Structure', hint: 'Propose new nodes and relations for you to confirm' },
+}
+
+/** The node summary shape shared by the sidebar, the current node card and the Agent panel. */
 export interface ProjectItem {
   id: string
   title: string
@@ -13,21 +20,21 @@ export interface ProjectItem {
   meta: string
 }
 
-/** 左侧项目面板按业务类型组织节点条目。 */
+/** The left-hand project panel organizes node items by business type. */
 export interface ProjectGroup {
   id: ProjectGroupId
   title: string
   items: ProjectItem[]
 }
 
-/** 右侧 Agent 面板的建议卡片，目前来自 mock 数据。 */
+/** Suggestion cards in the right-hand Agent panel, currently from mock data. */
 export interface AgentSuggestion {
   id: string
   title: string
   body: string
 }
 
-/** 底部状态栏聚合保存、索引和模型三类运行状态。 */
+/** The bottom status bar aggregates the three runtime states: save, index and model. */
 export interface WorkspaceStatus {
   saveState: string
   indexState: string

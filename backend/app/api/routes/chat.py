@@ -1,7 +1,7 @@
-"""对话与 staging HTTP 路由。
+"""Chat and staging HTTP routes.
 
-暴露会话 / 消息 / staging 的 CRUD 接口; ``POST /api/chat`` 是真正的
-agent 入口, 触发 LangGraph 完整推理链路。
+Exposes the CRUD endpoints for sessions / messages / staging; ``POST /api/chat``
+is the real agent entry point, triggering the full LangGraph reasoning pipeline.
 """
 
 from typing import Literal
@@ -41,19 +41,19 @@ router = APIRouter(prefix="/api", tags=["chat"])
 
 @router.post("/sessions", response_model=ChatSessionPayload)
 async def create_chat_session(payload: ChatSessionCreateRequest) -> ChatSessionPayload:
-    """创建新对话会话; 同步分配 thread_id 给 LangGraph Checkpointer 使用。"""
+    """Create a new chat session; also assigns a thread_id for use by the LangGraph Checkpointer."""
     return create_session(payload)
 
 
 @router.get("/projects/{project_id}/sessions", response_model=list[ChatSessionPayload])
 async def list_project_chat_sessions(project_id: str) -> list[ChatSessionPayload]:
-    """列出指定项目下的会话, 创建时间倒序。"""
+    """List the sessions under the given project, ordered by creation time descending."""
     return list_sessions(project_id)
 
 
 @router.get("/sessions/{session_id}/messages", response_model=list[ChatMessagePayload])
 async def list_chat_messages(session_id: str) -> list[ChatMessagePayload]:
-    """读取会话完整消息历史。"""
+    """Read the full message history of a session."""
     return get_session_messages(session_id)
 
 
@@ -62,7 +62,7 @@ async def append_chat_message(
     session_id: str,
     payload: ChatMessageCreateRequest,
 ) -> ChatMessagePayload:
-    """追加一条消息 (不触发 agent 推理); 仅用于联调与单测, 正式对话走 POST /api/chat。"""
+    """Append a single message (does not trigger agent reasoning); used only for integration debugging and unit tests, real conversations go through POST /api/chat."""
     return append_session_message(session_id, payload)
 
 
@@ -71,7 +71,7 @@ async def create_chat_staging_batch(
     session_id: str,
     payload: AgentStagingBatchCreateRequest,
 ) -> AgentStagingBatchPayload:
-    """写入一批 staging; persistence_hub 与手动接口共用该入口。"""
+    """Write a batch of staging items; shared entry point for persistence_hub and the manual endpoint."""
     return create_staging_batch(session_id, payload)
 
 
@@ -83,7 +83,7 @@ async def list_chat_staging(
     session_id: str,
     status: Literal["pending", "accepted", "edited", "rejected"] | None = None,
 ) -> list[AgentStagingBatchPayload]:
-    """按会话列出 staging, 自动按 batch 分组; 默认返回所有状态。"""
+    """List staging by session, automatically grouped by batch; returns all statuses by default."""
     return list_session_staging(session_id, status)
 
 
@@ -92,7 +92,7 @@ async def resolve_chat_staging_item(
     staging_id: str,
     payload: AgentStagingActionRequest,
 ) -> AgentStagingPayload:
-    """单条 staging 的 accept / edit / reject; 已结案再次操作返回 409。"""
+    """Accept / edit / reject a single staging item; operating again on an already-resolved item returns 409."""
     return resolve_staging_item(staging_id, payload)
 
 
@@ -104,21 +104,23 @@ async def resolve_chat_staging_batch(
     batch_id: str,
     payload: AgentStagingBatchActionRequest,
 ) -> list[AgentStagingPayload]:
-    """批量接受 / 拒绝同一 turn 的 staging; 已结案的项静默跳过。"""
+    """Batch accept / reject the staging from the same turn; already-resolved items are silently skipped."""
     return resolve_staging_batch(batch_id, payload)
 
 
 @router.post("/chat", response_model=ChatResponse)
 async def post_chat(payload: ChatRequest) -> ChatResponse:
-    """触发 agent_graph 完整推理链路; 同步返回对话回复 + staging 批次信息。"""
+    """Trigger the full agent_graph reasoning pipeline; returns the chat reply plus staging batch info synchronously."""
     return run_chat_turn(payload)
 
 
 @router.post("/chat/stream")
 async def post_chat_stream(payload: ChatRequest) -> StreamingResponse:
-    """SSE 流式 chat 接口; 前端用 fetch + ReadableStream 解析事件流。
-    Cache-Control 关 cache, X-Accel-Buffering 关 nginx 中间缓冲, 让事件
-    能立即推到前端, 避免反代积压成"突发到达"破坏渐进体验。
+    """SSE streaming chat endpoint; the frontend parses the event stream with fetch + ReadableStream.
+    Cache-Control disables caching and X-Accel-Buffering disables nginx
+    intermediate buffering, so events can be pushed to the frontend immediately,
+    preventing the reverse proxy from piling them up into a "burst arrival" that
+    ruins the progressive experience.
     """
     return StreamingResponse(
         stream_chat_turn(payload),

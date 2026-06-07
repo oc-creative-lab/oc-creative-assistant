@@ -8,7 +8,7 @@
 @import url('https://fonts.googleapis.com/css2?family=Fraunces:ital,opsz,wght@0,9..144,400;0,9..144,500;0,9..144,600;1,9..144,400;1,9..144,500&family=Inter:wght@400;500;600;700&display=swap');
 
 :root {
-  /* —— Neutral base (the主色: black / white / grey) —— */
+  /* —— Neutral base (primary palette: black / white / grey) —— */
   --app-bg: #f5f5f3;
   --canvas-bg: #fafaf9;
   --panel: #ffffff;
@@ -21,7 +21,7 @@
   --text-soft: #44403c;
   --muted: #8a857d;
 
-  /* —— Accents (点缀 only) —— */
+  /* —— Accents (sparingly) —— */
   --accent: #7c5cff; /* violet */
   --accent-deep: #6743ff;
   --accent-soft: rgba(124, 92, 255, 0.1);
@@ -107,21 +107,45 @@ textarea:focus-visible {
   outline-offset: 2px;
 }
 
-/* —— Slim neutral scrollbar —— */
+/* —— Auto-hide scrollbar: show on hover or while scrolling —— */
+* {
+  scrollbar-width: thin;
+  scrollbar-color: transparent transparent;
+}
+
+*:hover {
+  scrollbar-color: rgba(28, 25, 23, 0.22) transparent;
+}
+
+.is-scrolling {
+  scrollbar-color: rgba(28, 25, 23, 0.28) transparent;
+}
+
 *::-webkit-scrollbar {
   width: 10px;
   height: 10px;
 }
+
 *::-webkit-scrollbar-thumb {
-  background: rgba(28, 25, 23, 0.16);
+  background: transparent;
   border: 3px solid transparent;
   background-clip: padding-box;
   border-radius: 999px;
+  transition: background 0.2s ease;
 }
-*::-webkit-scrollbar-thumb:hover {
-  background: rgba(28, 25, 23, 0.3);
+
+*:hover::-webkit-scrollbar-thumb,
+.is-scrolling::-webkit-scrollbar-thumb {
+  background: rgba(28, 25, 23, 0.18);
   background-clip: padding-box;
 }
+
+*:hover::-webkit-scrollbar-thumb:hover,
+.is-scrolling::-webkit-scrollbar-thumb:hover {
+  background: rgba(28, 25, 23, 0.32);
+  background-clip: padding-box;
+}
+
 *::-webkit-scrollbar-track {
   background: transparent;
 }

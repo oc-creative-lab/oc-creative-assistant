@@ -1,1 +1,1 @@
-"""核心配置与路径工具。"""
+"""Core configuration and path utilities."""

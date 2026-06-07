@@ -1,1 +1,1 @@
-"""FastAPI 路由模块集合。"""
+"""Collection of FastAPI route modules."""

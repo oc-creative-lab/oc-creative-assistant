@@ -14,26 +14,26 @@ import { getNodeTypeOption } from './nodeFactory'
 const DEFAULT_RELATION_TYPE: CreativeRelationType = 'relates_to'
 
 /**
- * 获取关系类型的中文展示名。
+ * Get the display name of a relation type.
  *
  * Args:
- *   relationType: 业务关系类型。
+ *   relationType: The business relation type.
  *
  * Returns:
- *   用户可读的关系标签。
+ *   A user-readable relation label.
  */
 function getRelationLabel(relationType: CreativeRelationType) {
-  return RELATION_TYPE_OPTIONS.find((option) => option.value === relationType)?.label ?? '关联'
+  return RELATION_TYPE_OPTIONS.find((option) => option.value === relationType)?.label ?? 'related'
 }
 
 /**
- * 规范化后端返回的节点类型。
+ * Normalize the node type returned by the backend.
  *
  * Args:
- *   type: 后端或旧数据中的原始类型字符串。
+ *   type: The raw type string from the backend or legacy data.
  *
  * Returns:
- *   当前前端支持的节点类型；未知类型降级为灵感节点。
+ *   A node type currently supported by the frontend; unknown types fall back to the idea node.
  */
 function normalizeNodeType(type: string): CreativeNodeType {
   const allowedTypes: CreativeNodeType[] = ['character', 'plot', 'worldbuilding', 'idea', 'research', 'structure']
@@ -42,26 +42,26 @@ function normalizeNodeType(type: string): CreativeNodeType {
 }
 
 /**
- * 规范化节点同步状态。
+ * Normalize the node sync status.
  *
  * Args:
- *   status: 后端或旧数据中的原始状态。
+ *   status: The raw status from the backend or legacy data.
  *
  * Returns:
- *   当前 UI 支持的节点状态。
+ *   A node status currently supported by the UI.
  */
 function normalizeStatus(status: string | undefined): CreativeNodeStatus {
   return status === 'synced' || status === 'outdated' ? status : 'draft'
 }
 
 /**
- * 将后端 graph DTO 转换为前端画布快照。
+ * Convert a backend graph DTO into a frontend canvas snapshot.
  *
  * Args:
- *   graph: 后端读取接口返回的完整 graph。
+ *   graph: The complete graph returned by the backend read endpoint.
  *
  * Returns:
- *   可交给 Vue Flow 渲染的前端 graph 快照。
+ *   A frontend graph snapshot that can be handed to Vue Flow for rendering.
  */
 export function graphDtoToSnapshot(graph: GraphDto): CreativeGraphSnapshot {
   return {
@@ -71,13 +71,13 @@ export function graphDtoToSnapshot(graph: GraphDto): CreativeGraphSnapshot {
 }
 
 /**
- * 将前端画布快照转换为后端保存 DTO。
+ * Convert a frontend canvas snapshot into a backend save DTO.
  *
  * Args:
- *   snapshot: AppShell 当前维护的前端 graph 快照。
+ *   snapshot: The frontend graph snapshot currently maintained by AppShell.
  *
  * Returns:
- *   去掉 Vue Flow 运行时状态后的保存请求体。
+ *   The save request body with Vue Flow runtime state removed.
  */
 export function snapshotToSaveDto(snapshot: CreativeGraphSnapshot): SaveGraphDto {
   return {
@@ -87,15 +87,15 @@ export function snapshotToSaveDto(snapshot: CreativeGraphSnapshot): SaveGraphDto
 }
 
 /**
- * 将后端节点 DTO 转换为 Vue Flow 节点。
+ * Convert a backend node DTO into a Vue Flow node.
  *
- * 该函数兼容旧 DTO：`nodeType`、`tags`、`status` 缺失时会补齐安全默认值。
+ * This function is compatible with legacy DTOs: when `nodeType`, `tags` or `status` are missing, safe defaults are filled in.
  *
  * Args:
- *   node: 后端节点 DTO。
+ *   node: The backend node DTO.
  *
  * Returns:
- *   Vue Flow 可渲染的业务节点。
+ *   A business node that Vue Flow can render.
  */
 function graphNodeDtoToFlowNode(node: GraphNodeDto): CreativeFlowNode {
   const nodeType = normalizeNodeType(node.nodeType ?? node.type)
@@ -115,18 +115,20 @@ function graphNodeDtoToFlowNode(node: GraphNodeDto): CreativeFlowNode {
       status: normalizeStatus(node.status),
       icon: option.icon,
       typeLabel: node.typeLabel || option.label,
+      parentId: node.parentId ?? null,
+      sortOrder: node.sortOrder ?? 0,
     },
   }
 }
 
 /**
- * 将后端边 DTO 转换为 Vue Flow 边。
+ * Convert a backend edge DTO into a Vue Flow edge.
  *
  * Args:
- *   edge: 后端边 DTO。
+ *   edge: The backend edge DTO.
  *
  * Returns:
- *   带 marker 和业务关系 data 的前端边。
+ *   A frontend edge with a marker and business relation data.
  */
 function graphEdgeDtoToFlowEdge(edge: GraphEdgeDto): CreativeFlowEdge {
   const relationType = edge.relationType ?? DEFAULT_RELATION_TYPE
@@ -159,15 +161,15 @@ function graphEdgeDtoToFlowEdge(edge: GraphEdgeDto): CreativeFlowEdge {
 }
 
 /**
- * 将前端节点转换为后端节点 DTO。
+ * Convert a frontend node into a backend node DTO.
  *
- * 保存时去掉 `isActive` 等前端状态，只保留可恢复的业务内容和画布坐标。
+ * On save, frontend state such as `isActive` is dropped, keeping only the recoverable business content and canvas coordinates.
  *
  * Args:
- *   node: 前端业务节点。
+ *   node: The frontend business node.
  *
  * Returns:
- *   后端保存接口需要的节点 DTO。
+ *   The node DTO required by the backend save endpoint.
  */
 function flowNodeToGraphNodeDto(node: CreativeFlowNode): GraphNodeDto {
   return {
@@ -180,6 +182,8 @@ function flowNodeToGraphNodeDto(node: CreativeFlowNode): GraphNodeDto {
     typeLabel: node.data.typeLabel,
     tags: node.data.tags,
     status: node.data.status,
+    parentId: node.data.parentId ?? null,
+    sortOrder: node.data.sortOrder ?? 0,
     position: {
       x: node.position.x,
       y: node.position.y,
@@ -188,13 +192,13 @@ function flowNodeToGraphNodeDto(node: CreativeFlowNode): GraphNodeDto {
 }
 
 /**
- * 将前端边转换为后端边 DTO。
+ * Convert a frontend edge into a backend edge DTO.
  *
  * Args:
- *   edge: 前端业务边。
+ *   edge: The frontend business edge.
  *
  * Returns:
- *   后端保存接口需要的边 DTO。
+ *   The edge DTO required by the backend save endpoint.
  */
 function flowEdgeToGraphEdgeDto(edge: CreativeFlowEdge): GraphEdgeDto {
   const relationType = edge.data?.relationType ?? DEFAULT_RELATION_TYPE
@@ -209,7 +213,7 @@ function flowEdgeToGraphEdgeDto(edge: CreativeFlowEdge): GraphEdgeDto {
     relationType,
     sourceHandle: edge.sourceHandle,
     targetHandle: edge.targetHandle,
-    type: edge.type ?? 'orthogonal',
+    type: edge.type ?? 'bezier',
     animated: Boolean(edge.animated),
     waypoint: wp
       ? {

@@ -1,4 +1,4 @@
-"""兼容旧 `main:app` 导入路径的薄入口。"""
+"""Thin entry point compatible with the legacy `main:app` import path."""
 
 from app.main import app
 

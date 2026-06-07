@@ -2,8 +2,8 @@
 import type { AiOutput } from '../../stores/useAiOutputStore'
 
 /**
- * 单条 AI 输出卡片（second_revision 改点 B / W5）。
- * 顶部来源类型标签 + 折叠/展开；内容可长可短。
+ * A single AI output card (second_revision change B / W5).
+ * Source-type tag at the top + collapse/expand; content can be long or short.
  */
 defineProps<{ output: AiOutput }>()
 const emit = defineEmits<{ toggle: [id: string] }>()

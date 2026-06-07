@@ -1,9 +1,10 @@
 <script setup lang="ts">
 /**
- * 顶部工具栏。
+ * Top toolbar.
  *
- * 本组件只展示项目名称和全局操作入口；当前只有保存动作接入业务逻辑，其余按钮
- * 保留为后续导入、导出和设置能力的入口。
+ * Only displays the project name and global action entry points; currently only the
+ * save action is wired to business logic, while the other buttons remain as entry
+ * points for future import, export, and settings capabilities.
  */
 defineProps<{
   projectName: string
@@ -34,7 +35,7 @@ function handleActionClick(actionId: string) {
 </script>
 
 <template>
-  <!-- 顶部栏：负责全局项目操作 -->
+  <!-- Top bar: global project actions -->
   <header class="top-toolbar">
     <div class="title-block">
       <div class="brand">
@@ -45,7 +46,7 @@ function handleActionClick(actionId: string) {
       <span class="project-name">{{ projectName }}</span>
     </div>
 
-    <nav class="toolbar-actions" aria-label="工作区操作">
+    <nav class="toolbar-actions" aria-label="Workspace actions">
       <button
         v-for="action in toolbarActions"
         :key="action.id"

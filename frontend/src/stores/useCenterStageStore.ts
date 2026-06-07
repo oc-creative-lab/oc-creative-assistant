@@ -1,6 +1,6 @@
 import { defineStore } from 'pinia'
 
-/** 进入详情页时携带的节点初始快照（避免详情页再发一次 GET）。 */
+/** The node's initial snapshot carried when entering the detail page (avoids the detail page issuing another GET). */
 export interface DetailNodeSnapshot {
   id: string
   title: string
@@ -13,10 +13,10 @@ export interface DetailNodeSnapshot {
 }
 
 /**
- * 中栏舞台状态（second_revision 改点 A）。
+ * Center-panel stage state (second_revision change A).
  *
- * 控制中栏在"画布"与"节点详情"之间切换：双击节点 → detail；返回 → canvas。
- * 详情页占据画布位置，左右栏不变。
+ * Controls switching the center panel between "canvas" and "node detail": double-click a node → detail; back → canvas.
+ * The detail page occupies the canvas position; the left and right panels stay unchanged.
  */
 export const useCenterStageStore = defineStore('centerStage', {
   state: () => ({

@@ -5,12 +5,12 @@ import uvicorn
 from app.main import app
 
 
-# PyInstaller 打包后的后端入口也走这套参数，Electron 主进程会传入 host/port。
+# The PyInstaller-packaged backend entry point also uses this set of arguments; the Electron main process passes in host/port.
 def parse_args() -> argparse.Namespace:
-    """解析后端启动参数。
+    """Parse the backend startup arguments.
 
     Returns:
-        只包含 host 和 port 的命令行参数对象。
+        A command-line arguments object containing only host and port.
     """
     parser = argparse.ArgumentParser(description="Run the OC Creative Assistant backend.")
     parser.add_argument("--host", default="127.0.0.1")
@@ -19,9 +19,9 @@ def parse_args() -> argparse.Namespace:
 
 
 def main() -> None:
-    """按命令行参数启动 uvicorn 服务。"""
+    """Start the uvicorn service according to the command-line arguments."""
     args = parse_args()
-    # 桌面应用由 Electron 管理进程生命周期，打包态不启用 reload。
+    # The desktop app's process lifecycle is managed by Electron; reload is disabled in packaged mode.
     uvicorn.run(app, host=args.host, port=args.port, reload=False)
 
 

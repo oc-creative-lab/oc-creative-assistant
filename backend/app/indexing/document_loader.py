@@ -1,7 +1,8 @@
-"""向量索引文档抽取与轻量 DTO 转换。
+"""Vector index document extraction and lightweight DTO conversion.
 
-当前索引数据源来自画布节点。这里负责把 ORM 节点整理成可检索文本，
-并提供 RAG 响应需要的节点 DTO 转换函数。
+The current index data source comes from canvas nodes. This module is responsible
+for organizing ORM nodes into searchable text and providing the node DTO
+conversion functions needed by RAG responses.
 """
 
 from __future__ import annotations
@@ -10,16 +11,18 @@ from typing import Any
 
 from app.db.models import NodeORM
 from app.schemas import RagCurrentNodePayload, RagVectorContextItem
+from app.services.graph_mappers import db_fields_to_api
 
 
 def node_to_current_payload(node: NodeORM) -> RagCurrentNodePayload:
-    """将 ORM 节点转换为当前节点 RAG DTO。
+    """Convert an ORM node into the current-node RAG DTO.
 
     Args:
-        node: 已从 SQLite 读取的当前节点。
+        node: The current node already read from SQLite.
 
     Returns:
-        只包含 prompt 和前端预览所需字段的当前节点 DTO。
+        A current-node DTO containing only the fields needed by the prompt and the
+        frontend preview.
     """
     return RagCurrentNodePayload(
         id=node.id,
@@ -27,55 +30,72 @@ def node_to_current_payload(node: NodeORM) -> RagCurrentNodePayload:
         title=node.title,
         content=node.content,
         tags=db_tags_to_api(node.meta),
+        fields=db_fields_to_api(node.meta),
     )
 
 
 def node_to_vector_item(node: NodeORM, score: float) -> RagVectorContextItem:
-    """将 ORM 节点转换为向量检索结果 DTO。
+    """Convert an ORM node into a vector retrieval result DTO.
 
     Args:
-        node: 向量检索命中的节点。
-        score: 相似度分数，通常位于 0 到 1 之间。
+        node: The node hit by vector retrieval.
+        score: The similarity score, usually between 0 and 1.
 
     Returns:
-        向量上下文响应条目；score 会四舍五入便于前端展示。
+        A vector context response item; the score is rounded for easier frontend
+        display.
     """
+    content = (node.content or "").strip()
+    fields = db_fields_to_api(node.meta)
+    if fields:
+        field_text = "; ".join(f"{key}: {value}" for key, value in fields.items())
+        content = f"{content}\n{field_text}".strip() if content else field_text
     return RagVectorContextItem(
         id=node.id,
         type=node.node_type,
         title=node.title,
-        content=node.content,
+        content=content,
         score=round(score, 4),
     )
 
 
 def node_to_document(node: NodeORM) -> str:
-    """将节点拼成用于 embedding 的检索文档。
+    """Assemble a node into a retrieval document for embedding.
 
-    标题、类型、标签和正文都会参与向量化；坐标、排序和时间戳不参与检索语义。
+    The title, type, tags, and content all participate in vectorization; the
+    coordinates, sort order, and timestamps do not participate in retrieval
+    semantics.
 
     Args:
-        node: 需要写入或查询对比的 ORM 节点。
+        node: The ORM node to write or compare against during a query.
 
     Returns:
-        用于 ChromaDB document 和阿里 embedding 的文本。
+        The text used for the ChromaDB document and the Alibaba embedding.
     """
     tags = ", ".join(db_tags_to_api(node.meta))
-    return f"""Title: {node.title}
+    fields = db_fields_to_api(node.meta)
+    fields_block = ""
+    if fields:
+        fields_block = "Fields:\n" + "\n".join(f"{key}: {value}" for key, value in fields.items())
+    doc = f"""Title: {node.title}
 Type: {node.node_type}
 Tags: {tags}
 Content:
 {node.content}"""
+    if fields_block:
+        doc = f"{doc}\n{fields_block}"
+    return doc
 
 
 def db_tags_to_api(meta: Any) -> list[str]:
-    """从节点 meta JSON 中读取标签。
+    """Read tags from a node's meta JSON.
 
     Args:
-        meta: ORM 节点的 meta 字段，可能来自旧库或手工编辑数据。
+        meta: The meta field of the ORM node, which may come from an old database
+            or manually edited data.
 
     Returns:
-        字符串标签列表；异常类型会被过滤。
+        A list of string tags; values of unexpected types are filtered out.
     """
     if isinstance(meta, dict):
         tags = meta.get("tags", [])

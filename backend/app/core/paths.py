@@ -1,8 +1,11 @@
-"""后端运行时路径约定。
+"""Backend runtime path conventions.
 
-源码迁入 `app/` 包后，开发态数据仍默认保留在 `backend/data`。
-打包态由 Electron 主进程通过环境变量传入持久化目录，避免 portable 临时解包目录吞掉数据。
-本模块集中提供路径常量，避免数据库和向量索引各自依赖 `__file__` 层级推导。
+After the source moved into the `app/` package, dev-mode data still defaults to
+`backend/data`. In packaged mode the Electron main process passes in the
+persistence directory via an environment variable, to avoid a portable
+temp-extraction directory swallowing the data.
+This module centralizes the path constants, so the database and vector index do
+not each have to derive paths from `__file__` hierarchy levels.
 """
 
 import os
@@ -10,17 +13,19 @@ from pathlib import Path
 
 
 BACKEND_ROOT = Path(__file__).resolve().parents[2]
-"""后端项目根目录；开发态即包含 `app/` 与 `data/` 的 `backend` 目录。"""
+"""Backend project root directory; in dev mode, the `backend` directory containing both `app/` and `data/`."""
 
 DATA_DIR_ENV = "OC_CREATIVE_DATA_DIR"
-"""Electron 打包态传给后端的数据目录环境变量名。"""
+"""Name of the environment variable Electron's packaged mode passes to the backend for the data directory."""
 
 
 def _resolve_data_dir() -> Path:
-    """解析后端运行时数据目录。
+    """Resolve the backend runtime data directory.
 
-    Electron 打包态显式传入目录，portable 写到 exe 旁边，安装版写到用户数据目录。
-    开发态不传环境变量时，继续回退到源码内的 `backend/data`。
+    In Electron packaged mode the directory is passed in explicitly: portable
+    builds write next to the exe, installed builds write to the user data
+    directory. In dev mode, when no environment variable is passed, it falls back
+    to the in-source `backend/data`.
     """
     configured_data_dir = os.environ.get(DATA_DIR_ENV)
 
@@ -31,10 +36,10 @@ def _resolve_data_dir() -> Path:
 
 
 DATA_DIR = _resolve_data_dir()
-"""后端运行时数据目录，SQLite 与 ChromaDB 都写入该目录。"""
+"""Backend runtime data directory; both SQLite and ChromaDB write into this directory."""
 
 DATABASE_PATH = DATA_DIR / "oc_creative.sqlite3"
-"""本地 SQLite 数据库文件路径。"""
+"""Path to the local SQLite database file."""
 
 CHROMA_PATH = DATA_DIR / "chroma"
-"""本地 ChromaDB 持久化目录。"""
+"""Local ChromaDB persistence directory."""

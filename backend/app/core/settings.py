@@ -1,7 +1,8 @@
-"""应用运行时配置。
+"""Application runtime configuration.
 
-集中读取 .env / 环境变量,避免业务模块直接依赖 os.getenv,便于未来切换
-pydantic-settings 或注入测试配置。
+Centralizes reading of .env / environment variables, avoiding having business
+modules depend directly on os.getenv, making it easier to switch to
+pydantic-settings or inject test configuration in the future.
 """
 
 from __future__ import annotations
@@ -16,10 +17,11 @@ from app.core.paths import BACKEND_ROOT, DATA_DIR
 
 
 def _load_env() -> None:
-    """加载 backend/.env 到当前进程环境变量。
+    """Load backend/.env into the current process's environment variables.
 
-    只在模块导入时执行一次;.env 不存在时静默跳过,保证 CI 等无 .env
-    场景仍可启动(届时使用占位 embedding 降级)。
+    Runs only once at module import; silently skips when .env does not exist, so
+    that environments without a .env (such as CI) can still start up (falling back
+    to placeholder embeddings in that case).
     """
     env_path: Path = BACKEND_ROOT / ".env"
     load_dotenv(env_path, override=False)
@@ -29,7 +31,7 @@ _load_env()
 
 
 def _get_bool(name: str, default: bool = False) -> bool:
-    """读取布尔环境变量,接受 1/true/yes 视为 True。"""
+    """Read a boolean environment variable, treating 1/true/yes as True."""
     raw = os.getenv(name)
     if raw is None:
         return default
@@ -48,7 +50,7 @@ def _get_int(name: str, default: int) -> int:
 
 @dataclass(frozen=True)
 class EmbeddingSettings:
-    """Embedding 服务配置。"""
+    """Embedding service configuration."""
 
     base_url: str | None
     api_key: str | None
@@ -57,13 +59,13 @@ class EmbeddingSettings:
 
     @property
     def is_configured(self) -> bool:
-        """判断是否具备调用真实 embedding 服务的最低配置。"""
+        """Determine whether the minimum configuration to call a real embedding service is present."""
         return bool(self.base_url and self.api_key and self.model)
 
 
 @dataclass(frozen=True)
 class IndexingSettings:
-    """索引调试相关开关。"""
+    """Index debugging-related switches."""
 
     debug_log: bool
 
@@ -83,10 +85,11 @@ def get_indexing_settings() -> IndexingSettings:
 
 @dataclass(frozen=True)
 class LlmSettings:
-    """对话 LLM 服务配置。
+    """Chat LLM service configuration.
 
-    ``provider`` 决定 Strategy Pattern 的实现选择: ``openai`` 走真实 OpenAI 兼容
-    协议(DeepSeek/通义/官方 OpenAI), ``mock`` 走本地确定性桩, 用于离线开发与单测。
+    ``provider`` determines the Strategy Pattern implementation choice: ``openai``
+    uses a real OpenAI-compatible protocol (DeepSeek/Tongyi/official OpenAI),
+    ``mock`` uses a local deterministic stub for offline development and unit tests.
     """
 
     provider: str
@@ -112,10 +115,11 @@ def get_llm_settings() -> LlmSettings:
 
 @dataclass(frozen=True)
 class WebSearchSettings:
-    """Web search 工具配置。
+    """Web search tool configuration.
 
-    api_key 留空时 ``web_search`` 工具直接返回降级提示而不报错, 保证离线开发
-    和未配置 key 的 CI/单测仍能跑通整条 Agent 链路。
+    When api_key is left empty, the ``web_search`` tool directly returns a
+    degraded notice instead of erroring, ensuring offline development and CI/unit
+    tests without a configured key can still run the entire Agent pipeline.
     """
 
     provider: str
@@ -137,16 +141,18 @@ def get_web_search_settings() -> WebSearchSettings:
 
 @dataclass(frozen=True)
 class AgentSettings:
-    """Agent 图运行时配置。
+    """Agent graph runtime configuration.
 
-    ``checkpointer_db_path`` 为 LangGraph 的 SqliteSaver 提供持久化路径, 与业务
-    SQLite 分离避免事务冲突; ``context_token_cap`` 控制每轮注入对话的检索上下文
-    上限, 防止长项目把 prompt 顶爆 LLM 的窗口。
+    ``checkpointer_db_path`` provides the persistence path for LangGraph's
+    SqliteSaver, kept separate from the business SQLite to avoid transaction
+    conflicts; ``context_token_cap`` controls the upper bound of retrieval context
+    injected into the conversation each turn, preventing long projects from
+    blowing the prompt past the LLM's window.
 
-    多层记忆相关:
-    - ``recent_message_window``: load_context 取最近 N 条消息原文喂 prompt
-    - ``summary_keep_recent``: 摘要压缩时保留多少条不进入 summary
-    - ``summary_compress_every``: 高水位之外再积累多少条老消息才再次触发压缩
+    Multi-layer memory related:
+    - ``recent_message_window``: load_context takes the last N messages verbatim to feed the prompt
+    - ``summary_keep_recent``: how many messages to keep out of the summary during summary compression
+    - ``summary_compress_every``: how many more old messages must accumulate beyond the high-water mark before compression is triggered again
     """
 
     checkpointer_db_path: Path
@@ -164,3 +170,14 @@ def get_agent_settings() -> AgentSettings:
         summary_keep_recent=_get_int("OC_AGENT_SUMMARY_KEEP_RECENT", 10),
         summary_compress_every=_get_int("OC_AGENT_SUMMARY_COMPRESS_EVERY", 6),
     )
+
+
+@dataclass(frozen=True)
+class AppSettings:
+    """Application-wide runtime switches."""
+
+    dev_mode: bool
+
+
+def get_app_settings() -> AppSettings:
+    return AppSettings(dev_mode=_get_bool("OC_DEV_MODE", False))

@@ -1,4 +1,4 @@
-/* 桌面态优先使用 preload 注入的后端地址, 浏览器开发态回退到 Vite 环境变量。 */
+/* In desktop mode prefer the backend URL injected by preload; in browser dev mode fall back to the Vite environment variable. */
 export const backendBaseUrl = (
 window.ocDesktop?.config.backendUrl ||
 import.meta.env.VITE_BACKEND_URL ||
@@ -6,17 +6,17 @@ import.meta.env.VITE_BACKEND_URL ||
 ).replace(/\/$/, '')
 
 /**
- * 统一请求后端 JSON 接口。
+ * Unified helper for requesting backend JSON endpoints.
  *
  * Args:
- *   path: 以 `/api` 开头的后端路径。
- *   init: fetch 请求配置。
+ *   path: A backend path starting with `/api`.
+ *   init: The fetch request config.
  *
  * Returns:
- *   反序列化后的响应体。
+ *   The deserialized response body.
  *
  * Throws:
- *   Error: 当后端返回非 2xx 状态时抛出。
+ *   Error: Thrown when the backend returns a non-2xx status.
  */
 export async function requestJson<T>(path: string, init?: RequestInit): Promise<T> {
 const response = await fetch(`${backendBaseUrl}${path}`, {
@@ -31,7 +31,7 @@ if (!response.ok) {
     throw new Error(`HTTP ${response.status}`)
 }
 
-// 204 No Content（如 DELETE）没有响应体，直接解析 JSON 会抛错。
+// 204 No Content (e.g. DELETE) has no response body, and parsing JSON directly would throw.
 if (response.status === 204) {
     return undefined as T
 }

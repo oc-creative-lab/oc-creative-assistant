@@ -3,12 +3,14 @@ import { onMounted, ref } from 'vue'
 import { useRouter } from 'vue-router'
 import { storeToRefs } from 'pinia'
 import { useLibraryStore } from '../stores/useLibraryStore'
+import type { ProjectSummary } from '../types/project'
 
 /**
- * Library（阶段 2）。
+ * Library (stage 2).
  *
- * 项目卡片网格：每卡 name / description / updated_at，点击进工作台。
- * 复用 useLibraryStore + projectApi，不重复实现请求逻辑。
+ * A vertical list of horizontal "strip" cards: white gradient with black text,
+ * optional cover fading in on the right, delete in the top-right corner.
+ * Clicking the card opens the workspace.
  */
 const router = useRouter()
 const library = useLibraryStore()
@@ -49,6 +51,21 @@ function formatTime(value?: string | null): string {
   const date = new Date(value)
   return Number.isNaN(date.getTime()) ? '' : date.toLocaleString()
 }
+
+/** White gradient overlay; cover image fades in on the right when present. */
+function stripBackground(project: ProjectSummary): string {
+  if (project.cover_image) {
+    return (
+      'linear-gradient(to right, ' +
+      '#ffffff 0%, #ffffff 30%, ' +
+      'rgba(255, 255, 255, 0.94) 52%, ' +
+      'rgba(255, 255, 255, 0.62) 76%, ' +
+      'rgba(255, 255, 255, 0.2) 100%), ' +
+      `url("${project.cover_image}")`
+    )
+  }
+  return 'linear-gradient(110deg, #ffffff 0%, #fafafa 55%, #f3f1f8 100%)'
+}
 </script>
 
 <template>
@@ -63,21 +80,30 @@ function formatTime(value?: string | null): string {
     <p v-else-if="isLoading" class="library__hint">Loading…</p>
     <p v-else-if="projects.length === 0" class="library__hint">No projects yet — create one from the top-right.</p>
 
-    <section v-else class="library__grid">
+    <section v-else class="library__list">
       <article
         v-for="project in projects"
         :key="project.id"
-        class="project-card"
+        class="strip"
+        :style="{ backgroundImage: stripBackground(project) }"
         @click="openProject(project.id)"
       >
-        <h3 class="project-card__name">{{ project.name }}</h3>
-        <p class="project-card__desc">{{ project.description || 'No description' }}</p>
-        <footer class="project-card__footer">
-          <span class="project-card__time">{{ formatTime(project.updated_at) }}</span>
-          <button type="button" class="project-card__del" @click="handleDelete(project.id, $event)">
-            Delete
-          </button>
-        </footer>
+        <button
+          type="button"
+          class="strip__del"
+          aria-label="Delete project"
+          title="Delete project"
+          @click="handleDelete(project.id, $event)"
+        >
+          Delete
+        </button>
+        <div class="strip__panel">
+          <h3 class="strip__name">{{ project.name }}</h3>
+          <p class="strip__desc">{{ project.description || 'No description' }}</p>
+          <footer class="strip__footer">
+            <span class="strip__time">{{ formatTime(project.updated_at) }}</span>
+          </footer>
+        </div>
       </article>
     </section>
 
@@ -99,6 +125,8 @@ function formatTime(value?: string | null): string {
 
 <style scoped>
 .library {
+  box-sizing: border-box;
+  width: 100%;
   min-height: 100vh;
   padding: 24px 32px;
 }
@@ -131,55 +159,87 @@ function formatTime(value?: string | null): string {
 .library__error {
   color: #dc2626;
 }
-.library__grid {
-  display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(240px, 1fr));
-  gap: 16px;
+.library__list {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  width: 100%;
 }
-.project-card {
-  border: 1px solid var(--border, #e5e7eb);
-  border-radius: 12px;
-  padding: 16px;
+.strip {
+  position: relative;
+  width: 100%;
+  min-height: 132px;
+  border-radius: 14px;
+  overflow: hidden;
   cursor: pointer;
+  border: 1px solid var(--border, #e5e7eb);
+  background-color: #fff;
+  background-repeat: no-repeat;
+  background-position: right center;
+  background-size: cover;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.06);
+  transition: transform 0.15s ease, box-shadow 0.15s ease, border-color 0.15s ease;
+}
+.strip:hover {
+  transform: translateY(-1px);
+  border-color: color-mix(in srgb, var(--accent) 28%, var(--border, #e5e7eb));
+  box-shadow: 0 8px 22px rgba(0, 0, 0, 0.1);
+}
+.strip__panel {
+  width: min(58%, 640px);
+  min-width: 240px;
+  min-height: inherit;
+  padding: 18px 88px 18px 20px;
   display: flex;
   flex-direction: column;
   gap: 8px;
-  min-height: 120px;
-  transition: border-color 0.15s, box-shadow 0.15s;
+  color: var(--text, #111);
 }
-.project-card:hover {
-  border-color: var(--accent);
-  box-shadow: 0 2px 12px rgba(99, 102, 241, 0.12);
+.strip__name {
+  font-size: 18px;
+  font-weight: 700;
+  color: var(--text, #111);
 }
-.project-card__name {
-  font-size: 16px;
-  font-weight: 600;
-}
-.project-card__desc {
+.strip__desc {
   flex: 1;
-  color: #666;
   font-size: 13px;
   line-height: 1.5;
+  color: var(--text-soft, #4b5563);
   overflow: hidden;
   display: -webkit-box;
   -webkit-line-clamp: 3;
   -webkit-box-orient: vertical;
 }
-.project-card__footer {
+.strip__footer {
   display: flex;
   align-items: center;
-  justify-content: space-between;
 }
-.project-card__time {
+.strip__time {
   font-size: 12px;
-  color: #aaa;
+  color: var(--muted, #6b7280);
 }
-.project-card__del {
+.strip__del {
+  position: absolute;
+  top: 12px;
+  right: 12px;
+  z-index: 2;
   font-size: 12px;
-  color: #dc2626;
-  background: none;
-  border: none;
+  font-weight: 600;
+  color: var(--text-soft, #4b5563);
+  background: rgba(255, 255, 255, 0.92);
+  border: 1px solid var(--border, #e5e7eb);
+  border-radius: 8px;
+  padding: 5px 11px;
   cursor: pointer;
+  transition:
+    background 0.15s ease,
+    border-color 0.15s ease,
+    color 0.15s ease;
+}
+.strip__del:hover {
+  color: #fff;
+  background: #dc2626;
+  border-color: #dc2626;
 }
 .library__modal {
   position: fixed;

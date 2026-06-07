@@ -2,10 +2,10 @@
 import type { QuotedNodeRef } from '../../stores/useComposerStore'
 
 /**
- * 底部对话框里的引用节点小标签（second_revision 改点 C）。
- * 显示类型图标 + 节点名，带叉号可移除。
+ * Small quoted-node chip in the bottom composer (second_revision change C).
+ * Shows a type icon + node name, with an X to remove it.
  */
-defineProps<{ node: QuotedNodeRef }>()
+defineProps<{ node: QuotedNodeRef; removable?: boolean }>()
 const emit = defineEmits<{ remove: [id: string] }>()
 
 const TYPE_ICON: Record<string, string> = {
@@ -22,7 +22,14 @@ const TYPE_ICON: Record<string, string> = {
 <template>
   <span class="quoted-chip">
     {{ TYPE_ICON[node.type] ?? '📌' }} {{ node.title }}
-    <button type="button" class="quoted-chip__x" @click="emit('remove', node.id)">✕</button>
+    <button
+      v-if="removable !== false"
+      type="button"
+      class="quoted-chip__x"
+      @click="emit('remove', node.id)"
+    >
+      ✕
+    </button>
   </span>
 </template>
 

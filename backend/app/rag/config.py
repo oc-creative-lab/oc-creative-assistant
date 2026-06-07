@@ -1,7 +1,8 @@
-"""RAG 配置兼容模块。
+"""RAG configuration compatibility module.
 
-RAG 与向量索引共享部分检索配置；真实配置源位于 `app.indexing.config`。
-保留本模块是为了让 RAG 内部导入语义更清晰。
+RAG shares part of its retrieval configuration with the vector index; the real
+configuration source lives in `app.indexing.config`. This module is kept so that
+imports within RAG carry clearer semantics.
 """
 
 from app.indexing.config import (

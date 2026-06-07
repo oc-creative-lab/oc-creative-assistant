@@ -1,18 +1,14 @@
 import { createRouter, createWebHashHistory } from 'vue-router'
 
 /**
- * 应用路由骨架（阶段 0）。
+ * Application routing skeleton (stage 0).
  *
- * 目标产品形态：首页(HomeLanding) → 聊天入口 / 项目库 → ChatWorkspace / Workspace。
- * 阶段 0 只搭占位路由保证可跳转；HomeLanding / ChatEntry / ProjectLibrary 的
- * 正式实现在阶段 2，WorkspaceShell + 三视图在阶段 3。
+ * Target product shape: home (HomeLanding) → chat entry / library →
+ * ChatWorkspace / Workspace. `/workspace/:projectId` is served by
+ * `WorkspaceShell.vue` plus its three sub-route views.
  *
- * 过渡期约束（复用优先、不破坏现有功能）：
- * - `/workspace/:projectId` 暂时直接复用现有的 `AppShell.vue`，让旧的单画布工作台
- *   在重构期间仍可用；阶段 3 再替换为 `WorkspaceShell.vue` + 子路由三视图。
- *
- * 桌面端用 hash history：Electron 以 file:// 加载打包后的 index.html，
- * hash 模式不依赖服务端路由，刷新不会 404。
+ * Desktop uses hash history: Electron loads the bundled index.html via file://,
+ * and hash mode doesn't depend on server-side routing, so a refresh won't 404.
  */
 export const router = createRouter({
   history: createWebHashHistory(),
@@ -29,9 +25,7 @@ export const router = createRouter({
     },
     {
       path: '/chat/:projectId',
-      name: 'chat-workspace',
-      component: () => import('../views/ChatWorkspace.vue'),
-      props: true,
+      redirect: (to) => `/workspace/${String(to.params.projectId)}`,
     },
     {
       path: '/library',
@@ -71,12 +65,6 @@ export const router = createRouter({
           component: () => import('../views/workspace/WorldCanvas.vue'),
         },
       ],
-    },
-    {
-      // 旧单画布工作台保留可达（不删除现有 AppShell），便于过渡期对照。
-      path: '/legacy',
-      name: 'legacy-appshell',
-      component: () => import('../components/workspace/AppShell.vue'),
     },
     {
       path: '/:pathMatch(.*)*',

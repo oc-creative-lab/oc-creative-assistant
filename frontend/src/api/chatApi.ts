@@ -1,6 +1,6 @@
 import { backendBaseUrl, requestJson } from './http'
 
-/** 对话会话 DTO; thread_id 给 LangGraph Checkpointer 使用。 */
+/** Chat session DTO; thread_id is used by the LangGraph Checkpointer. */
 export interface ChatSessionDto {
   id: string
   project_id: string
@@ -10,7 +10,14 @@ export interface ChatSessionDto {
   updated_at: string
 }
 
-/** 单条对话消息 DTO; meta 携带 agent_type / cited_node_ids / staging_summary。 */
+/** Web search source link shown under research replies. */
+export interface WebSourceDto {
+  title: string
+  url: string
+  snippet?: string
+}
+
+/** Single chat message DTO; meta carries agent_type / cited_node_ids / staging_summary. */
 export interface ChatMessageDto {
   id: string
   session_id: string
@@ -20,11 +27,12 @@ export interface ChatMessageDto {
     agent_type?: string
     cited_node_ids?: string[]
     staging_summary?: string
+    web_sources?: WebSourceDto[]
   }
   created_at: string
 }
 
-/** Agent 一轮推理后的对话回复 + staging 摘要。 */
+/** Chat reply after one Agent reasoning turn + staging summary. */
 export interface ChatResponseDto {
   message_id: string
   reply_text: string
@@ -35,7 +43,7 @@ export interface ChatResponseDto {
   staging_summary: string
 }
 
-/** staging 单项 DTO; 与后端 AgentStagingPayload 对齐。 */
+/** Single staging item DTO; aligned with the backend AgentStagingPayload. */
 export interface AgentStagingItemDto {
   id: string
   session_id: string
@@ -55,14 +63,14 @@ export interface AgentStagingItemDto {
   resolved_at: string | null
 }
 
-/** staging 批次 DTO, 同 batch_id 的多条变更聚合展示。 */
+/** Staging batch DTO; aggregates multiple changes that share a batch_id for display. */
 export interface AgentStagingBatchDto {
   batch_id: string
   items: AgentStagingItemDto[]
 }
 
 /**
- * 创建对话会话; 同时分配 thread_id 用于 LangGraph 持久化。
+ * Create a chat session; also assigns a thread_id for LangGraph persistence.
  */
 export async function createChatSession(projectId: string, title = ''): Promise<ChatSessionDto> {
   return requestJson<ChatSessionDto>('/api/sessions', {
@@ -71,19 +79,19 @@ export async function createChatSession(projectId: string, title = ''): Promise<
   })
 }
 
-/** 列出指定项目下的会话, 创建时间倒序。 */
+/** List the sessions under a given project, newest created first. */
 export async function listProjectSessions(projectId: string): Promise<ChatSessionDto[]> {
   return requestJson<ChatSessionDto[]>(`/api/projects/${projectId}/sessions`)
 }
 
-/** 读取会话完整消息历史, 时间正序。 */
+/** Read the full message history of a session, oldest first. */
 export async function listSessionMessages(sessionId: string): Promise<ChatMessageDto[]> {
   return requestJson<ChatMessageDto[]>(`/api/sessions/${sessionId}/messages`)
 }
 
 /**
- * 触发 agent_graph 完整推理; 返回回复 + staging 摘要。
- * DeepSeek 单轮可能要等数十秒, 调用方应自行处理 loading 状态。
+ * Trigger a full agent_graph reasoning pass; returns the reply + staging summary.
+ * A single DeepSeek turn may take tens of seconds, so the caller should handle the loading state itself.
  */
 export async function postChat(
   sessionId: string,
@@ -100,7 +108,7 @@ export async function postChat(
   })
 }
 
-/** 列出当前会话的 staging, 默认只看 pending; 自动按 batch 分组。 */
+/** List the staging of the current session, pending only by default; auto-grouped by batch. */
 export async function listSessionStaging(
   sessionId: string,
   status: AgentStagingItemDto['status'] | null = 'pending',
@@ -109,7 +117,7 @@ export async function listSessionStaging(
   return requestJson<AgentStagingBatchDto[]>(`/api/sessions/${sessionId}/staging${query}`)
 }
 
-/** 列出整个项目的 staging（first_revision 阶段 4：ChatWorkspace 跨会话待审）。 */
+/** List the staging of the whole project (first_revision phase 4: ChatWorkspace cross-session review). */
 export async function listProjectStaging(
   projectId: string,
   status: AgentStagingItemDto['status'] | null = 'pending',
@@ -118,7 +126,7 @@ export async function listProjectStaging(
   return requestJson<AgentStagingBatchDto[]>(`/api/projects/${projectId}/staging${query}`)
 }
 
-/** 单条 staging 的 accept / edit / reject; 已结案再次操作返回 409。 */
+/** Accept / edit / reject a single staging item; acting on an already-resolved item returns 409. */
 export async function resolveStagingItem(
   stagingId: string,
   action: 'accept' | 'edit' | 'reject',
@@ -130,7 +138,7 @@ export async function resolveStagingItem(
   })
 }
 
-/** 批量接受 / 拒绝同一 turn 的 staging; 已结案的项静默跳过。 */
+/** Bulk accept / reject the staging of the same turn; already-resolved items are silently skipped. */
 export async function resolveStagingBatch(
   batchId: string,
   action: 'accept_all' | 'reject_all',
@@ -141,7 +149,7 @@ export async function resolveStagingBatch(
   })
 }
 
-/** SSE 事件类型, 与后端 chat_stream._sse 的 payload 对齐。 */
+/** SSE event types, aligned with the payload of the backend chat_stream._sse. */
 export type ChatStreamEvent =
   | { type: 'node_end'; node: string; label: string }
   | { type: 'intent'; primary: string; confidence: number }
@@ -151,6 +159,7 @@ export type ChatStreamEvent =
       reply_text: string
       cited_node_ids: string[]
       staging_summary: string
+      web_sources?: WebSourceDto[]
     }
   | {
       type: 'persistence_done'
@@ -163,9 +172,19 @@ export type ChatStreamEvent =
       items: AppliedEntityDto[]
     }
   | { type: 'done' }
-  | { type: 'error'; message: string }
+  | {
+      type: 'error'
+      message: string
+      debug?: {
+        phase: string
+        last_node: string | null
+        error_type: string
+        error_message: string
+        traceback: string
+      }
+    }
 
-/** 后台抽取并【自动落库】的卡片（改造 1：对话内联展示，默认已加入）。 */
+/** A card extracted in the background and [auto-persisted] (revamp 1: inline display in chat, added by default). */
 export interface AppliedEntityDto {
   node_id: string
   title: string
@@ -175,17 +194,20 @@ export interface AppliedEntityDto {
 }
 
 /**
- * 流式 chat: 后端 SSE, 前端 fetch + ReadableStream 解析。
+ * Streaming chat: backend SSE, frontend fetch + ReadableStream parsing.
  *
- * EventSource 不支持 POST + body, 所以走原生 fetch。每收到一个完整 SSE
- * data 行就调一次 onEvent, 让组件渐进更新 UI。
+ * EventSource does not support POST + body, so we use native fetch. onEvent is
+ * called once for each complete SSE data line, letting the component update the UI progressively.
  */
+export type WebSearchMode = 'auto' | 'on' | 'off'
+
 export async function streamChat(
   sessionId: string,
   userMessage: string,
   selectedNodeIds: string[],
   onEvent: (event: ChatStreamEvent) => void,
   extractionEnabled = false,
+  webSearchMode: WebSearchMode = 'auto',
 ): Promise<void> {
   const response = await fetch(`${backendBaseUrl}/api/chat/stream`, {
     method: 'POST',
@@ -195,6 +217,7 @@ export async function streamChat(
       user_message: userMessage,
       selected_node_ids: selectedNodeIds,
       extraction_enabled: extractionEnabled,
+      web_search_mode: webSearchMode,
     }),
   })
 
@@ -211,7 +234,7 @@ export async function streamChat(
     if (done) break
     buffer += decoder.decode(value, { stream: true })
 
-    /* SSE 协议: 事件之间用 \n\n 分隔, 不完整的留在 buffer 等下一帧 */
+    /* SSE protocol: events are separated by \n\n; an incomplete one stays in the buffer for the next frame */
     const chunks = buffer.split('\n\n')
     buffer = chunks.pop() ?? ''
 
@@ -222,13 +245,13 @@ export async function streamChat(
         const data = JSON.parse(line.slice(6)) as ChatStreamEvent
         onEvent(data)
       } catch {
-        /* 跳过损坏 chunk, 让流继续 */
+        /* skip the corrupted chunk and keep the stream going */
       }
     }
   }
 }
 
-/** 后端健康检查返回; boot_id 用于识别后端进程是否被重启过。 */
+/** Backend health-check response; boot_id is used to detect whether the backend process has been restarted. */
 export interface HealthDto {
   status: string
   service: string
@@ -236,7 +259,7 @@ export interface HealthDto {
 }
 
 /**
- * 拉取后端 boot_id, 失败返回空串表示"无法识别"; 由调用方决定降级策略。
+ * Fetch the backend boot_id; on failure returns an empty string meaning "unidentifiable"; the caller decides the fallback strategy.
  */
 export async function fetchBackendBootId(): Promise<string> {
   try {

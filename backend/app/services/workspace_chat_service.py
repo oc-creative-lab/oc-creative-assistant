@@ -1,7 +1,9 @@
-"""工作台底部对话框的 SSE 流（second_revision 改点 B / W5）。
+"""SSE stream for the workspace's bottom chat box (second_revision change B / W5).
 
-把被动灵感 agent 的单条输出包成 SSE 事件推给前端右栏。LLM 调用是同步阻塞的，
-放到线程里跑，避免卡住事件循环（与 chat_stream 的处理一致）。
+Wraps a single output from the passive inspiration agent into an SSE event and
+pushes it to the frontend's right panel. The LLM call is synchronous and blocking,
+so it is run in a thread to avoid blocking the event loop (consistent with how
+chat_stream handles it).
 """
 
 from __future__ import annotations
@@ -23,7 +25,7 @@ async def stream_workspace_chat(
     message: str,
     quoted_node_ids: list[str],
 ) -> AsyncIterator[str]:
-    """产出一条工作台灵感卡片事件 + done。"""
+    """Emit one workspace inspiration card event + done."""
     try:
         output = await asyncio.to_thread(
             generate_workspace_output, project_id, message, quoted_node_ids
@@ -32,5 +34,5 @@ async def stream_workspace_chat(
             {"type": "output", "output_type": output.type, "content": output.content}
         )
     except Exception:  # noqa: BLE001
-        yield _sse({"type": "error", "message": "工作台灵感生成失败, 请再试一次"})
+        yield _sse({"type": "error", "message": "Workspace inspiration generation failed, please try again"})
     yield _sse({"type": "done"})

@@ -1,9 +1,9 @@
-"""改造 1 验收测试：自动落库 + 按名去重(更新而非新建) + 撤销删除。
+"""Reform 1 acceptance tests: auto-persist + dedup by name (update instead of create) + undo delete.
 
-用 stub provider 注入确定的抽取结果，验证：
-1. 第一轮抽出"角色A" → 自动落库到 character sub-graph（无需手动接受）；
-2. 第二轮再次抽到同名"角色A"(带新属性) → 更新已有卡片，不新建第二张；
-3. DELETE 端点能撤销该节点。
+A stub provider injects deterministic extraction results to verify:
+1. First round extracts "Character A" -> auto-persisted into the character sub-graph (no manual accept needed);
+2. Second round extracts the same-named "Character A" again (with new attributes) -> updates the existing card, doesn't create a second one;
+3. The DELETE endpoint can undo (delete) the node.
 """
 
 import uuid
@@ -28,13 +28,13 @@ class _StubProvider:
 
 
 def _project() -> dict:
-    return client.post("/api/projects", json={"name": f"改造1-{uuid.uuid4().hex[:6]}"}).json()
+    return client.post("/api/projects", json={"name": f"reform1-{uuid.uuid4().hex[:6]}"}).json()
 
 
 def _session_with_msg(project_id: str) -> tuple[str, str]:
     session = client.post("/api/sessions", json={"project_id": project_id, "title": "t"}).json()
     with SessionLocal.begin() as db:
-        msg = append_message(db, session_id=session["id"], role="assistant", content="好")
+        msg = append_message(db, session_id=session["id"], role="assistant", content="OK")
         mid = msg.id
     return session["id"], mid
 
@@ -62,33 +62,33 @@ def test_autoapply_then_dedup_updates_same_card(monkeypatch):
     project = _project()
     session_id, mid = _session_with_msg(project["id"])
 
-    # 第一轮：创建角色A，自动落库（无需手动接受）
+    # First round: create Character A, auto-persisted (no manual accept needed)
     res1 = _run_extractor(
         monkeypatch, session_id, project["id"], mid,
-        StructuredEntity(type="character", name="角色A", attributes={"魔法": "火系"}),
-        "创建一个角色叫角色A",
+        StructuredEntity(type="character", name="Character A", attributes={"magic": "fire-type"}),
+        "Create a character called Character A",
     )
     assert res1["extraction_count"] == 1
-    # extraction_applied 暴露已落库卡片
-    assert any(it["change_type"] == "create_node" and it["title"] == "角色A" for it in res1["extraction_applied"])
+    # extraction_applied exposes the persisted card
+    assert any(it["change_type"] == "create_node" and it["title"] == "Character A" for it in res1["extraction_applied"])
 
     nodes = _char_nodes(project)
-    a_nodes = [n for n in nodes if n["title"] == "角色A"]
-    assert len(a_nodes) == 1  # 已自动落库
+    a_nodes = [n for n in nodes if n["title"] == "Character A"]
+    assert len(a_nodes) == 1  # already auto-persisted
 
-    # 第二轮：补充特征 → 更新同一张卡，不新建
+    # Second round: add a trait -> update the same card, don't create a new one
     res2 = _run_extractor(
         monkeypatch, session_id, project["id"], mid,
-        StructuredEntity(type="character", name="角色A", attributes={"外貌": "红发"}),
-        "角色A是红发",
+        StructuredEntity(type="character", name="Character A", attributes={"appearance": "red hair"}),
+        "Character A has red hair",
     )
     assert any(it["change_type"] == "update_node" for it in res2["extraction_applied"])
 
     nodes2 = _char_nodes(project)
-    a_nodes2 = [n for n in nodes2 if n["title"] == "角色A"]
-    assert len(a_nodes2) == 1  # 仍然只有一张卡片
-    assert "红发" in a_nodes2[0]["content"]  # 新信息已并入
-    assert "火系" in a_nodes2[0]["content"]  # 旧信息保留
+    a_nodes2 = [n for n in nodes2 if n["title"] == "Character A"]
+    assert len(a_nodes2) == 1  # still only one card
+    assert "red hair" in a_nodes2[0]["content"]  # new info merged in
+    assert "fire-type" in a_nodes2[0]["content"]  # old info preserved
 
 
 def _nodes_in(graph_id: str):
@@ -96,10 +96,10 @@ def _nodes_in(graph_id: str):
 
 
 def test_dedup_update_applies_to_world_and_plot(monkeypatch):
-    """同样的去重→更新逻辑对世界观 / 剧情节点同样生效（不止角色）。"""
+    """The same dedup -> update logic works for worldbuilding / plot nodes too (not just characters)."""
     cases = [
-        ("world", "worldbuilding", "world_graph_id", "火焰王国", {"气候": "炎热"}, {"统治者": "炎帝"}),
-        ("plot", "plot", "plot_graph_id", "第一章相遇", {"地点": "车站"}, {"结果": "结盟"}),
+        ("world", "worldbuilding", "world_graph_id", "Flame Kingdom", {"climate": "hot"}, {"ruler": "Flame Emperor"}),
+        ("plot", "plot", "plot_graph_id", "Chapter 1: The Encounter", {"location": "station"}, {"result": "alliance"}),
     ]
     for entity_type, _node_type, graph_key, name, attr1, attr2 in cases:
         project = _project()
@@ -108,19 +108,19 @@ def test_dedup_update_applies_to_world_and_plot(monkeypatch):
         _run_extractor(
             monkeypatch, session_id, project["id"], mid,
             StructuredEntity(type=entity_type, name=name, attributes=attr1),
-            f"提到{name}",
+            f"Mention {name}",
         )
         first = [n for n in _nodes_in(project[graph_key]) if n["title"] == name]
-        assert len(first) == 1, f"{entity_type} 首轮应落库 1 张卡"
+        assert len(first) == 1, f"{entity_type} should persist 1 card on the first round"
 
-        # 再次提到同名 → 更新而非新建
+        # Mention the same name again -> update instead of create
         _run_extractor(
             monkeypatch, session_id, project["id"], mid,
             StructuredEntity(type=entity_type, name=name, attributes=attr2),
-            f"补充{name}",
+            f"Add to {name}",
         )
         again = [n for n in _nodes_in(project[graph_key]) if n["title"] == name]
-        assert len(again) == 1, f"{entity_type} 同名不应重复新建"
+        assert len(again) == 1, f"{entity_type} should not create a duplicate for the same name"
         content = again[0]["content"]
         assert list(attr1.values())[0] in content and list(attr2.values())[0] in content
 
@@ -130,8 +130,8 @@ def test_delete_node_endpoint_undoes(monkeypatch):
     session_id, mid = _session_with_msg(project["id"])
     _run_extractor(
         monkeypatch, session_id, project["id"], mid,
-        StructuredEntity(type="character", name="临时角色", attributes={}),
-        "加个临时角色",
+        StructuredEntity(type="character", name="Temp Character", attributes={}),
+        "Add a temp character",
     )
     node_id = _char_nodes(project)[0]["id"]
 

@@ -15,7 +15,7 @@ const handlePositions = [
 </script>
 
 <template>
-  <!-- Loose 连接模式下，一个端点既能发起连线，也能作为连线落点。 -->
+  <!-- In Loose connection mode, a handle can both start a connection and be a connection target. -->
   <Handle
     v-for="handle in handlePositions"
     :id="handle.id"

@@ -1,10 +1,12 @@
-"""Agent 编排涉及的 Pydantic 数据契约。
+"""Pydantic data contracts involved in agent orchestration.
 
-集中放在这里让 LangGraph 各节点只依赖 ``app.agents.schemas`` 一个入口, 后续
-若需要把 LLM 输出协议从 function_calling 切回 json_schema 也只是一处改动。
+Centralizing them here lets every LangGraph node depend on the single entry
+point ``app.agents.schemas``; if the LLM output protocol later needs to switch
+from function_calling back to json_schema, it is a one-place change.
 
-每个 agent 输出都强制带 ``reasoning`` 字段: 既是显式 CoT 的着陆点, 也方便用户
-在 UI 上看到"它为什么这么建议", 与 staging 表的 ``reason`` 字段呼应。
+Every agent output is required to carry a ``reasoning`` field: it is both the
+landing spot for explicit CoT and a convenient way for users to see in the UI
+"why it suggests this", echoing the ``reason`` field of the staging table.
 """
 
 from __future__ import annotations
@@ -16,13 +18,15 @@ from pydantic import BaseModel, Field, model_validator
 
 
 class _LlmStructuredOutput(BaseModel):
-    """所有 agent 输出 schema 的基类。
+    """Base class for all agent output schemas.
 
-    OpenAI 兼容服务(尤其 DeepSeek)的 function_calling 协议偶尔会把 list / dict
-    类型的字段二次序列化成 JSON 字符串塞进 tool call 参数, 让 Pydantic 直接抛
-    ``list_type`` 这类校验错误。这里在 ``mode='before'`` 阶段对顶层 dict 字段
-    做一次轻量解析: 看起来像 JSON 数组或对象的字符串就尝试 ``json.loads``,
-    解析失败保持原样交由后续校验环节定性。
+    The function_calling protocol of OpenAI-compatible services (especially
+    DeepSeek) occasionally double-serializes list / dict fields into JSON
+    strings stuffed into tool call arguments, making Pydantic throw validation
+    errors like ``list_type``. Here, during the ``mode='before'`` stage, a
+    lightweight parse is applied to top-level dict fields: strings that look like
+    a JSON array or object are passed to ``json.loads``; on parse failure they
+    are left as-is for later validation to classify.
     """
 
     @model_validator(mode="before")
@@ -56,7 +60,7 @@ IntentLiteral = Literal[
     "simulation",
     "small_talk",
 ]
-"""主导意图取值; small_talk 兜底所有不归入四种 agent 的闲聊。"""
+"""Primary intent values; small_talk is the fallback for all chit-chat that does not fall into the four agents."""
 
 ChangeTypeLiteral = Literal[
     "create_node",
@@ -65,18 +69,19 @@ ChangeTypeLiteral = Literal[
     "delete_node",
     "delete_edge",
 ]
-"""staging 表支持的画布变更类型; delete 同样走 staging 用户确认, HITL 保证不会
-   绕过用户直接删内容, 因此可以与 create / update 共用一条通道。"""
-
-LikelihoodLiteral = Literal["high", "medium", "low"]
+"""Canvas change types supported by the staging table; delete also goes through
+   staging user confirmation, and HITL guarantees content is never deleted
+   directly without the user, so it can share a single channel with
+   create / update."""
 
 
 class IntentClassification(_LlmStructuredOutput):
-    """intent_router 的结构化输出, 把用户消息归类到一个 agent 类型上。
+    """Structured output of intent_router, classifying the user message into one agent type.
 
-    primary 决定 graph 路由到哪个 agent 节点, 也是装配器选择回复主线
-    (语气、副作用归属) 的依据。confidence 留作前端调试与未来阈值控制用,
-    暂不参与路由决策。
+    primary decides which agent node the graph routes to, and is also the basis
+    for the assembler to choose the reply's main thread (tone, side-effect
+    attribution). confidence is kept for frontend debugging and future threshold
+    control, and does not participate in routing decisions for now.
     """
 
     primary: IntentLiteral
@@ -85,10 +90,12 @@ class IntentClassification(_LlmStructuredOutput):
 
 
 class ProposedChange(_LlmStructuredOutput):
-    """Agent 想做的画布变更, 进 staging 表等待用户确认。
+    """A canvas change the agent wants to make, entering the staging table to await user confirmation.
 
-    ``pending_id`` 给同一 batch 内的新节点分配临时占位 id, 让边可以引用尚未
-    落库的新节点; 提交时再用真实 node_id 回填, 解决"先节点后边"的依赖问题。
+    ``pending_id`` assigns a temporary placeholder id to a new node within the
+    same batch, so edges can reference a new node not yet persisted; the real
+    node_id is backfilled at commit time, solving the "node before edge"
+    dependency problem.
     """
 
     change_type: ChangeTypeLiteral
@@ -98,8 +105,16 @@ class ProposedChange(_LlmStructuredOutput):
     reason: str = ""
 
 
+class WebSourceItem(BaseModel):
+    """A web search hit surfaced to the frontend as a link card."""
+
+    title: str = ""
+    url: str
+    snippet: str = ""
+
+
 class InspirationOutput(_LlmStructuredOutput):
-    """灵感发散 agent 输出, 重点是开放式建议, 不强制写画布。"""
+    """Inspiration agent output, focused on open-ended suggestions, not forced to write to the canvas."""
 
     reasoning: str
     suggestions: list[str] = Field(default_factory=list)
@@ -108,19 +123,21 @@ class InspirationOutput(_LlmStructuredOutput):
 
 
 class ResearchOutput(_LlmStructuredOutput):
-    """研究 / 检索 agent 输出, 必须带引用, 默认不写画布。"""
+    """Research / retrieval agent output, must carry citations, does not write to the canvas by default."""
 
     reasoning: str
     summary: str
     referenced_node_ids: list[str] = Field(default_factory=list)
     proposed_changes: list[ProposedChange] = Field(default_factory=list)
+    web_sources: list[WebSourceItem] = Field(default_factory=list)
 
 
 class StructureOutput(_LlmStructuredOutput):
-    """结构化 agent 输出, 主要用于产出新节点和新关系。
+    """Structure agent output, mainly used to produce new nodes and new relations.
 
-    与 InspirationOutput / ResearchOutput 保持同一组字段, 让 chat_assembler
-    在装配 cited_node_ids 时不区分 intent 即可统一处理。
+    Keeps the same set of fields as InspirationOutput / ResearchOutput, so that
+    chat_assembler can handle cited_node_ids uniformly without distinguishing
+    intent.
     """
 
     reasoning: str
@@ -129,8 +146,12 @@ class StructureOutput(_LlmStructuredOutput):
     proposed_changes: list[ProposedChange] = Field(default_factory=list)
 
 
+LikelihoodLiteral = Literal["high", "medium", "low"]
+"""Branch likelihood in simulation mode (compatibility with existing settings)."""
+
+
 class SimulationBranch(_LlmStructuredOutput):
-    """单条假设走向。"""
+    """A single hypothetical direction."""
 
     scenario: str
     likelihood: LikelihoodLiteral
@@ -139,30 +160,34 @@ class SimulationBranch(_LlmStructuredOutput):
 
 
 class SimulationOutput(_LlmStructuredOutput):
-    """假设推演 agent 输出, 列出多条走向供用户选择, 永不写画布。"""
+    """Simulation agent output, listing multiple directions for the user to choose from, never writes to the canvas."""
 
     reasoning: str
     branches: list[SimulationBranch] = Field(default_factory=list)
 
 
 class ChatAssemblerOutput(_LlmStructuredOutput):
-    """对话装配器输出, 把结构化 agent 结果转成自然语言气泡。
+    """Chat assembler output, turning structured agent results into a natural-language bubble.
 
-    ``staging_summary`` 是可选的一行摘要, 渲染在气泡尾部告诉用户"我准备改 N 处",
-    与 staging 面板形成上下呼应。
+    ``staging_summary`` is an optional one-line summary rendered at the tail of
+    the bubble, telling the user "I'm about to change N places", forming a
+    top-to-bottom echo with the staging panel.
     """
 
     reply_text: str
     cited_node_ids: list[str] = Field(default_factory=list)
     staging_summary: str = ""
+    web_sources: list[WebSourceItem] = Field(default_factory=list)
 
 
 class ChatMetadataOutput(_LlmStructuredOutput):
-    """chat_assembler 第二步: 已生成 reply_text 后, 单独抽 metadata。
+    """chat_assembler step two: after reply_text is generated, extract metadata separately.
 
-    分离的目的: reply_text 走 token 流式生成不能用 function_calling, 而
-    cited_node_ids / staging_summary 这类元数据没必要流式, 一次性 structured
-    返回即可。两个调用合起来仍构成完整 ChatAssemblerOutput, 对外契约不变。
+    Purpose of the split: reply_text uses token streaming generation and cannot
+    use function_calling, whereas metadata like cited_node_ids /
+    staging_summary need not be streamed and can be returned in one structured
+    call. The two calls together still form a complete ChatAssemblerOutput, with
+    the external contract unchanged.
     """
 
     cited_node_ids: list[str] = Field(default_factory=list)
@@ -170,24 +195,26 @@ class ChatMetadataOutput(_LlmStructuredOutput):
 
     
 class SummaryOutput(_LlmStructuredOutput):
-    """摘要压缩节点的结构化输出。
+    """Structured output of the summary compression node.
 
-    ``key_facts`` 让 LLM 显式列出"本段对话锁定的关键事实", 既保证压缩不漏点,
-    也方便上层在调试或 UI 提示里抓"这次摘要保住了哪些信息"。
+    ``key_facts`` makes the LLM explicitly list "the key facts locked in by this
+    segment of conversation", both ensuring the compression misses nothing and
+    making it easy for upper layers to grab "which information this summary
+    preserved" in debugging or UI hints.
     """
 
     summary: str
     key_facts: list[str] = Field(default_factory=list)
 
 
-# --- first_revision 阶段 4：后台 B-agent 输出契约 ---
+# --- first_revision stage 4: background B-agent output contracts ---
 
 EntityTypeLiteral = Literal["character", "world", "plot"]
-"""structured_extractor 抽出的实体类型; 映射到 sub-graph 分区与 node_type。"""
+"""Entity types extracted by structured_extractor; mapped to sub-graph partitions and node_type."""
 
 
 class StructuredEntity(_LlmStructuredOutput):
-    """从自由对话里抽出的一个实体（角色 / 世界观 / 剧情）。"""
+    """An entity extracted from free-form conversation (Character / Worldbuilding / Plot)."""
 
     type: EntityTypeLiteral
     name: str
@@ -195,7 +222,7 @@ class StructuredEntity(_LlmStructuredOutput):
 
 
 class StructuredRelation(_LlmStructuredOutput):
-    """实体之间的关系；source_name / target_name 引用本轮抽出的实体名。"""
+    """A relation between entities; source_name / target_name reference entity names extracted this turn."""
 
     source_name: str
     target_name: str
@@ -203,14 +230,14 @@ class StructuredRelation(_LlmStructuredOutput):
 
 
 class DeferredField(_LlmStructuredOutput):
-    """尚未补全、值得后续追问的字段（喂给 question_planner）。"""
+    """A field not yet filled in and worth following up on later (fed to question_planner)."""
 
     entity: str
     field: str
 
 
 class StructuredExtractionOutput(_LlmStructuredOutput):
-    """structured_extractor 的结构化输出（Agent B 之一）。"""
+    """Structured output of structured_extractor (one of the B-agents)."""
 
     reasoning: str = ""
     entities: list[StructuredEntity] = Field(default_factory=list)
@@ -219,7 +246,7 @@ class StructuredExtractionOutput(_LlmStructuredOutput):
 
 
 class QuestionPlannerOutput(_LlmStructuredOutput):
-    """question_planner 的结构化输出（Agent B 之二）。"""
+    """Structured output of question_planner (another of the B-agents)."""
 
     reasoning: str = ""
     next_question: str = ""
@@ -227,13 +254,14 @@ class QuestionPlannerOutput(_LlmStructuredOutput):
 
 
 WorkspaceOutputLiteral = Literal["search", "rag", "question", "feedback"]
-"""工作台被动 agent 的输出类型，前端按此分发到不同卡片。"""
+"""Output types of the passive workspace agent; the frontend dispatches to different cards accordingly."""
 
 
 class WorkspaceInspirationOutput(_LlmStructuredOutput):
-    """工作台轻量灵感 agent 的结构化输出（second_revision 改点 B / W5）。
+    """Structured output of the lightweight workspace inspiration agent (second_revision change B / W5).
 
-    被动响应：用户在底部对话框发消息（可带引用节点）时才产出一条卡片。
+    Passive response: a single card is produced only when the user sends a
+    message (optionally with referenced nodes) in the bottom dialog box.
     """
 
     reasoning: str = ""
@@ -242,10 +270,11 @@ class WorkspaceInspirationOutput(_LlmStructuredOutput):
 
 
 class SeedOutput(_LlmStructuredOutput):
-    """项目种子压缩输出（first_revision 阶段 5）。
+    """Project seed compression output (first_revision stage 5).
 
-    seed_compressor 把项目当前状态压成这份结构化快照，落到 ProjectSeedORM，
-    供 Chat Agent 启动注入（~500 tokens 量级）。
+    seed_compressor compresses the project's current state into this structured
+    snapshot, persisting it to ProjectSeedORM, for the Chat Agent to inject at
+    startup (~500 tokens scale).
     """
 
     worldview_summary: str = ""

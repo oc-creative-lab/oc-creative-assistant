@@ -4,10 +4,10 @@ import type { ProjectDetail } from '../types/project'
 import { getProjectDetail } from '../api/projectApi'
 
 /**
- * 当前项目 store（first_revision 决策 6）。
+ * Current project store (first_revision decision 6).
  *
- * 持有当前打开项目的元数据：name / description / 三个 sub-graph id / 最新种子。
- * 工作台三视图（阶段 3）从这里取对应的 graph_id。
+ * Holds the metadata of the currently open project: name / description / the three sub-graph ids / the latest seed.
+ * The three workspace views (phase 3) get their corresponding graph_id from here.
  */
 export const useProjectStore = defineStore('project', () => {
   const detail = ref<ProjectDetail | null>(null)
@@ -18,7 +18,7 @@ export const useProjectStore = defineStore('project', () => {
   const characterGraphId = computed(() => detail.value?.character_graph_id ?? null)
   const worldGraphId = computed(() => detail.value?.world_graph_id ?? null)
 
-  /** 加载指定项目详情；若已是当前项目可强制刷新。 */
+  /** Load the details of a given project; can force-refresh if it is already the current project. */
   async function loadProject(projectId: string, force = false): Promise<void> {
     if (!force && detail.value?.id === projectId) return
     isLoading.value = true
@@ -26,14 +26,14 @@ export const useProjectStore = defineStore('project', () => {
     try {
       detail.value = await getProjectDetail(projectId)
     } catch (e) {
-      error.value = e instanceof Error ? e.message : '项目加载失败'
+      error.value = e instanceof Error ? e.message : 'Failed to load project'
       detail.value = null
     } finally {
       isLoading.value = false
     }
   }
 
-  /** 清空当前项目（退出工作台时调用）。 */
+  /** Clear the current project (called when leaving the workspace). */
   function reset(): void {
     detail.value = null
     error.value = ''
