@@ -20,9 +20,12 @@ from app.schemas import (
     ChatResponse,
     ChatSessionCreateRequest,
     ChatSessionPayload,
+    SessionRenameRequest,
+    SessionTitleRequest,
 )
 from app.services.chat_service import (
     append_session_message,
+    delete_chat_session,
     create_session,
     create_staging_batch,
     get_session_messages,
@@ -31,6 +34,8 @@ from app.services.chat_service import (
     resolve_staging_batch,
     resolve_staging_item,
     run_chat_turn,
+    rename_chat_session,
+    generate_session_title,
 )
 from app.services.chat_stream import stream_chat_turn
 from fastapi.responses import StreamingResponse
@@ -51,6 +56,30 @@ async def list_project_chat_sessions(project_id: str) -> list[ChatSessionPayload
     return list_sessions(project_id)
 
 
+@router.delete("/sessions/{session_id}", status_code=204)
+async def delete_chat_session_route(session_id: str) -> None:
+    """Delete a chat session and its messages / staging."""
+    delete_chat_session(session_id)
+
+
+@router.patch("/sessions/{session_id}", response_model=ChatSessionPayload)
+async def rename_chat_session_route(
+    session_id: str,
+    payload: SessionRenameRequest,
+) -> ChatSessionPayload:
+    """Rename a chat session."""
+    return rename_chat_session(session_id, payload.title)
+
+
+@router.post("/sessions/{session_id}/title", response_model=ChatSessionPayload)
+async def generate_chat_session_title(
+    session_id: str,
+    payload: SessionTitleRequest,
+) -> ChatSessionPayload:
+    """Generate an LLM title from the first user message and persist it."""
+    return generate_session_title(session_id, payload.user_message)
+
+    
 @router.get("/sessions/{session_id}/messages", response_model=list[ChatMessagePayload])
 async def list_chat_messages(session_id: str) -> list[ChatMessagePayload]:
     """Read the full message history of a session."""

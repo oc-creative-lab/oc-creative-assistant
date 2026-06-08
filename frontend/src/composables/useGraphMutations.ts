@@ -10,8 +10,10 @@ interface Options {
   selectedEdgeId: Ref<string>
   setGraphSnapshot: (snapshot: CreativeGraphSnapshot, shouldPushToCanvas?: boolean) => void
   scheduleAutoSave: (delayMs?: number) => void
+  recordHistory?: () => void
+  undo?: () => void
+  redo?: () => void
 }
-
 /**
  * Centralizes graph mutations triggered by the right detail panel and keyboard shortcuts.
  *
@@ -21,6 +23,7 @@ interface Options {
  */
 export function useGraphMutations(options: Options) {
   const { graphSnapshot, selectedNodeId, selectedEdgeId, setGraphSnapshot, scheduleAutoSave } = options
+  const { recordHistory, undo, redo } = options
 
   function handleNodeUpdated(updatedNode: CreativeFlowNode) {
     const nextSnapshot: CreativeGraphSnapshot = {
@@ -49,6 +52,7 @@ export function useGraphMutations(options: Options) {
     if (!confirmed) {
       return
     }
+    recordHistory?.()
     const nextSnapshot: CreativeGraphSnapshot = {
       nodes: graphSnapshot.value.nodes.filter((item) => item.id !== nodeId),
       edges: graphSnapshot.value.edges.filter((edge) => edge.source !== nodeId && edge.target !== nodeId),
@@ -60,6 +64,7 @@ export function useGraphMutations(options: Options) {
   }
 
   function handleEdgeDeleted(edgeId: string) {
+    recordHistory?.()
     const nextSnapshot: CreativeGraphSnapshot = {
       nodes: graphSnapshot.value.nodes,
       edges: graphSnapshot.value.edges.filter((edge) => edge.id !== edgeId),
@@ -77,6 +82,19 @@ export function useGraphMutations(options: Options) {
   }
 
   function handleGlobalKeydown(event: KeyboardEvent) {
+    if ((event.ctrlKey || event.metaKey) && (event.key === 'z' || event.key === 'Z')) {
+      if (isTypingTarget(event.target)) return
+      event.preventDefault()
+      if (event.shiftKey) redo?.()
+      else undo?.()
+      return
+    }
+    if ((event.ctrlKey || event.metaKey) && (event.key === 'y' || event.key === 'Y')) {
+      if (isTypingTarget(event.target)) return
+      event.preventDefault()
+      redo?.()
+      return
+    }
     if (event.key !== 'Delete' && event.key !== 'Backspace') {
       return
     }

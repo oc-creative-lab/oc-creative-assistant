@@ -1,11 +1,18 @@
 <script setup lang="ts">
 import { nextTick, onMounted, ref, watch } from 'vue'
+import { marked } from 'marked'
 import { useRouter } from 'vue-router'
 import { storeToRefs } from 'pinia'
 import { useChatStore } from '../stores/useChatStore'
 import { rebuildProjectSeed } from '../api/projectApi'
 import InlineEntityCard from '../components/chat/InlineEntityCard.vue'
 import StagingPanel from '../components/chat/StagingPanel.vue'
+
+marked.use({ gfm: true, breaks: true })
+
+function renderMarkdown(text: string): string {
+  return marked.parse(text) as string
+}
 
 /**
  * Full-screen chat workspace (first_revision stage 4, the core innovation).
@@ -89,7 +96,12 @@ async function handleExit() {
             <span v-if="message.role === 'assistant' && message.agentType" class="chat-msg__agent">
               {{ AGENT_LABELS[message.agentType] ?? message.agentType }}
             </span>
-            <div class="chat-msg__bubble">{{ message.content }}</div>
+            <div
+              v-if="message.role === 'assistant'"
+              class="chat-msg__bubble chat-msg__bubble--md"
+              v-html="renderMarkdown(message.content)"
+            ></div>
+            <div v-else class="chat-msg__bubble">{{ message.content }}</div>
             <div v-if="message.applied?.length" class="chat-msg__applied">
               <InlineEntityCard
                 v-for="item in message.applied"
@@ -102,7 +114,7 @@ async function handleExit() {
           </div>
 
           <div v-if="streamingReply" class="chat-msg chat-msg--assistant">
-            <div class="chat-msg__bubble">{{ streamingReply }}</div>
+            <div class="chat-msg__bubble chat-msg__bubble--md" v-html="renderMarkdown(streamingReply)"></div>
           </div>
           <p v-else-if="isStreaming" class="chat-workspace__progress">{{ progressLabel }}</p>
           <p v-if="error" class="chat-workspace__error">{{ error }}</p>
@@ -205,6 +217,41 @@ async function handleExit() {
 .chat-msg--user .chat-msg__bubble {
   background: var(--accent);
   color: #fff;
+}
+.chat-msg__bubble--md {
+  white-space: normal;
+}
+.chat-msg__bubble--md :deep(p) {
+  margin: 0 0 8px;
+}
+.chat-msg__bubble--md :deep(p:last-child) {
+  margin-bottom: 0;
+}
+.chat-msg__bubble--md :deep(ul),
+.chat-msg__bubble--md :deep(ol) {
+  margin: 4px 0 8px;
+  padding-left: 18px;
+}
+.chat-msg__bubble--md :deep(strong) {
+  font-weight: 600;
+}
+.chat-msg__bubble--md :deep(code) {
+  background: rgba(0, 0, 0, 0.06);
+  padding: 1px 5px;
+  border-radius: 4px;
+  font-size: 12px;
+}
+.chat-msg__bubble--md :deep(pre) {
+  background: rgba(0, 0, 0, 0.06);
+  padding: 8px 10px;
+  border-radius: 8px;
+  overflow-x: auto;
+}
+.chat-msg__bubble--md :deep(h1),
+.chat-msg__bubble--md :deep(h2),
+.chat-msg__bubble--md :deep(h3) {
+  font-size: 14px;
+  margin: 8px 0 4px;
 }
 .chat-msg__applied {
   width: 100%;

@@ -180,6 +180,15 @@ def _apply_create_edge(
         )
         return
 
+    src_node = db.get(NodeORM, source)
+    tgt_node = db.get(NodeORM, target)
+    if src_node.node_type != "plot" or tgt_node.node_type != "plot":
+        logger.info(
+            "create_edge skipped: non-plot endpoint staging=%s src=%s tgt=%s",
+            record.id, src_node.node_type, tgt_node.node_type,
+        )
+        return
+
     relation_type = str(payload.get("relation_type") or "relates_to")
     label = str(payload.get("label") or relation_type)
 

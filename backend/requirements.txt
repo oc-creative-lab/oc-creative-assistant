@@ -10,3 +10,4 @@ langchain-openai
 langgraph
 langgraph-checkpoint-sqlite
 tiktoken
+python-multipart

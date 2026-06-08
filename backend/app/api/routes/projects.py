@@ -4,7 +4,9 @@ Project CRUD plus seed read/rebuild. The route layer only does HTTP mapping;
 lifecycle and sub-graph creation are delegated to project_service.
 """
 
-from fastapi import APIRouter, HTTPException
+import json
+
+from fastapi import APIRouter, File, HTTPException, UploadFile
 from fastapi.responses import StreamingResponse
 
 from app.schemas import (
@@ -31,7 +33,7 @@ from app.services.project_service import (
     rebuild_seed,
     update_project,
 )
-
+from app.services.project_io import export_project_oc, import_project_oc
 
 router = APIRouter(prefix="/api/projects", tags=["projects"])
 
@@ -66,6 +68,30 @@ async def remove_project(project_id: str) -> None:
     delete_project(project_id)
 
 
+@router.get("/{project_id}/export.oc")
+async def export_project_oc_route(project_id: str) -> dict:
+    """Export a lossless .oc snapshot of the project (all three boards)."""
+    try:
+        return export_project_oc(project_id)
+    except ValueError as exc:
+        raise HTTPException(status_code=404, detail=str(exc))
+
+
+@router.post("/import.oc", response_model=ProjectDetailPayload)
+async def import_project_oc_route(file: UploadFile = File(...)) -> ProjectDetailPayload:
+    """Import a .oc snapshot into a NEW project; returns the created project's details."""
+    raw = await file.read()
+    try:
+        data = json.loads(raw.decode("utf-8"))
+    except Exception as exc:  # noqa: BLE001
+        raise HTTPException(status_code=400, detail=f"Invalid .oc file: {exc}")
+    try:
+        project_id = import_project_oc(data)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc))
+    return get_project_detail(project_id)
+
+    
 @router.get("/{project_id}/staging", response_model=list[AgentStagingBatchPayload])
 async def read_project_staging(
     project_id: str, status: str | None = "pending"

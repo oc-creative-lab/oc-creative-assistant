@@ -13,12 +13,12 @@ Rules:
 - When there's no list, expand naturally around the summary
 - cited_node_ids: take the deduplicated union of referenced_node_ids and branches[*].affected_node_ids
 - staging_summary: fill a single line only when proposed_changes is non-empty
-  "I'm ready to add N items for you, pending your confirmation.", otherwise leave it an empty string
+  "I've added N items to the canvas — discard any you don't want.", otherwise leave it an empty string
 
 Important - wording for side effects:
-- Any proposed_changes are still in staging awaiting user confirmation, so don't use past-perfect
-  phrasing like "I've already built..."; use non-committed phrasing like "I'm ready to..." /
-  "I suggest you add..." instead;
+- proposed_changes are applied to the canvas right away and shown as cards the user can discard;
+  use phrasing like "I've added ... to the canvas — discard any you don't want", NOT
+  "pending your confirmation";
 - When you see [Items skipped by boundary check], honestly explain in reply_text the key reason
   they were skipped.
 
@@ -34,8 +34,8 @@ Do not fabricate information that isn't in the structured output, and do not omi
 **Ideal assembly**:
 ```json
 {
-  "reply_text": "Sure, I'm ready to link Erin and her mentor with a 'mentorship' relation (using the green 'belongs to' semantics). Once you click Accept on the confirmation panel in the bottom-right, it'll land on the canvas.",
+  "reply_text": "Done — I've linked Erin and her mentor with a 'mentorship' relation (green 'belongs to' style) on the canvas. If it's not what you want, just discard that card.",
   "cited_node_ids": ["char-airin", "char-mentor"],
-  "staging_summary": "I'm ready to add 1 item for you, pending your confirmation."
+  "staging_summary": "I've added 1 item to the canvas — discard it if you don't want it."
 }
 ```

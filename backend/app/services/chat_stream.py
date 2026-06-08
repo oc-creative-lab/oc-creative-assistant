@@ -23,6 +23,7 @@ from typing import Any
 from app.agents.graph import get_agent_graph
 from app.core.settings import get_app_settings
 from app.db.database import SessionLocal
+from app.db.models import NodeORM
 from app.schemas import ChatRequest
 from app.services.chat_service import require_session
 
@@ -95,6 +96,21 @@ def _build_error_event(
     }
 
 
+def _resolve_related_nodes(node_ids: list[str]) -> list[dict[str, str]]:
+    """Resolve cited node ids to lightweight {id, title, node_type} for the chat UI."""
+    ids = list(node_ids or [])
+    if not ids:
+        return []
+    with SessionLocal() as db:
+        rows = db.query(NodeORM).filter(NodeORM.id.in_(ids)).all()
+    by_id = {n.id: n for n in rows}
+    return [
+        {"id": n.id, "title": n.title, "node_type": n.node_type}
+        for nid in ids
+        if (n := by_id.get(nid)) is not None
+    ]
+
+
 def _build_events(node_name: str, node_output: Any) -> list[dict[str, Any]]:
     """Node output -> list of SSE events (a main event + metadata events attached to key nodes)."""
     events: list[dict[str, Any]] = [
@@ -124,6 +140,7 @@ def _build_events(node_name: str, node_output: Any) -> list[dict[str, Any]]:
                 "type": "reply_ready",
                 "reply_text": assembler.reply_text,
                 "cited_node_ids": list(assembler.cited_node_ids),
+                "related_nodes": _resolve_related_nodes(assembler.cited_node_ids),
                 "staging_summary": assembler.staging_summary,
                 "web_sources": [item.model_dump() for item in assembler.web_sources],
             })

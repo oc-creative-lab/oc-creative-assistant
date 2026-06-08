@@ -10,6 +10,12 @@ export interface ChatSessionDto {
   updated_at: string
 }
 
+export interface RelatedNodeDto {
+  id: string
+  title: string
+  node_type: string
+}
+
 /** Web search source link shown under research replies. */
 export interface WebSourceDto {
   title: string
@@ -82,6 +88,33 @@ export async function createChatSession(projectId: string, title = ''): Promise<
 /** List the sessions under a given project, newest created first. */
 export async function listProjectSessions(projectId: string): Promise<ChatSessionDto[]> {
   return requestJson<ChatSessionDto[]>(`/api/projects/${projectId}/sessions`)
+}
+
+/** Delete a chat session (messages / staging cascade on the backend). */
+export async function deleteChatSession(sessionId: string): Promise<void> {
+  await requestJson<void>(`/api/sessions/${sessionId}`, { method: 'DELETE' })
+}
+
+/** Rename a chat session. */
+export async function renameChatSession(
+  sessionId: string,
+  title: string,
+): Promise<ChatSessionDto> {
+  return requestJson<ChatSessionDto>(`/api/sessions/${sessionId}`, {
+    method: 'PATCH',
+    body: JSON.stringify({ title }),
+  })
+}
+
+/** Ask the backend to summarize the first user message into a session title. */
+export async function generateSessionTitle(
+  sessionId: string,
+  userMessage: string,
+): Promise<ChatSessionDto> {
+  return requestJson<ChatSessionDto>(`/api/sessions/${sessionId}/title`, {
+    method: 'POST',
+    body: JSON.stringify({ user_message: userMessage }),
+  })
 }
 
 /** Read the full message history of a session, oldest first. */
@@ -160,6 +193,7 @@ export type ChatStreamEvent =
       cited_node_ids: string[]
       staging_summary: string
       web_sources?: WebSourceDto[]
+      related_nodes?: RelatedNodeDto[]
     }
   | {
       type: 'persistence_done'

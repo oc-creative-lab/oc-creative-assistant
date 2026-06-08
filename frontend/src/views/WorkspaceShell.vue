@@ -3,13 +3,12 @@ import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { useProjectStore } from '../stores/useProjectStore'
 import { useGraphStore } from '../stores/useGraphStore'
 import { useChatStore } from '../stores/useChatStore'
-import { mockWorkspaceStatus } from '../mocks/workspaceMock'
 import { usePanelResize } from '../composables/usePanelResize'
 import { provideWorkspaceChatContext } from '../composables/useWorkspaceChatContext'
 import WorkspaceSidebar from '../components/workspace/WorkspaceSidebar.vue'
 import RightStageOutput from '../components/workspace/RightStageOutput.vue'
 import BottomComposer from '../components/workspace/BottomComposer.vue'
-import StatusBar from '../components/workspace/StatusBar.vue'
+import ProjectIoButtons from '../components/workspace/ProjectIoButtons.vue'
 import PanelToggleButton from '../components/workspace/PanelToggleButton.vue'
 
 /**
@@ -23,11 +22,11 @@ const chatStore = useChatStore()
 const { triggerGraphRefresh } = provideWorkspaceChatContext()
 
 const LEFT_MIN = 200
-const LEFT_MAX = 480
+const LEFT_MAX = 460
 const LEFT_DEFAULT = 280
-const RIGHT_MIN = 220
-const RIGHT_MAX = 560
-const RIGHT_DEFAULT = 340
+const RIGHT_MIN = 280
+const RIGHT_MAX = 760
+const RIGHT_DEFAULT = 440
 const COLLAPSED_WIDTH = 36
 
 const leftOpen = ref(true)
@@ -122,6 +121,9 @@ onBeforeUnmount(() => {
 
       <!-- Center -->
       <div class="workspace-shell__center">
+        <header class="workspace-topbar">
+          <ProjectIoButtons />
+        </header>
         <section class="workspace-shell__view">
           <router-view />
         </section>
@@ -156,7 +158,6 @@ onBeforeUnmount(() => {
       </aside>
     </main>
 
-    <StatusBar :status="mockWorkspaceStatus" />
   </div>
 </template>
 
@@ -185,9 +186,18 @@ onBeforeUnmount(() => {
   min-width: 0;
   min-height: 0;
   display: grid;
-  grid-template-rows: minmax(0, 1fr) auto;
+  grid-template-rows: auto minmax(0, 1fr) auto;
   border-left: 1px solid var(--border);
   border-right: 1px solid var(--border);
+}
+
+.workspace-topbar {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  padding: 8px 12px;
+  border-bottom: 1px solid var(--border);
+  background: var(--panel);
 }
 
 .workspace-shell__view {

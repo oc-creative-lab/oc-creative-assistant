@@ -349,6 +349,16 @@ class ChatSessionPayload(BaseModel):
     updated_at: datetime
 
 
+class SessionRenameRequest(BaseModel):
+    """Request body for renaming a chat session."""
+    title: str
+
+
+class SessionTitleRequest(BaseModel):
+    """Request body for LLM-summarized session title generation."""
+    user_message: str
+
+    
 class ChatMessageCreateRequest(BaseModel):
     """Request body for appending a chat message; from Phase 4 on, the graph entry point replaces the direct POST."""
 

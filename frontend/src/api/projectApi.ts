@@ -4,7 +4,8 @@ import type {
   ProjectSeed,
   ProjectSummary,
 } from '../types/project'
-import { requestJson } from './http'
+import { requestJson,backendBaseUrl } from './http'
+
 
 /**
  * Project API client (first_revision phase 1).
@@ -12,6 +13,48 @@ import { requestJson } from './http'
  * Maps to the backend /api/projects/*. Reading/writing sub-graph nodes/edges still goes through
  * graphApi's loadSubgraph / saveSubgraph (by graph_id).
  */
+export interface OcExport {
+  format: string
+  version: number
+  project: { name: string; description: string }
+  nodes: Array<{
+    id: string
+    node_type: string
+    title: string
+    content: string
+    meta: { tags?: string[]; status?: string; fields?: Record<string, string> }
+    position_x: number
+    position_y: number
+    sort_order: number
+  }>
+  edges: Array<{
+    source: string
+    target: string
+    label: string
+    relation_type: string
+    edge_type: string
+    sort_order: number
+  }>
+}
+
+/** Fetch the parsed project snapshot (used for PDF rendering). */
+export async function getProjectExport(projectId: string): Promise<OcExport> {
+  return requestJson<OcExport>(`/api/projects/${projectId}/export.oc`)
+}
+
+/** Download a lossless .oc snapshot of the project. */
+export async function exportProjectOc(projectId: string): Promise<Blob> {
+  const data = await requestJson<unknown>(`/api/projects/${projectId}/export.oc`)
+  return new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' })
+}
+/** Import a .oc file into a new project; returns the new project's detail. */
+export async function importProjectOc(file: File): Promise<{ id: string }> {
+  const form = new FormData()
+  form.append('file', file)
+  const res = await fetch(`${backendBaseUrl}/api/projects/import.oc`, { method: 'POST', body: form })
+  if (!res.ok) throw new Error(`import failed: HTTP ${res.status}`)
+  return res.json()
+}
 
 /** List all projects (project library cards). */
 export async function listProjects(): Promise<ProjectSummary[]> {

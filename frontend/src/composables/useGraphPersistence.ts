@@ -1,4 +1,4 @@
-import { ref } from 'vue'
+import { computed, ref } from 'vue'
 import type { GraphDto, IndexingStatusDto, SaveGraphDto } from '../api/graphApi'
 import { loadDefaultGraph, saveProjectGraph } from '../api/graphApi'
 import type { CreativeFlowEdge, CreativeFlowNode, CreativeGraphSnapshot } from '../types/node'
@@ -39,6 +39,39 @@ export function useGraphPersistence(
   const saveState = ref('Loading…')
 
   let autoSaveTimer: ReturnType<typeof setTimeout> | null = null
+
+  const MAX_HISTORY = 50
+  const undoStack = ref<CreativeGraphSnapshot[]>([])
+  const redoStack = ref<CreativeGraphSnapshot[]>([])
+  const canUndo = computed(() => undoStack.value.length > 0)
+  const canRedo = computed(() => redoStack.value.length > 0)
+
+  function cloneSnapshot(s: CreativeGraphSnapshot): CreativeGraphSnapshot {
+    return JSON.parse(JSON.stringify({ nodes: s.nodes, edges: s.edges }))
+  }
+
+  /** Record the current snapshot as an undo checkpoint (call BEFORE applying a user edit). */
+  function recordHistory() {
+    undoStack.value.push(cloneSnapshot(graphSnapshot.value))
+    if (undoStack.value.length > MAX_HISTORY) undoStack.value.shift()
+    redoStack.value = []
+  }
+
+  function undo() {
+    const prev = undoStack.value.pop()
+    if (!prev) return
+    redoStack.value.push(cloneSnapshot(graphSnapshot.value))
+    setGraphSnapshot(prev, true)
+    scheduleAutoSave(CANVAS_AUTO_SAVE_DELAY_MS)
+  }
+
+  function redo() {
+    const next = redoStack.value.pop()
+    if (!next) return
+    undoStack.value.push(cloneSnapshot(graphSnapshot.value))
+    setGraphSnapshot(next, true)
+    scheduleAutoSave(CANVAS_AUTO_SAVE_DELAY_MS)
+  }
 
   function setGraphSnapshot(snapshot: CreativeGraphSnapshot, shouldPushToCanvas = false) {
     graphSnapshot.value = snapshot
@@ -106,6 +139,8 @@ export function useGraphPersistence(
       projectId.value = graph.project.id
       projectName.value = graph.project.name
       setGraphSnapshot(snapshot, true)
+      undoStack.value = []
+      redoStack.value = []
       isGraphReady.value = true
       saveState.value = 'Loaded'
       applyIndexingStatus(graph.indexing)
@@ -119,6 +154,7 @@ export function useGraphPersistence(
   }
 
   function handleGraphChanged(snapshot: CreativeGraphSnapshot) {
+    recordHistory()
     setGraphSnapshot(snapshot)
     scheduleAutoSave(CANVAS_AUTO_SAVE_DELAY_MS)
   }
@@ -143,5 +179,10 @@ export function useGraphPersistence(
     loadGraph,
     handleGraphChanged,
     handleSaveGraph,
+    recordHistory,
+    undo,
+    redo,
+    canUndo,
+    canRedo,
   }
 }

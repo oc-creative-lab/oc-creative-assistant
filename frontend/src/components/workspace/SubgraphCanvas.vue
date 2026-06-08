@@ -11,10 +11,12 @@ import {
 } from '../../composables/useWorkspaceChatContext'
 import { useProjectStore } from '../../stores/useProjectStore'
 import { useCenterStageStore } from '../../stores/useCenterStageStore'
+import { useNodeNavStore } from '../../stores/useNodeNavStore'
 import { nodeTypeOptions } from '../../utils/nodeFactory'
 import type { CreativeNodeType } from '../../types/node'
 import CanvasWorkspace from '../canvas/CanvasWorkspace.vue'
 import NodeDetailView from './NodeDetailView.vue'
+import ProjectIoButtons from './ProjectIoButtons.vue'
 
 // After a workspace save, debounce 30s before triggering a seed rebuild (one of the first_revision phase 5 triggers).
 const SEED_REBUILD_DEBOUNCE_MS = 30000
@@ -37,6 +39,7 @@ const props = defineProps<{
 const { applyIndexingStatus } = useIndexingStatus()
 const projectStore = useProjectStore()
 const centerStage = useCenterStageStore()
+const nodeNav = useNodeNavStore()
 const workspaceSelectedNodeIds = injectWorkspaceSelectedNodeIds()
 const graphRefresh = injectWorkspaceGraphRefresh()
 
@@ -67,6 +70,9 @@ const {
   clearAutoSave,
   loadGraph,
   handleGraphChanged,
+  recordHistory,
+  undo,
+  redo,
 } = useGraphPersistence(applyIndexingStatus, {
   load: () => loadSubgraph(props.graphId),
   save: async (dto) => {
@@ -79,6 +85,17 @@ const {
 const selectedNodeId = ref('')
 const selectedEdgeId = ref('')
 const createNodeRequest = ref<{ type: CreativeNodeType; nonce: number } | null>(null)
+const focusNodeRequest = ref<{ id: string; nonce: number } | null>(null)
+
+function tryFocusPending() {
+  const pendingId = nodeNav.pendingNodeId
+  if (!pendingId) return
+  if (!graphSnapshot.value.nodes.some((n) => n.id === pendingId)) return
+  nodeNav.consume()
+  selectedNodeId.value = pendingId
+  selectedEdgeId.value = ''
+  focusNodeRequest.value = { id: pendingId, nonce: Date.now() }
+}
 const highlightedNodeIds = ref<string[]>([])
 const highlightedEdgeIds = ref<string[]>([])
 
@@ -91,6 +108,9 @@ const { handleGlobalKeydown } = useGraphMutations({
   selectedEdgeId,
   setGraphSnapshot,
   scheduleAutoSave,
+  recordHistory,
+  undo,
+  redo,
 })
 
 const TYPE_LABEL_EN: Record<string, string> = {
@@ -127,6 +147,7 @@ async function reload() {
   const { initialNodeId } = await loadGraph()
   selectedNodeId.value = initialNodeId
   selectedEdgeId.value = ''
+  tryFocusPending()
 }
 
 async function handleGraphRefreshNeeded() {
@@ -163,6 +184,8 @@ async function handleGraphRefreshNeeded() {
 watch(selectedNodeId, (nodeId) => {
   workspaceSelectedNodeIds.value = nodeId ? [nodeId] : []
 })
+
+watch(() => nodeNav.pendingNodeId, () => tryFocusPending())
 
 onMounted(() => {
   window.addEventListener('keydown', handleGlobalKeydown, true)
@@ -213,6 +236,7 @@ watch(
         :initial-edges="graphEdges"
         :graph-version="graphVersion"
         :create-node-request="createNodeRequest"
+        :focus-node-request="focusNodeRequest"
         :highlighted-node-ids="highlightedNodeIds"
         :highlighted-edge-ids="highlightedEdgeIds"
         :create-types="createTypes"
@@ -232,7 +256,13 @@ watch(
           </button>
         </template>
         <template #toolbar-trailing>
-          <span class="toolbar-save-status">{{ isSaving ? 'Saving…' : saveState }}</span>
+          <span class="toolbar-save-status">
+            <span
+              class="toolbar-save-dot"
+              :class="{ 'is-saving': isSaving, 'is-error': saveState.includes('failed') }"
+            ></span>
+            {{ isSaving ? 'Saving…' : saveState }}
+          </span>
         </template>
       </CanvasWorkspace>
     </div>
@@ -255,7 +285,37 @@ watch(
 }
 .subgraph-canvas__body {
   min-height: 0;
-  /* A single-cell grid lets CanvasWorkspace fill the full height; otherwise Vue Flow collapses to 0 height and the canvas doesn't show */
   display: grid;
+}
+.toolbar-save-status {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+.toolbar-save-dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: #10b981;
+  transition: background 0.3s ease;
+}
+.toolbar-save-dot.is-saving {
+  background: #f59e0b;
+}
+.toolbar-save-dot.is-error {
+  background: #dc2626;
+}
+.toolbar-io-btn {
+  padding: 4px 10px;
+  font-size: 12px;
+  border: 1px solid var(--border, #e5e7eb);
+  border-radius: 6px;
+  background: #fff;
+  color: var(--text);
+  cursor: pointer;
+}
+.toolbar-io-btn:hover {
+  border-color: var(--accent);
+  color: var(--accent-deep);
 }
 </style>

@@ -180,7 +180,6 @@ textarea:focus-visible {
   background: var(--node-accent);
 }
 .creative-node:hover {
-  transform: translateY(-3px);
   box-shadow: var(--shadow-md);
   border-color: var(--border-strong);
 }

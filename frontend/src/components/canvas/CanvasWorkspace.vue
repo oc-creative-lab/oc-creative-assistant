@@ -47,6 +47,7 @@ const props = defineProps<{
   initialEdges: CreativeFlowEdge[]
   graphVersion: number
   createNodeRequest: { type: CreativeNodeType; nonce: number } | null
+  focusNodeRequest?: { id: string; nonce: number } | null
   /* IDs that "just appeared", computed by AppShell as a diff after staging is accepted; cleared once the animation finishes */
   highlightedNodeIds: string[]
   highlightedEdgeIds: string[]
@@ -134,7 +135,6 @@ const {
   onEdgeContextMenu,
   onSelectionContextMenu,
   onNodeDoubleClick,
-  onEdgeDoubleClick,
   screenToFlowCoordinate,
   getSelectedNodes,
 } = useVueFlow({ id: FLOW_ID })
@@ -143,8 +143,10 @@ const {
   handleCreateNode,
   handleClearCanvas,
   handleConnect,
+  handleEdgeUpdate,
   handleNodeDragStop,
   updateEdgeRelation,
+  updateEdgeLabel,
   updateNodeData,
   removeNode,
   removeEdge,
@@ -160,8 +162,8 @@ const {
   onEdgeSelected: (id) => emit('edgeSelected', id),
 })
 
-// Called when a node component does an inline edit; writes data back and triggers auto-save.
 provide('updateNodeData', updateNodeData)
+provide('updateEdgeLabel', updateEdgeLabel)
 
 const composer = useComposerStore()
 const centerStage = useCenterStageStore()
@@ -277,27 +279,18 @@ onNodeDoubleClick(({ node }) => {
   })
 })
 
-onEdgeDoubleClick(({ event, edge }) => {
-  event.preventDefault()
-  event.stopPropagation()
-  const { x, y } = pointerFromEvent(event)
-  const point = clampMenuPosition(x, y)
-  const relationType = (edge.data?.relationType ?? DEFAULT_RELATION_TYPE) as CreativeRelationType
-  edgeRelationMenu.value = {
-    show: true,
-    x: point.x,
-    y: point.y,
-    edgeId: edge.id,
-    relationType,
-  }
-  skipNextFocus.value = true
-  emit('edgeSelected', edge.id)
-})
-
 function handleEdgeRelationSelect(relationType: CreativeRelationType) {
   if (!edgeRelationMenu.value.edgeId) return
   updateEdgeRelation(edgeRelationMenu.value.edgeId, relationType)
   closeEdgeRelationMenu()
+}
+
+function onPickRelation(relationType: CreativeRelationType) {
+  selectedRelationType.value = relationType
+  isRelationSelectOpen.value = false
+  if (props.selectedEdgeId) {
+    updateEdgeRelation(props.selectedEdgeId, relationType)
+  }
 }
 
 function nodeRef(nodeId: string) {
@@ -356,14 +349,10 @@ function handleMenuEdgeChangeRelation() {
   if (!edgeId) return
   const edge = edges.value.find((item) => item.id === edgeId)
   const relationType = (edge?.data?.relationType ?? DEFAULT_RELATION_TYPE) as CreativeRelationType
-  edgeRelationMenu.value = {
-    show: true,
-    x,
-    y,
-    edgeId,
-    relationType,
-  }
   closeContextMenu()
+  requestAnimationFrame(() => {
+    edgeRelationMenu.value = { show: true, x, y, edgeId, relationType }
+  })
 }
 
 function quoteNodes(refs: { id: string; type: string; title: string }[]) {
@@ -499,6 +488,9 @@ watch(
   () => props.selectedEdgeId,
   () => {
     syncEdgePresentation()
+    const edge = edges.value.find((item) => item.id === props.selectedEdgeId)
+    const relationType = edge?.data?.relationType as CreativeRelationType | undefined
+    if (relationType) selectedRelationType.value = relationType
   },
   { immediate: true },
 )
@@ -553,6 +545,13 @@ watch(
     handleCreateNode(props.createNodeRequest.type)
   },
 )
+
+watch(
+  () => props.focusNodeRequest?.nonce,
+  () => {
+    if (props.focusNodeRequest) selectNode(props.focusNodeRequest.id, true)
+  },
+)
 </script>
 
 <template>
@@ -561,35 +560,6 @@ watch(
     <header class="canvas-toolbar">
       <div class="toolbar-group toolbar-group--create">
         <slot name="toolbar-leading" />
-      </div>
-
-      <div class="toolbar-sep" aria-hidden="true" />
-
-      <div class="toolbar-group toolbar-group--canvas">
-        <label class="relation-picker" for="new-edge-relation">
-          Relation
-          <div class="custom-select-container">
-            <div
-              class="custom-select-trigger"
-              :class="{ 'is-open': isRelationSelectOpen }"
-              @click="isRelationSelectOpen = !isRelationSelectOpen"
-            >
-              <span>{{ getRelationLabel(selectedRelationType) }}</span>
-              <div class="custom-select-arrow"></div>
-            </div>
-            <ul class="custom-select-options" v-show="isRelationSelectOpen">
-              <li
-                v-for="option in RELATION_TYPE_OPTIONS"
-                :key="option.value"
-                class="custom-select-option"
-                :class="{ 'is-selected': selectedRelationType === option.value }"
-                @click="selectedRelationType = option.value; isRelationSelectOpen = false"
-              >
-                {{ option.label }}
-              </li>
-            </ul>
-          </div>
-        </label>
       </div>
 
       <div class="toolbar-spacer" />
@@ -628,6 +598,7 @@ watch(
         :connection-mode="ConnectionMode.Loose"
         :connect-on-click="false"
         :connection-radius="24"
+        :edges-updatable="true"
         :fit-view-on-init="true"
         :pan-on-drag="[1]"
         :selection-on-drag="true"
@@ -635,6 +606,7 @@ watch(
         :multi-selection-key-code="null"
         :selection-mode="SelectionMode.Partial"
         @connect="handleConnect"
+        @edge-update="handleEdgeUpdate"
         @node-click="handleNodeClick"
         @edge-click="handleEdgeClick"
         @node-drag-stop="handleNodeDragStop"

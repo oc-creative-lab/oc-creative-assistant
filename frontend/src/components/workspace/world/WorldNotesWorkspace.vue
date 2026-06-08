@@ -10,6 +10,7 @@ import {
 } from '../../../composables/useWorkspaceChatContext'
 import { useProjectStore } from '../../../stores/useProjectStore'
 import { useWorldViewStore } from '../../../stores/useWorldViewStore'
+import { useNodeNavStore } from '../../../stores/useNodeNavStore'
 import type { CreativeFlowNode } from '../../../types/node'
 import { createCreativeNode } from '../../../utils/nodeFactory'
 import {
@@ -32,6 +33,7 @@ const props = defineProps<{ graphId: string }>()
 const { applyIndexingStatus } = useIndexingStatus()
 const projectStore = useProjectStore()
 const worldViewStore = useWorldViewStore()
+const nodeNav = useNodeNavStore()
 const { mode: viewMode } = storeToRefs(worldViewStore)
 const graphRefresh = injectWorkspaceGraphRefresh()
 const selectedId = ref('')
@@ -138,6 +140,15 @@ function deleteSelectedNote() {
   deleteNote(selectedId.value)
 }
 
+function tryFocusPending() {
+  const pendingId = nodeNav.pendingNodeId
+  if (!pendingId) return
+  if (!nodes.value.some((n) => n.id === pendingId)) return
+  nodeNav.consume()
+  selectedId.value = pendingId
+  worldViewStore.setMode('notes')
+}
+
 async function reload() {
   clearAutoSave()
   await loadGraph()
@@ -152,6 +163,7 @@ async function reload() {
   if (!selectedId.value || !nodes.value.some((node) => node.id === selectedId.value)) {
     selectedId.value = nodes.value[0]?.id ?? ''
   }
+  tryFocusPending()
 }
 
 async function handleGraphRefreshNeeded() {
@@ -177,6 +189,8 @@ watch(
     void reload()
   },
 )
+
+watch(() => nodeNav.pendingNodeId, () => tryFocusPending())
 </script>
 
 <template>

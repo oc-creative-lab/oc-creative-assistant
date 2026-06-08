@@ -76,6 +76,21 @@ def list_project_sessions(db: Session, project_id: str) -> list[ChatSessionORM]:
     )
 
 
+def delete_session(db: Session, session_id: str) -> None:
+    """Delete a session; messages / staging cascade via FK ondelete=CASCADE."""
+    record = require_session(db, session_id)
+    db.delete(record)
+    db.flush()
+
+
+def rename_session(db: Session, session_id: str, title: str) -> ChatSessionORM:
+    """Update a session's title."""
+    record = require_session(db, session_id)
+    record.title = title
+    db.flush()
+    return record
+
+    
 def list_session_messages(db: Session, session_id: str) -> list[ChatMessageORM]:
     """List session messages in chronological order."""
     return list(

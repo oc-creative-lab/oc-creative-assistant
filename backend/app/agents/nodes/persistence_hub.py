@@ -119,8 +119,15 @@ def persistence_hub_node(state: AgentState) -> dict[str, Any]:
                 items=staging_items,
             )
 
+    applied: list[dict[str, Any]] = []
+    if batch_id:
+        from app.agents.nodes.structured_extractor import _auto_apply, _emit_applied
+        applied = _auto_apply(batch_id)
+        _emit_applied(applied)
+
     return {
         "assistant_message_id": assistant_message_id,
         "staging_batch_id": batch_id,
         "staging_count": len(staging_items),
+        "extraction_applied": applied,
     }

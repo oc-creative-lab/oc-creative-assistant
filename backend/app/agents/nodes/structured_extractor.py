@@ -123,12 +123,15 @@ def structured_extractor_node(state: AgentState) -> dict[str, Any]:
     items: list[AgentStagingCreateItem] = []
     # Entity name -> the id referenced at persistence time (existing = real node_id, new = pending_id).
     ref_by_name: dict[str, str] = {}
+    # Entity name -> node_type, used to keep only plot↔plot relations.
+    type_by_name: dict[str, str] = {}
 
     # One-shot dedup: find existing nodes by project + node_type + title.
     with SessionLocal() as db:
         pending_seq = 0
         for entity in out.entities:
             node_type = _NODE_TYPE_BY_ENTITY.get(entity.type, "character")
+            type_by_name[entity.name] = node_type
             existing = (
                 db.query(NodeORM)
                 .filter(
@@ -172,6 +175,9 @@ def structured_extractor_node(state: AgentState) -> dict[str, Any]:
         source = ref_by_name.get(relation.source_name)
         target = ref_by_name.get(relation.target_name)
         if not (source and target):
+            continue
+        if type_by_name.get(relation.source_name) != "plot" \
+           or type_by_name.get(relation.target_name) != "plot":
             continue
         relation_type = _RELATION_BY_LABEL.get(relation.label, "relates_to")
         items.append(

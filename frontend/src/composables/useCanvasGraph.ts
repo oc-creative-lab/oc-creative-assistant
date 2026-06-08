@@ -1,5 +1,5 @@
 import { ref, type Ref } from 'vue'
-import { addEdge } from '@vue-flow/core'
+import { addEdge, updateEdge } from '@vue-flow/core'
 import type { Connection, Edge } from '@vue-flow/core'
 import type {
   CreativeFlowEdge,
@@ -182,6 +182,19 @@ export function useCanvasGraph(options: Options) {
     options.onEdgeSelected(edge.id)
   }
 
+  function handleEdgeUpdate(payload: { edge: Edge; connection: Connection }) {
+    const { edge, connection } = payload
+    if (!connection.source || !connection.target || connection.source === connection.target) {
+      return
+    }
+    options.edges.value = updateEdge(
+      edge,
+      connection,
+      options.edges.value as Edge[],
+    ) as CreativeFlowEdge[]
+    emitGraphChanged()
+  }
+
   function handleNodeDragStop() {
     emitGraphChanged()
   }
@@ -204,12 +217,26 @@ export function useCanvasGraph(options: Options) {
     options.onEdgeSelected(edgeId)
   }
 
+  function updateEdgeLabel(edgeId: string, label: string) {
+    options.edges.value = options.edges.value.map((edge) => {
+      if (edge.id !== edgeId) return edge
+      return normalizeEdge({
+        ...edge,
+        label,
+        data: { ...(edge.data ?? {}), label },
+      })
+    })
+    emitGraphChanged()
+  }
+
   return {
     handleCreateNode,
     handleClearCanvas,
     handleConnect,
+    handleEdgeUpdate,
     handleNodeDragStop,
     updateEdgeRelation,
+    updateEdgeLabel,
     updateNodeData,
     removeNode,
     removeEdge,

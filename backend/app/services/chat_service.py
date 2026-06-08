@@ -16,6 +16,8 @@ logger = logging.getLogger(__name__)
 from fastapi import HTTPException
 
 from app.agents.graph import get_agent_graph
+from langchain_core.messages import HumanMessage, SystemMessage
+from app.llm.factory import get_llm_provider
 from app.db.database import SessionLocal
 from app.db.models import AgentStagingORM, ChatMessageORM, ChatSessionORM
 from app.indexing.sync import safe_sync_node_index
@@ -37,13 +39,14 @@ from app.schemas import (
 )
 from app.services.chat_repository import (
     append_message,
+    delete_session,
     insert_session,
-    insert_staging_batch,
     list_project_sessions,
     list_session_messages,
     list_staging_by_batch,
     list_staging_by_project,
     list_staging_by_session,
+    rename_session,
     require_message,
     require_session,
     require_staging,
@@ -130,6 +133,49 @@ def list_sessions(project_id: str) -> list[ChatSessionPayload]:
         require_project(db, project_id)
         return [_session_to_payload(r) for r in list_project_sessions(db, project_id)]
 
+
+def delete_chat_session(session_id: str) -> None:
+    """Delete a session and its messages / staging (cascade)."""
+    with SessionLocal.begin() as db:
+        delete_session(db, session_id)
+
+
+def rename_chat_session(session_id: str, title: str) -> ChatSessionPayload:
+    """Rename a session; empty titles fall back to a placeholder."""
+    with SessionLocal.begin() as db:
+        record = rename_session(db, session_id, title.strip() or "Untitled chat")
+        return _session_to_payload(record)
+
+
+_TITLE_SYSTEM = (
+    "You name chat sessions. Reply with ONLY a very short title for the user's first "
+    "message, in the user's language: at most 4 words, or at most 5 Chinese characters. "
+    "No quotes, no punctuation, no explanation — just the core topic."
+)
+
+
+def _summarize_title(user_message: str) -> str:
+    """Ask the LLM for a short session title; fall back to truncation on failure."""
+    text = user_message.strip()
+    if not text:
+        return "New chat"
+    try:
+        reply = get_llm_provider().chat(
+            [SystemMessage(content=_TITLE_SYSTEM), HumanMessage(content=text)]
+        )
+        title = (reply or "").strip().strip('"').strip().splitlines()[0].strip()
+        return title[:14] or text[:10]
+    except Exception as error:  # noqa: BLE001
+        logger.warning("session title generation failed, falling back: %s", error)
+        return text[:10]
+
+
+def generate_session_title(session_id: str, user_message: str) -> ChatSessionPayload:
+    """Summarize the first user message into a title and persist it."""
+    title = _summarize_title(user_message)
+    with SessionLocal.begin() as db:
+        record = rename_session(db, session_id, title)
+        return _session_to_payload(record)
 
 # ---- Messages ----
 

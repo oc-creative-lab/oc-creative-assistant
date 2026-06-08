@@ -46,7 +46,7 @@ _VALID_NODE_TYPES = {
 _UPDATABLE_FIELDS = {"title", "content", "node_type"}
 _TITLE_MAX = 100
 _CONTENT_MAX = 2000
-_MAX_CHANGES_PER_BATCH = 10
+_MAX_CHANGES_PER_BATCH = 15
 _AGENTS_WITH_CHANGES = {"inspiration", "research", "structure"}
 
 

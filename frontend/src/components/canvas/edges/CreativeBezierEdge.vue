@@ -1,9 +1,11 @@
 <script setup lang="ts">
-import { computed } from 'vue'
+import { computed, inject } from 'vue'
 import { EdgeLabelRenderer, getBezierPath, type EdgeProps } from '@vue-flow/core'
 import type { CreativeEdgeData } from '../../../types/node'
+import InlineEditableText from '../InlineEditableText.vue'
 
 const props = defineProps<EdgeProps<CreativeEdgeData>>()
+const updateEdgeLabel = inject<(edgeId: string, label: string) => void>('updateEdgeLabel')
 
 const path = computed(() =>
   getBezierPath({
@@ -35,12 +37,17 @@ const labelText = computed(() => (typeof props.label === 'string' ? props.label 
 
   <EdgeLabelRenderer v-if="labelText.trim()">
     <div
-      class="vue-flow__edge-text-wrapper"
+      class="vue-flow__edge-text-wrapper nodrag nopan"
       :style="{
         transform: `translate(-50%, -50%) translate(${labelX}px, ${labelY}px)`,
       }"
     >
-      <span class="vue-flow__edge-text" :style="labelStyle">{{ labelText }}</span>
+    <InlineEditableText
+        :style="labelStyle"
+        :model-value="labelText"
+        placeholder="label"
+        @save="(value: string) => updateEdgeLabel?.(id, value)"
+      />
     </div>
   </EdgeLabelRenderer>
 </template>
@@ -48,7 +55,7 @@ const labelText = computed(() => (typeof props.label === 'string' ? props.label 
 <style scoped>
 .vue-flow__edge-text-wrapper {
   position: absolute;
-  pointer-events: none;
+  pointer-events: all;
   padding: 2px 6px;
   border-radius: 4px;
   background: rgba(255, 255, 255, 0.92);

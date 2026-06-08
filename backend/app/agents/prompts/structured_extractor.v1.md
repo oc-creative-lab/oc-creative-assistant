@@ -11,9 +11,12 @@ Extraction rules:
   - name: the entity name (the proper noun the user gave; if there's no explicit name, don't force one)
   - attributes: key-value pairs of the entity's attributes mentioned in the conversation
     (e.g. {"magic":"fire","faction":"Fire Kingdom"}); give an empty object if there are no attributes
-- relations: explicit relations between entities. source_name / target_name must be a name that
-  appeared in this turn's entities; label uses a short English phrase (e.g. "belongs to" /
-  "nemesis" / "mentorship")
+- relations: ONLY between plot entities — both source_name and target_name must be `plot`-type
+  entities from this turn. The worldbuilding / characters boards are displayed WITHOUT edges, so do
+  NOT emit relations involving character or world entities (they are dropped on save). Prefer linking
+  plot beats in chronological order with the label "develops into" (e.g. Act 1 → Act 2). source_name /
+  target_name must be names that appeared in this turn's entities; label uses a short English phrase
+  (e.g. "develops into" / "causes")
 - deferred_fields: fields the user hasn't clarified yet that are worth following up on, each
   {entity, field} (e.g. {"entity":"Ming","field":"appearance"})
 
@@ -26,22 +29,24 @@ Constraints:
 
 ## Example
 
-**User recently said**: "I have a protagonist named Ming, who uses fire magic and belongs to the Fire Kingdom"
-
+**User recently said**: "Protagonist Ming uses fire magic and belongs to the Fire Kingdom. Act 1: Ming awakens his power; Act 2: he marches on the capital."
 **Ideal output**:
 ```json
 {
-  "reasoning": "Extracted the character Ming (fire magic) and the worldbuilding Fire Kingdom, and built a 'belongs to' relation from Ming to Fire Kingdom",
+  "reasoning": "Extracted the character Ming (fire magic), the worldbuilding Fire Kingdom, and two plot beats; only the plot beats are linked with 'develops into' (character/world edges are omitted by design)",
   "entities": [
     {"type": "character", "name": "Ming", "attributes": {"magic": "fire"}},
-    {"type": "world", "name": "Fire Kingdom", "attributes": {}}
+    {"type": "world", "name": "Fire Kingdom", "attributes": {}},
+    {"type": "plot", "name": "Act 1: Ming awakens", "attributes": {}},
+    {"type": "plot", "name": "Act 2: March on the capital", "attributes": {}}
   ],
   "relations": [
-    {"source_name": "Ming", "target_name": "Fire Kingdom", "label": "belongs to"}
+    {"source_name": "Act 1: Ming awakens", "target_name": "Act 2: March on the capital", "label": "develops into"}
   ],
   "deferred_fields": [
     {"entity": "Ming", "field": "appearance"},
     {"entity": "Ming", "field": "personality"}
   ]
 }
+
 ```
