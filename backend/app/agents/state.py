@@ -67,6 +67,7 @@ class AgentState(TypedDict, total=False):
     # first_revision stage 4: background B-agents (structured_extractor / question_planner).
     # When extraction_enabled is off, both nodes are no-ops throughout, and the FloatingChatDock legacy flow is unaffected.
     extraction_enabled: bool
+    auto_apply_staging: bool
     web_search_mode: str
     seed_context: str
     next_question_hint: str

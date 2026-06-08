@@ -14,7 +14,8 @@ import app.agents.nodes.structured_extractor as extractor_mod
 from app.agents.schemas import StructuredEntity, StructuredExtractionOutput
 from app.db.database import SessionLocal
 from app.main import app
-from app.services.chat_repository import append_message
+from app.schemas import AgentStagingCreateItem
+from app.services.chat_repository import append_message, insert_staging_batch
 
 client = TestClient(app)
 
@@ -45,6 +46,7 @@ def _run_extractor(monkeypatch, session_id, project_id, message_id, entity, user
     return extractor_mod.structured_extractor_node(
         {
             "extraction_enabled": True,
+            "auto_apply_staging": True,
             "session_id": session_id,
             "project_id": project_id,
             "assistant_message_id": message_id,
@@ -56,6 +58,53 @@ def _run_extractor(monkeypatch, session_id, project_id, message_id, entity, user
 
 def _char_nodes(project):
     return client.get(f"/api/graphs/{project['character_graph_id']}").json()["nodes"]
+
+
+def test_extractor_skips_pending_create_from_structure_agent(monkeypatch):
+    """structured_extractor must not duplicate a create_node already pending from structure_agent."""
+    project = _project()
+    session_id, mid = _session_with_msg(project["id"])
+
+    with SessionLocal.begin() as db:
+        insert_staging_batch(
+            db,
+            session_id=session_id,
+            message_id=mid,
+            project_id=project["id"],
+            agent_type="structure",
+            items=[
+                AgentStagingCreateItem(
+                    change_type="create_node",
+                    pending_id="pending-1",
+                    payload={
+                        "title": "Linda",
+                        "content": "Specific settings to be added.",
+                        "node_type": "character",
+                    },
+                    reasoning="Proposed by structure agent",
+                )
+            ],
+        )
+
+    out = StructuredExtractionOutput(
+        reasoning="x",
+        entities=[StructuredEntity(type="character", name="Linda", attributes={})],
+        relations=[],
+        deferred_fields=[],
+    )
+    monkeypatch.setattr(extractor_mod, "get_llm_provider", lambda: _StubProvider(out))
+    result = extractor_mod.structured_extractor_node(
+        {
+            "extraction_enabled": True,
+            "auto_apply_staging": False,
+            "session_id": session_id,
+            "project_id": project["id"],
+            "assistant_message_id": mid,
+            "user_message": "I want to create a character named Linda",
+            "recent_messages": [],
+        }
+    )
+    assert result.get("extraction_count", 0) == 0
 
 
 def test_autoapply_then_dedup_updates_same_card(monkeypatch):

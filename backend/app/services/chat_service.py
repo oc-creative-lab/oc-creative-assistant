@@ -398,6 +398,7 @@ def run_chat_turn(payload: ChatRequest) -> ChatResponse:
                 "user_message": payload.user_message,
                 "selected_node_ids": list(payload.selected_node_ids),
                 "extraction_enabled": payload.extraction_enabled,
+                "auto_apply_staging": payload.auto_apply_staging,
                 "web_search_mode": payload.web_search_mode,
                 "preferred_intent": payload.preferred_intent,
             },

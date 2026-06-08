@@ -22,6 +22,7 @@ const {
   messages,
   streamingReply,
   streamingWebSources,
+  streamingApplied,
   isStreaming,
   progressLabel,
   lastAgent,
@@ -61,7 +62,7 @@ async function scrollToBottom() {
   await nextTick()
   if (streamRef.value) streamRef.value.scrollTop = streamRef.value.scrollHeight
 }
-watch([messages, streamingReply], scrollToBottom, { deep: true })
+watch([messages, streamingReply, streamingApplied], scrollToBottom, { deep: true })
 </script>
 
 <template>
@@ -127,13 +128,26 @@ watch([messages, streamingReply], scrollToBottom, { deep: true })
           </div>
         </div>
 
-        <div v-if="streamingReply" class="chat-msg chat-msg--assistant">
-          <div class="chat-msg__bubble chat-msg__bubble--md" v-html="renderMarkdown(streamingReply)"></div>
+        <div v-if="streamingReply || streamingApplied.length" class="chat-msg chat-msg--assistant">
+          <div
+            v-if="streamingReply"
+            class="chat-msg__bubble chat-msg__bubble--md"
+            v-html="renderMarkdown(streamingReply)"
+          ></div>
           <div v-if="streamingWebSources.length" class="chat-msg__sources">
             <WebSourceCard
               v-for="(source, index) in streamingWebSources"
               :key="`stream-src-${index}`"
               :source="source"
+            />
+          </div>
+          <div v-if="streamingApplied.length" class="chat-msg__applied">
+            <InlineEntityCard
+              v-for="item in streamingApplied"
+              :key="item.node_id"
+              :item="item"
+              @edit="(id, patch) => chat.editAppliedNode(id, patch)"
+              @remove="(id) => chat.removeAppliedNode(id)"
             />
           </div>
         </div>

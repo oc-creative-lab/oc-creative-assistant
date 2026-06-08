@@ -455,6 +455,8 @@ class ChatRequest(BaseModel):
     # first_revision phase 4: ChatWorkspace full-screen chat sets this to True to enable the background B-agent;
     # FloatingChatDock does not pass it, keeping the old flow (no question_planner / structured_extractor side effects).
     extraction_enabled: bool = False
+    # When True, staging is accept_all'd immediately (inline ✅ cards + discard in chat UI).
+    auto_apply_staging: bool = False
     # auto: heuristic decides; on: force Tavily; off: never call web_search this turn.
     web_search_mode: Literal["auto", "on", "off"] = "auto"
     # User-selected agent mode; "auto" lets intent_router classify freely.

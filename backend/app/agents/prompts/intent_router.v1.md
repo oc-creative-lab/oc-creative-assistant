@@ -66,3 +66,11 @@ reasoning: the basis for the judgment, within 30 words.
 ### Example 11
 **Latest message**: "如果去买水是用什么支付呢"
 **Output**: `{"primary":"research","confidence":0.9,"reasoning":"asks which payment method applies under the project's written world rules, not open-ended brainstorming"}`
+
+### Example 12
+**Latest message**: "I want to create a character named Linda"
+**Output**: `{"primary":"structure","confidence":0.95,"reasoning":"explicit character creation request, should add a canvas node"}`
+
+### Example 13
+**Latest message**: "I want to write a story where character Lucy fights a bee"
+**Output**: `{"primary":"inspiration","confidence":0.9,"reasoning":"open-ended story brainstorming, not a lookup or bulk graph edit"}`

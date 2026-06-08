@@ -8,7 +8,6 @@ import { useProjectStore } from '../stores/useProjectStore'
 import { rebuildProjectSeed } from '../api/projectApi'
 import ChatSessionSidebar from '../components/chat/ChatSessionSidebar.vue'
 import InlineEntityCard from '../components/chat/InlineEntityCard.vue'
-import StagingPanel from '../components/chat/StagingPanel.vue'
 import WebSourceCard from '../components/chat/WebSourceCard.vue'
 
 marked.use({ gfm: true, breaks: true })
@@ -30,10 +29,10 @@ const {
   messages,
   streamingReply,
   streamingWebSources,
+  streamingApplied,
   isStreaming,
   progressLabel,
   lastAgent,
-  stagingBatches,
   error,
 } = storeToRefs(chat)
 const { detail } = storeToRefs(projectStore)
@@ -70,7 +69,7 @@ async function scrollToBottom() {
   if (streamRef.value) streamRef.value.scrollTop = streamRef.value.scrollHeight
 }
 
-watch([messages, streamingReply], scrollToBottom, { deep: true })
+watch([messages, streamingReply, streamingApplied], scrollToBottom, { deep: true })
 
 async function handleSend() {
   const text = draft.value.trim()
@@ -148,13 +147,26 @@ async function handleExit() {
             </div>
           </div>
 
-          <div v-if="streamingReply" class="chat-msg chat-msg--assistant">
-            <div class="chat-msg__bubble chat-msg__bubble--md" v-html="renderMarkdown(streamingReply)"></div>
+          <div v-if="streamingReply || streamingApplied.length" class="chat-msg chat-msg--assistant">
+            <div
+              v-if="streamingReply"
+              class="chat-msg__bubble chat-msg__bubble--md"
+              v-html="renderMarkdown(streamingReply)"
+            ></div>
             <div v-if="streamingWebSources.length" class="chat-msg__sources">
               <WebSourceCard
                 v-for="(source, index) in streamingWebSources"
                 :key="`stream-src-${index}`"
                 :source="source"
+              />
+            </div>
+            <div v-if="streamingApplied.length" class="chat-msg__applied">
+              <InlineEntityCard
+                v-for="item in streamingApplied"
+                :key="item.node_id"
+                :item="item"
+                @edit="(id, patch) => chat.editAppliedNode(id, patch)"
+                @remove="(id) => chat.removeAppliedNode(id)"
               />
             </div>
           </div>
@@ -199,18 +211,6 @@ async function handleExit() {
           </form>
         </div>
       </section>
-
-      <aside class="chat-workspace__staging">
-        <h3 class="chat-workspace__staging-title">Pending entities</h3>
-        <p v-if="stagingBatches.length === 0" class="chat-workspace__staging-hint">
-          Mention a character, place or beat and pending cards appear here.
-        </p>
-        <StagingPanel
-          :batches="stagingBatches"
-          @resolve-batch="(id, action) => chat.resolveBatch(id, action)"
-          @resolve-item="(id, action) => chat.resolveItem(id, action)"
-        />
-      </aside>
     </main>
   </div>
 </template>
@@ -269,14 +269,13 @@ async function handleExit() {
 .chat-workspace__body {
   min-height: 0;
   display: grid;
-  grid-template-columns: 220px minmax(0, 1fr) 320px;
+  grid-template-columns: 220px minmax(0, 1fr);
 }
 
 .chat-workspace__chat {
   min-height: 0;
   display: grid;
   grid-template-rows: minmax(0, 1fr) auto;
-  border-right: 1px solid var(--border, #e5e7eb);
 }
 
 .chat-workspace__stream {
@@ -427,23 +426,6 @@ async function handleExit() {
 
 .chat-workspace__error {
   color: #dc2626;
-  font-size: 13px;
-}
-
-.chat-workspace__staging {
-  min-height: 0;
-  overflow-y: auto;
-  padding: 16px;
-  background: var(--panel, #fafafa);
-}
-
-.chat-workspace__staging-title {
-  font-size: 14px;
-  margin: 0 0 10px;
-}
-
-.chat-workspace__staging-hint {
-  color: var(--muted, #888);
   font-size: 13px;
 }
 </style>

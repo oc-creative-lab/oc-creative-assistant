@@ -242,6 +242,7 @@ export async function streamChat(
   onEvent: (event: ChatStreamEvent) => void,
   extractionEnabled = false,
   webSearchMode: WebSearchMode = 'auto',
+  autoApplyStaging = false,
 ): Promise<void> {
   const response = await fetch(`${backendBaseUrl}/api/chat/stream`, {
     method: 'POST',
@@ -251,6 +252,7 @@ export async function streamChat(
       user_message: userMessage,
       selected_node_ids: selectedNodeIds,
       extraction_enabled: extractionEnabled,
+      auto_apply_staging: autoApplyStaging,
       web_search_mode: webSearchMode,
     }),
   })

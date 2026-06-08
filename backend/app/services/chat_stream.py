@@ -152,6 +152,14 @@ def _build_events(node_name: str, node_output: Any) -> list[dict[str, Any]]:
             "batch_id": node_output.get("staging_batch_id"),
             "staging_count": node_output.get("staging_count", 0),
         })
+        applied = node_output.get("extraction_applied") or []
+        if applied:
+            events.append({"type": "extraction_applied", "items": applied})
+
+    elif node_name == "structured_extractor":
+        applied = node_output.get("extraction_applied") or []
+        if applied:
+            events.append({"type": "extraction_applied", "items": applied})
 
     return events
 
@@ -176,6 +184,7 @@ async def stream_chat_turn(payload: ChatRequest) -> AsyncIterator[str]:
         "user_message": payload.user_message,
         "selected_node_ids": list(payload.selected_node_ids),
         "extraction_enabled": payload.extraction_enabled,
+        "auto_apply_staging": payload.auto_apply_staging,
         "web_search_mode": payload.web_search_mode,
     }
 

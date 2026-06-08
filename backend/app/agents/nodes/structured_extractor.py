@@ -2,18 +2,19 @@
 
 Runs after persistence_hub: extracts entities / relations from the user's recent
 free-form conversation, converts them into staging (reusing AgentStagingORM),
-then [auto-persists] (accept_all), and pushes the "added/updated" card info to
-the frontend over the streaming channel, so the user sees inline cards in the
-conversation that are added by default and can be expanded to edit or undo --
-no more proactive approval needed.
+optionally [auto-persists] (accept_all) when ``auto_apply_staging`` is true
+(workspace flow), pushing "added/updated" card info to the frontend so the user
+can expand to edit or discard. When ``auto_apply_staging`` is false (Chat
+module), items stay pending for the right-hand staging panel.
 
 Two key points of rework 1:
-1. Auto-persist: immediately accept_all after writing staging (still going
-   through AgentStagingORM + canvas_apply, not bypassing the staging mechanism);
-   the frontend renders inline cards via the extraction_applied event.
-2. Dedup by name: if a same-named entity already exists, update_node (merge new
-   attributes into content) rather than create another new card; relations
-   connect existing nodes using real node_ids.
+1. Auto-persist (workspace only): when ``auto_apply_staging`` is set, immediately
+   accept_all after writing staging (still going through AgentStagingORM +
+   canvas_apply); the frontend renders inline cards via the extraction_applied event.
+2. Dedup by name: if a same-named entity already exists on the canvas **or is
+   already pending in staging** (e.g. structure_agent proposed it this turn),
+   skip create_node; merge attributes via update_node only when a real node exists.
+   Relations connect using real node_ids or same-batch pending_ids.
 
 Works only when ``extraction_enabled`` is true; when off it is a no-op and the
 legacy chat flow is unaffected.
@@ -21,10 +22,13 @@ legacy chat flow is unaffected.
 
 from __future__ import annotations
 
+import logging
 from typing import Any
 
 from langchain_core.messages import HumanMessage, SystemMessage
 from langgraph.config import get_stream_writer
+from sqlalchemy import select
+from sqlalchemy.orm import Session
 
 from app.agents.memory import format_current_nodes
 from app.agents.prompts import load_prompt
@@ -32,11 +36,13 @@ from app.agents.structured_call import call_structured
 from app.agents.schemas import StructuredExtractionOutput
 from app.agents.state import AgentState
 from app.db.database import SessionLocal
-from app.db.models import ChatSessionORM, NodeORM
+from app.db.models import AgentStagingORM, ChatSessionORM, NodeORM
 from app.llm.factory import get_llm_provider
 from app.schemas import AgentStagingCreateItem
-from app.services.chat_repository import insert_staging_batch
+from app.services.chat_repository import insert_staging_batch, list_staging_by_batch
 
+
+logger = logging.getLogger(__name__)
 
 _SYSTEM_PROMPT = load_prompt("structured_extractor")
 
@@ -58,6 +64,30 @@ _RELATION_BY_LABEL: dict[str, str] = {
     "triggers": "causes",
     "develops into": "develops_into",
 }
+
+
+def _entity_key(node_type: str, title: str) -> tuple[str, str]:
+    return (node_type, title.strip().lower())
+
+
+def _pending_create_refs(db: Session, project_id: str) -> dict[tuple[str, str], str]:
+    """Map (node_type, title) -> pending_id for pending create_node staging rows."""
+    refs: dict[tuple[str, str], str] = {}
+    rows = db.scalars(
+        select(AgentStagingORM).where(
+            AgentStagingORM.project_id == project_id,
+            AgentStagingORM.status == "pending",
+            AgentStagingORM.change_type == "create_node",
+        )
+    )
+    for record in rows:
+        payload = record.payload_edited or record.payload or {}
+        title = str(payload.get("title") or "").strip()
+        if not title:
+            continue
+        node_type = str(payload.get("node_type") or "character")
+        refs[_entity_key(node_type, title)] = record.pending_id or record.id
+    return refs
 
 
 def _merge_content(existing: str, attributes: dict[str, str]) -> str:
@@ -126,12 +156,17 @@ def structured_extractor_node(state: AgentState) -> dict[str, Any]:
     # Entity name -> node_type, used to keep only plot↔plot relations.
     type_by_name: dict[str, str] = {}
 
-    # One-shot dedup: find existing nodes by project + node_type + title.
+    # Dedup: canvas nodes always; pending staging only in Chat confirm mode (auto_apply off).
+    # In workspace auto-apply mode, structure_agent staging is accepted before this node runs;
+    # skipping pending rows here avoids duplicate cards in Chat, but must not block a failed auto_apply.
+    chat_confirm_mode = not state.get("auto_apply_staging")
     with SessionLocal() as db:
+        pending_create_refs = _pending_create_refs(db, project_id) if chat_confirm_mode else {}
         pending_seq = 0
         for entity in out.entities:
             node_type = _NODE_TYPE_BY_ENTITY.get(entity.type, "character")
             type_by_name[entity.name] = node_type
+            key = _entity_key(node_type, entity.name)
             existing = (
                 db.query(NodeORM)
                 .filter(
@@ -157,6 +192,9 @@ def structured_extractor_node(state: AgentState) -> dict[str, Any]:
                             reasoning="Supplemented an existing card from the conversation in the background",
                         )
                     )
+            elif key in pending_create_refs:
+                # structure_agent (or an earlier pending batch) already proposed this card.
+                ref_by_name[entity.name] = pending_create_refs[key]
             else:
                 pending_seq += 1
                 pending_id = f"pending-{pending_seq}"
@@ -208,9 +246,10 @@ def structured_extractor_node(state: AgentState) -> dict[str, Any]:
             items=items,
         )
 
-    # Auto-persist: immediately accept_all (still going through canvas_apply, not bypassing staging).
-    applied = _auto_apply(batch_id)
-    _emit_applied(applied)
+    applied: list[dict[str, Any]] = []
+    if state.get("auto_apply_staging"):
+        applied = _auto_apply(batch_id)
+        _emit_applied(applied)
 
     return {
         "extraction_batch_id": batch_id,
@@ -218,6 +257,32 @@ def structured_extractor_node(state: AgentState) -> dict[str, Any]:
         "extraction_applied": applied,
         "deferred_fields": deferred,
     }
+
+
+def _applied_cards_from_batch(batch_id: str) -> list[dict[str, Any]]:
+    """Build inline-card payloads from persisted staging rows (reads DB after accept_all)."""
+    with SessionLocal() as db:
+        records = list_staging_by_batch(db, batch_id)
+
+    applied: list[dict[str, Any]] = []
+    for record in records:
+        if record.status not in ("accepted", "edited"):
+            continue
+        if record.change_type not in ("create_node", "update_node"):
+            continue
+        if not record.target_id:
+            continue
+        payload = record.payload_edited or record.payload or {}
+        applied.append(
+            {
+                "node_id": record.target_id,
+                "title": str(payload.get("title") or "Untitled"),
+                "node_type": str(payload.get("node_type") or "character"),
+                "content": str(payload.get("content") or ""),
+                "change_type": record.change_type,
+            }
+        )
+    return applied
 
 
 def _auto_apply(batch_id: str) -> list[dict[str, Any]]:
@@ -230,26 +295,11 @@ def _auto_apply(batch_id: str) -> list[dict[str, Any]]:
     from app.services.chat_service import resolve_staging_batch
 
     try:
-        records = resolve_staging_batch(
+        resolve_staging_batch(
             batch_id, AgentStagingBatchActionRequest(action="accept_all")
         )
-    except Exception:
+    except Exception as exc:
+        logger.warning("auto_apply failed for batch %s: %s", batch_id, exc)
         return []
 
-    applied: list[dict[str, Any]] = []
-    for record in records:
-        if record.change_type not in ("create_node", "update_node"):
-            continue
-        if not record.target_id:
-            continue
-        payload = record.payload_edited or record.payload
-        applied.append(
-            {
-                "node_id": record.target_id,
-                "title": str(payload.get("title") or "Untitled"),
-                "node_type": str(payload.get("node_type") or "character"),
-                "content": str(payload.get("content") or ""),
-                "change_type": record.change_type,
-            }
-        )
-    return applied
+    return _applied_cards_from_batch(batch_id)

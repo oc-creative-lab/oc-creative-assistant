@@ -1,7 +1,7 @@
 import { defineStore } from 'pinia'
 import { ref } from 'vue'
 import type {
-  AgentStagingBatchDto,
+  AgentStagingItemDto,
   AppliedEntityDto,
   ChatMessageDto,
   ChatSessionDto,
@@ -14,14 +14,19 @@ import {
   deleteChatSession,
   generateSessionTitle,
   listProjectSessions,
-  listProjectStaging,
   listSessionMessages,
+  listSessionStaging,
   renameChatSession,
-  resolveStagingBatch,
-  resolveStagingItem,
   streamChat,
 } from '../api/chatApi'
 import { deleteNode as apiDeleteNode, updateNode as apiUpdateNode } from '../api/projectApi'
+import { router } from '../router'
+
+/** Chat + workspace: auto-apply staging, show ✅ inline cards (edit / discard). */
+function usesAutoApplyStaging(): boolean {
+  const path = router.currentRoute.value.path
+  return path.startsWith('/workspace/') || path.startsWith('/chat/')
+}
 
 /** The lightweight message model used in ChatWorkspace (shared by historical messages + this turn's streaming message). */
 export interface ChatMessage {
@@ -50,11 +55,54 @@ export const useChatStore = defineStore('chat', () => {
   const messages = ref<ChatMessage[]>([])
   const streamingReply = ref('')
   const streamingWebSources = ref<WebSourceDto[]>([])
+  /** Inline ✅ cards while the current turn is still streaming (workspace auto-apply). */
+  const streamingApplied = ref<AppliedEntityDto[]>([])
   const isStreaming = ref(false)
   const progressLabel = ref('')
   const lastAgent = ref('')
-  const stagingBatches = ref<AgentStagingBatchDto[]>([])
   const error = ref('')
+
+  function _stagingItemToApplied(item: AgentStagingItemDto): AppliedEntityDto | null {
+    if (item.change_type !== 'create_node' && item.change_type !== 'update_node') return null
+    if (!item.target_id) return null
+    if (item.status !== 'accepted' && item.status !== 'edited') return null
+    const payload = item.payload_edited ?? item.payload
+    return {
+      node_id: item.target_id,
+      title: String(payload.title ?? 'Untitled'),
+      node_type: String(payload.node_type ?? 'character'),
+      content: String(payload.content ?? ''),
+      change_type: item.change_type,
+    }
+  }
+
+  function _pushApplied(target: AppliedEntityDto[], item: AppliedEntityDto) {
+    if (!target.some((a) => a.node_id === item.node_id)) target.push(item)
+  }
+
+  /** Rebuild ✅ inline cards from accepted staging (not stored on chat messages). */
+  async function hydrateAppliedIntoMessages(): Promise<void> {
+    if (!sessionId.value || !usesAutoApplyStaging()) return
+    try {
+      const batches = await listSessionStaging(sessionId.value, null)
+      const byMessage = new Map<string, AppliedEntityDto[]>()
+      for (const batch of batches) {
+        for (const item of batch.items) {
+          const applied = _stagingItemToApplied(item)
+          if (!applied) continue
+          const list = byMessage.get(item.message_id) ?? []
+          _pushApplied(list, applied)
+          byMessage.set(item.message_id, list)
+        }
+      }
+      for (const message of messages.value) {
+        const applied = byMessage.get(message.id)
+        if (applied?.length) message.applied = applied
+      }
+    } catch {
+      /* inline cards are optional UI sugar */
+    }
+  }
 
   function _toMessage(dto: ChatMessageDto): ChatMessage {
     return {
@@ -68,7 +116,10 @@ export const useChatStore = defineStore('chat', () => {
 
   /** Enter a project: load the session list, reuse the most recent one (don't auto-create on refresh). */
   async function init(targetProjectId: string): Promise<void> {
-    if (projectId.value === targetProjectId && sessionId.value) return
+    if (projectId.value === targetProjectId && sessionId.value) {
+      await hydrateAppliedIntoMessages()
+      return
+    }
     projectId.value = targetProjectId
     error.value = ''
     try {
@@ -87,12 +138,12 @@ export const useChatStore = defineStore('chat', () => {
     sessions.value = await listProjectSessions(projectId.value)
   }
 
-  /** Switch to a session and load its history + pending staging. */
+  /** Switch to a session and load its history + inline ✅ cards. */
   async function switchSession(id: string): Promise<void> {
     if (!id) return
     sessionId.value = id
     messages.value = (await listSessionMessages(id)).map(_toMessage)
-    await refreshStaging()
+    await hydrateAppliedIntoMessages()
   }
 
   /** Create a fresh chat session and switch to it (explicit user action only). */
@@ -102,7 +153,6 @@ export const useChatStore = defineStore('chat', () => {
     sessions.value = [session, ...sessions.value]
     sessionId.value = session.id
     messages.value = []
-    await refreshStaging()
   }
 
   /** Delete a session; if it was the active one, fall back to the most recent remaining (or a new one). */
@@ -121,16 +171,6 @@ export const useChatStore = defineStore('chat', () => {
     sessions.value = sessions.value.map((s) => (s.id === id ? updated : s))
   }
 
-  /** Fetch the project-level pending staging (entities extracted in the background). */
-  async function refreshStaging(): Promise<void> {
-    if (!projectId.value) return
-    try {
-      stagingBatches.value = await listProjectStaging(projectId.value, 'pending')
-    } catch {
-      /* a failed staging fetch does not block chat */
-    }
-  }
-
   let onGraphMutated: (() => void | Promise<void>) | null = null
 
   function setGraphMutatedHandler(handler: (() => void | Promise<void>) | null) {
@@ -139,6 +179,17 @@ export const useChatStore = defineStore('chat', () => {
 
   async function notifyGraphMutated() {
     if (onGraphMutated) await onGraphMutated()
+  }
+
+  /** Reload history from the server (single source of truth after each turn). */
+  async function reloadMessages(): Promise<void> {
+    if (!sessionId.value) return
+    try {
+      messages.value = (await listSessionMessages(sessionId.value)).map(_toMessage)
+      await hydrateAppliedIntoMessages()
+    } catch {
+      /* keep optimistic messages if reload fails */
+    }
   }
 
   /** Send a message, enable background extraction, and receive the reply via streaming. */
@@ -152,15 +203,18 @@ export const useChatStore = defineStore('chat', () => {
 
     const isFirstTurn = messages.value.length === 0
     const turnSessionId = sessionId.value
+    isStreaming.value = true
+    // Optimistic user bubble; backend persistence_hub also writes this turn.
     messages.value.push({ id: `local-${Date.now()}`, role: 'user', content })
     streamingReply.value = ''
     streamingWebSources.value = []
+    streamingApplied.value = []
     progressLabel.value = 'Thinking…'
-    isStreaming.value = true
     error.value = ''
     const appliedThisTurn: AppliedEntityDto[] = []
     let relatedThisTurn: RelatedNodeDto[] = []
     let stagingApplied = false
+    const shouldAutoApply = usesAutoApplyStaging()
 
     try {
       await streamChat(
@@ -179,7 +233,10 @@ export const useChatStore = defineStore('chat', () => {
             streamingWebSources.value = event.web_sources?.length ? [...event.web_sources] : []
             relatedThisTurn = event.related_nodes?.length ? [...event.related_nodes] : []
           } else if (event.type === 'extraction_applied') {
-            appliedThisTurn.push(...event.items)
+            for (const item of event.items) {
+              _pushApplied(appliedThisTurn, item)
+              _pushApplied(streamingApplied.value, item)
+            }
           } else if (event.type === 'persistence_done') {
             if (event.staging_count > 0) stagingApplied = true
           } else if (event.type === 'error') {
@@ -192,30 +249,31 @@ export const useChatStore = defineStore('chat', () => {
         },
         true, // extraction_enabled
         webSearchMode,
+        shouldAutoApply,
       )
-      // finalize this turn's assistant message (with the cards auto-persisted this turn)
-      if (streamingReply.value) {
-        messages.value.push({
-          id: `asst-${Date.now()}`,
-          role: 'assistant',
-          content: streamingReply.value,
-          agentType: lastAgent.value,
-          applied: appliedThisTurn.length ? [...appliedThisTurn] : undefined,
-          webSources: streamingWebSources.value.length ? [...streamingWebSources.value] : undefined,
-          relatedNodes: relatedThisTurn.length ? [...relatedThisTurn] : undefined,
-        })
+      // Replace optimistic local copies with server-persisted messages (avoids duplicates).
+      await reloadMessages()
+      const lastAssistant = [...messages.value].reverse().find((m) => m.role === 'assistant')
+      if (lastAssistant) {
+        const applied =
+          lastAssistant.applied?.length ? lastAssistant.applied : appliedThisTurn.length ? appliedThisTurn : streamingApplied.value
+        if (applied.length) lastAssistant.applied = [...applied]
+        if (relatedThisTurn.length) lastAssistant.relatedNodes = [...relatedThisTurn]
+        if (!lastAssistant.agentType && lastAgent.value) {
+          lastAssistant.agentType = lastAgent.value
+        }
       }
     } catch (e) {
       error.value = e instanceof Error ? e.message : 'Reply failed'
     } finally {
       streamingReply.value = ''
       streamingWebSources.value = []
+      streamingApplied.value = []
       progressLabel.value = ''
       isStreaming.value = false
-      if (appliedThisTurn.length || stagingApplied) {
+      if (shouldAutoApply && (appliedThisTurn.length || stagingApplied)) {
         await notifyGraphMutated()
       }
-      await refreshStaging()
       if (isFirstTurn) {
         try {
           const updated = await generateSessionTitle(turnSessionId, content)
@@ -225,19 +283,6 @@ export const useChatStore = defineStore('chat', () => {
         }
       }
     }
-  }
-
-  async function resolveBatch(batchId: string, action: 'accept_all' | 'reject_all'): Promise<void> {
-    await resolveStagingBatch(batchId, action)
-    await refreshStaging()
-    if (action === 'accept_all') await notifyGraphMutated()
-  }
-
-  /** Accept/reject a single staging item, then refresh. */
-  async function resolveItem(stagingId: string, action: 'accept' | 'reject'): Promise<void> {
-    await resolveStagingItem(stagingId, action)
-    await refreshStaging()
-    if (action === 'accept') await notifyGraphMutated()
   }
 
   /** Edit the title/body of the node behind a given inline card (revamp 1). */
@@ -275,10 +320,10 @@ export const useChatStore = defineStore('chat', () => {
     messages,
     streamingReply,
     streamingWebSources,
+    streamingApplied,
     isStreaming,
     progressLabel,
     lastAgent,
-    stagingBatches,
     error,
     init,
     loadSessions,
@@ -288,9 +333,6 @@ export const useChatStore = defineStore('chat', () => {
     renameSession,
     send,
     setGraphMutatedHandler,
-    refreshStaging,
-    resolveBatch,
-    resolveItem,
     editAppliedNode,
     removeAppliedNode,
   }

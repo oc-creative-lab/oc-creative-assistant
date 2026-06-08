@@ -50,6 +50,50 @@ _PROJECT_QUERY_FRAGMENTS = (
     "story nodes",
 )
 
+# Heuristic overrides when the LLM picks small_talk or returns nothing for clear creative tasks.
+_STRUCTURE_FRAGMENTS = (
+    "create a character",
+    "create character",
+    "add a character",
+    "new character",
+    "create a plot",
+    "create plot",
+    "add a node",
+    "add to the canvas",
+    "build a relation",
+    "build relation",
+    " named ",
+    "创建角色",
+    "创建人物",
+    "新建角色",
+    "添加角色",
+    "创建情节",
+    "建立关系",
+    "加到画布",
+)
+
+_INSPIRATION_FRAGMENTS = (
+    "write a story",
+    "i want to write",
+    "help me write",
+    "brainstorm",
+    "what else can",
+    "what else could",
+    "帮我想",
+    "想写",
+    "写一个故事",
+    "写故事",
+)
+
+_SIMULATION_FRAGMENTS = (
+    "what if",
+    "what would happen",
+    "would happen if",
+    "如果",
+    "会怎样",
+    "会怎么样",
+)
+
 
 def _looks_like_project_query(message: str) -> bool:
     text = message.strip().lower()
@@ -57,16 +101,55 @@ def _looks_like_project_query(message: str) -> bool:
     return any(frag in raw or frag in text for frag in _PROJECT_QUERY_FRAGMENTS)
 
 
-def _coerce_research_if_project_query(
+def _guess_intent_from_message(message: str) -> IntentClassification | None:
+    """Keyword fallback when structured intent classification is missing or too generic."""
+    text = message.strip().lower()
+    raw = message.strip()
+
+    if any(frag in text or frag in raw for frag in _SIMULATION_FRAGMENTS):
+        return IntentClassification(
+            primary="simulation",
+            confidence=0.8,
+            reasoning="Hypothetical phrasing detected by heuristic.",
+        )
+
+    if any(frag in text or frag in raw for frag in _STRUCTURE_FRAGMENTS):
+        return IntentClassification(
+            primary="structure",
+            confidence=0.85,
+            reasoning="Entity or relation creation phrasing detected by heuristic.",
+        )
+
+    if any(frag in text or frag in raw for frag in _INSPIRATION_FRAGMENTS):
+        return IntentClassification(
+            primary="inspiration",
+            confidence=0.8,
+            reasoning="Open-ended story or brainstorm phrasing detected by heuristic.",
+        )
+
+    if _looks_like_project_query(message):
+        return IntentClassification(
+            primary="research",
+            confidence=0.85,
+            reasoning="Project/story visibility or content question detected by heuristic.",
+        )
+
+    return None
+
+
+def _coerce_substantive_intent(
     intent: IntentClassification,
     user_message: str,
 ) -> IntentClassification:
-    if intent.primary != "small_talk" or not _looks_like_project_query(user_message):
+    if intent.primary != "small_talk":
+        return intent
+    guessed = _guess_intent_from_message(user_message)
+    if guessed is None:
         return intent
     return IntentClassification(
-        primary="research",
-        confidence=max(intent.confidence, 0.85),
-        reasoning="Project/story visibility or content question overrides greeting small_talk.",
+        primary=guessed.primary,
+        confidence=max(intent.confidence, guessed.confidence),
+        reasoning=guessed.reasoning,
     )
 
 
@@ -103,18 +186,14 @@ def intent_router_node(state: AgentState) -> dict[str, Any]:
     )
 
     if intent is None:
-        # When the user quoted canvas nodes, default to research instead of small_talk.
-        if state.get("current_nodes"):
+        guessed = _guess_intent_from_message(user_message)
+        if guessed is not None:
+            intent = guessed
+        elif state.get("current_nodes"):
             intent = IntentClassification(
                 primary="research",
                 confidence=0.5,
                 reasoning="Intent LLM returned no result; user quoted canvas nodes, falling back to research.",
-            )
-        elif _looks_like_project_query(user_message):
-            intent = IntentClassification(
-                primary="research",
-                confidence=0.5,
-                reasoning="Intent LLM returned no result; project/story query, falling back to research.",
             )
         else:
             intent = IntentClassification(
@@ -123,6 +202,6 @@ def intent_router_node(state: AgentState) -> dict[str, Any]:
                 reasoning="Intent LLM returned no result; falling back to small_talk.",
             )
     else:
-        intent = _coerce_research_if_project_query(intent, user_message)
+        intent = _coerce_substantive_intent(intent, user_message)
 
     return {"intent": intent}

@@ -120,7 +120,7 @@ def persistence_hub_node(state: AgentState) -> dict[str, Any]:
             )
 
     applied: list[dict[str, Any]] = []
-    if batch_id:
+    if batch_id and state.get("auto_apply_staging"):
         from app.agents.nodes.structured_extractor import _auto_apply, _emit_applied
         applied = _auto_apply(batch_id)
         _emit_applied(applied)

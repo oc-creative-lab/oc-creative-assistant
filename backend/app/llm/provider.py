@@ -13,7 +13,9 @@ keyed by schema name, which is convenient for offline development and CI.
 
 from __future__ import annotations
 
+import json
 import logging
+import re
 from collections.abc import Iterator
 from typing import Any, Protocol, TypeVar
 
@@ -28,6 +30,57 @@ from app.core.settings import LlmSettings
 logger = logging.getLogger(__name__)
 
 TSchema = TypeVar("TSchema", bound=BaseModel)
+
+_STRUCTURED_METHODS = ("function_calling", "json_mode")
+
+
+def _strip_json_fence(text: str) -> str:
+    stripped = text.strip()
+    if not stripped.startswith("```"):
+        return stripped
+    stripped = re.sub(r"^```(?:json)?\s*", "", stripped, flags=re.IGNORECASE)
+    stripped = re.sub(r"\s*```$", "", stripped)
+    return stripped.strip()
+
+
+def _extract_json_object(text: str) -> dict[str, Any]:
+    """Pull a JSON object from a plain-text model reply."""
+    cleaned = _strip_json_fence(text)
+    try:
+        data = json.loads(cleaned)
+        if isinstance(data, dict):
+            return data
+    except json.JSONDecodeError:
+        pass
+
+    match = re.search(r"\{.*\}", cleaned, re.DOTALL)
+    if match is None:
+        raise ValueError("No JSON object found in model response")
+    data = json.loads(match.group(0))
+    if not isinstance(data, dict):
+        raise ValueError("Model JSON root must be an object")
+    return data
+
+
+def _raw_message_snippet(raw: Any, *, limit: int = 240) -> str:
+    if raw is None:
+        return ""
+    content = getattr(raw, "content", raw)
+    if isinstance(content, list):
+        parts: list[str] = []
+        for block in content:
+            if isinstance(block, dict):
+                text = block.get("text")
+                if isinstance(text, str):
+                    parts.append(text)
+            elif isinstance(block, str):
+                parts.append(block)
+        content = "\n".join(parts)
+    text = content if isinstance(content, str) else str(content)
+    text = text.strip()
+    if len(text) <= limit:
+        return text
+    return text[:limit] + "…"
 
 
 class LlmProvider(Protocol):
@@ -96,8 +149,86 @@ class OpenAICompatibleProvider:
         messages: list[BaseMessage],
         schema: type[TSchema],
     ) -> TSchema:
-        runnable = self._client.with_structured_output(schema, method="function_calling")
-        return runnable.invoke(messages)
+        """Structured output with fallbacks for OpenAI-compatible providers that return empty parses."""
+        errors: list[str] = []
+
+        for method in _STRUCTURED_METHODS:
+            try:
+                parsed, err = self._try_structured(messages, schema, method)
+            except Exception as exc:  # noqa: BLE001
+                errors.append(f"{method}: {exc}")
+                logger.warning(
+                    "%s structured via %s raised: %s",
+                    schema.__name__,
+                    method,
+                    exc,
+                )
+                continue
+
+            if parsed is not None:
+                return parsed
+            if err:
+                errors.append(err)
+
+        try:
+            return self._structured_via_plain_json(messages, schema)
+        except Exception as exc:  # noqa: BLE001
+            detail = "; ".join(errors) if errors else str(exc)
+            raise ValueError(
+                f"structured output failed for {schema.__name__}: {detail}"
+            ) from exc
+
+    def _try_structured(
+        self,
+        messages: list[BaseMessage],
+        schema: type[TSchema],
+        method: str,
+    ) -> tuple[TSchema | None, str | None]:
+        runnable = self._client.with_structured_output(
+            schema,
+            method=method,
+            include_raw=True,
+        )
+        result = runnable.invoke(messages)
+
+        if not isinstance(result, dict):
+            if result is None:
+                return None, f"{method}: parsed is None"
+            return result, None
+
+        parsed = result.get("parsed")
+        if parsed is not None:
+            return parsed, None
+
+        parsing_error = result.get("parsing_error")
+        raw_snippet = _raw_message_snippet(result.get("raw"))
+        err_parts = [f"{method}: parsed is None"]
+        if parsing_error is not None:
+            err_parts.append(f"parsing_error={parsing_error}")
+        if raw_snippet:
+            err_parts.append(f"raw={raw_snippet}")
+        err = "; ".join(err_parts)
+        logger.warning("%s structured call returned None (%s)", schema.__name__, err)
+        return None, err
+
+    def _structured_via_plain_json(
+        self,
+        messages: list[BaseMessage],
+        schema: type[TSchema],
+    ) -> TSchema:
+        """Last resort: plain chat + manual JSON parse (works when tool-calls are ignored)."""
+        schema_json = json.dumps(schema.model_json_schema(), ensure_ascii=False)
+        prompt_messages = [
+            *messages,
+            HumanMessage(
+                "Respond with ONLY one JSON object matching this schema "
+                "(no markdown fences, no commentary):\n"
+                f"{schema_json}"
+            ),
+        ]
+        raw = self.chat(prompt_messages)
+        data = _extract_json_object(raw)
+        return schema.model_validate(data)
 
     def chat_with_tools(
         self,
@@ -113,7 +244,7 @@ class OpenAICompatibleProvider:
 
 _MOCK_SAMPLES: dict[str, dict[str, Any]] = {
     "IntentClassification": {
-        "intent": "inspiration",
+        "primary": "inspiration",
         "confidence": 0.85,
         "reasoning": "The user wants to explore creative directions, matching the inspiration intent.",
     },
