@@ -8,6 +8,7 @@ import { fileURLToPath } from 'node:url'
 const rootDir = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..')
 // Backend local environment variable file; used to pin the Python used for packaging (e.g. PYTHON_BIN) without changing the system environment.
 const backendEnvPath = path.join(rootDir, 'backend', '.env')
+const backendPromptsPath = path.join(rootDir, 'backend', 'app', 'agents', 'prompts')
 
 /**
  * Minimal .env parser: supports only KEY=VALUE, ignoring blank lines and # comments.
@@ -211,40 +212,56 @@ function run(command, args, name) {
 const pythonCommand = resolvePythonCommand()
 console.log(`[backend-build] Using Python: ${pythonCommand}`)
 
+const pyinstallerArgs = [
+  '-m',
+  'PyInstaller',
+  '--noconfirm',
+  '--clean',
+  '--onedir',
+  '--name',
+  'oc-creative-backend',
+  '--distpath',
+  'backend/dist',
+  '--workpath',
+  'backend/build',
+  '--specpath',
+  'backend',
+  // PyInstaller needs uvicorn's dynamically imported modules to be included explicitly, otherwise the executable will be missing dependencies at startup.
+  '--hidden-import',
+  'uvicorn.logging',
+  '--hidden-import',
+  'uvicorn.loops.auto',
+  '--hidden-import',
+  'uvicorn.protocols.http.auto',
+  '--hidden-import',
+  'uvicorn.protocols.websockets.auto',
+  '--hidden-import',
+  'uvicorn.lifespan.on',
+  // ChromaDB and the OpenAI SDK are both lazily imported at runtime; collect them explicitly here so the vector store is not unavailable after packaging.
+  '--collect-all',
+  'chromadb',
+  '--hidden-import',
+  'openai',
+  '--hidden-import',
+  'tiktoken_ext.openai_public',
+]
+
+if (fs.existsSync(backendEnvPath)) {
+  pyinstallerArgs.push('--add-data', `${backendEnvPath}${path.delimiter}.`)
+}
+
+if (fs.existsSync(backendPromptsPath)) {
+  pyinstallerArgs.push(
+    '--add-data',
+    `${backendPromptsPath}${path.delimiter}${path.join('app', 'agents', 'prompts')}`,
+  )
+}
+
+pyinstallerArgs.push('backend/serve.py')
+
 // --onedir: produce oc-creative-backend.exe + _internal for Electron extraResources to copy.
 await run(
   pythonCommand,
-  [
-    '-m',
-    'PyInstaller',
-    '--noconfirm',
-    '--clean',
-    '--onedir',
-    '--name',
-    'oc-creative-backend',
-    '--distpath',
-    'backend/dist',
-    '--workpath',
-    'backend/build',
-    '--specpath',
-    'backend',
-    // PyInstaller needs uvicorn's dynamically imported modules to be included explicitly, otherwise the executable will be missing dependencies at startup.
-    '--hidden-import',
-    'uvicorn.logging',
-    '--hidden-import',
-    'uvicorn.loops.auto',
-    '--hidden-import',
-    'uvicorn.protocols.http.auto',
-    '--hidden-import',
-    'uvicorn.protocols.websockets.auto',
-    '--hidden-import',
-    'uvicorn.lifespan.on',
-    // ChromaDB and the OpenAI SDK are both lazily imported at runtime; collect them explicitly here so the vector store is not unavailable after packaging.
-    '--collect-all',
-    'chromadb',
-    '--hidden-import',
-    'openai',
-    'backend/serve.py',
-  ],
+  pyinstallerArgs,
   'backend build',
 )
