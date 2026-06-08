@@ -5,9 +5,11 @@ pydantic
 chromadb>=1.0.4
 python-dotenv
 openai
+httpx
 langchain
 langchain-openai
 langgraph
 langgraph-checkpoint-sqlite
 tiktoken
 python-multipart
+pyinstaller
