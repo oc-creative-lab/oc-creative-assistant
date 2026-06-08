@@ -16,7 +16,6 @@ import { nodeTypeOptions } from '../../utils/nodeFactory'
 import type { CreativeNodeType } from '../../types/node'
 import CanvasWorkspace from '../canvas/CanvasWorkspace.vue'
 import NodeDetailView from './NodeDetailView.vue'
-import ProjectIoButtons from './ProjectIoButtons.vue'
 
 // After a workspace save, debounce 30s before triggering a seed rebuild (one of the first_revision phase 5 triggers).
 const SEED_REBUILD_DEBOUNCE_MS = 30000

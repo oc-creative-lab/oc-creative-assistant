@@ -9,7 +9,6 @@ import type {
   CreativeNodeType,
   CreativeRelationType,
 } from '../../types/node'
-import { RELATION_TYPE_OPTIONS } from '../../types/node'
 import {
   DEFAULT_RELATION_TYPE,
   cloneNode,
@@ -283,14 +282,6 @@ function handleEdgeRelationSelect(relationType: CreativeRelationType) {
   if (!edgeRelationMenu.value.edgeId) return
   updateEdgeRelation(edgeRelationMenu.value.edgeId, relationType)
   closeEdgeRelationMenu()
-}
-
-function onPickRelation(relationType: CreativeRelationType) {
-  selectedRelationType.value = relationType
-  isRelationSelectOpen.value = false
-  if (props.selectedEdgeId) {
-    updateEdgeRelation(props.selectedEdgeId, relationType)
-  }
 }
 
 function nodeRef(nodeId: string) {
