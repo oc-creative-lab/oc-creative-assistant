@@ -1,6 +1,5 @@
 <script setup lang="ts">
 import { nextTick, ref, watch } from 'vue'
-import { usePanelResize } from '../../composables/usePanelResize'
 import { marked } from 'marked'
 import { storeToRefs } from 'pinia'
 import { useRouter } from 'vue-router'
@@ -27,8 +26,6 @@ const {
   progressLabel,
   lastAgent,
   error,
-  sessions,
-  sessionId,
 } = storeToRefs(chat)
 
 const router = useRouter()
@@ -65,75 +62,6 @@ async function scrollToBottom() {
   if (streamRef.value) streamRef.value.scrollTop = streamRef.value.scrollHeight
 }
 watch([messages, streamingReply], scrollToBottom, { deep: true })
-
-/* ---- session column resize (same mechanism as the shell panels) ---- */
-const SESSION_MIN = 130
-const SESSION_MAX = 300
-const sessionWidth = ref(Number(localStorage.getItem('oc.sessionWidth')) || 170)
-watch(sessionWidth, (v) => localStorage.setItem('oc.sessionWidth', String(v)))
-const sessionResize = usePanelResize({
-  min: SESSION_MIN,
-  max: SESSION_MAX,
-  direction: -1, // handle sits on the column's left edge: drag left → wider
-  getWidth: () => sessionWidth.value,
-  setWidth: (w) => {
-    sessionWidth.value = w
-  },
-})
-
-/* ---- ⋯ menu (fixed-positioned so it escapes the scroll container) ---- */
-const menuOpenId = ref<string | null>(null)
-const menuPos = ref({ top: 0, left: 0 })
-function toggleMenu(id: string, event: MouseEvent) {
-  if (menuOpenId.value === id) {
-    menuOpenId.value = null
-    return
-  }
-  const rect = (event.currentTarget as HTMLElement).getBoundingClientRect()
-  menuPos.value = { top: rect.bottom + 4, left: rect.right - 120 }
-  menuOpenId.value = id
-}
-function closeMenu() {
-  menuOpenId.value = null
-}
-
-/* ---- inline rename ---- */
-const editingId = ref<string | null>(null)
-const editingTitle = ref('')
-const editInput = ref<HTMLInputElement | null>(null)
-async function startRename(s: { id: string; title: string }) {
-  closeMenu()
-  editingId.value = s.id
-  editingTitle.value = s.title
-  await nextTick()
-  editInput.value?.focus()
-  editInput.value?.select()
-}
-function commitRename() {
-  const id = editingId.value
-  if (!id) return
-  const title = editingTitle.value.trim()
-  editingId.value = null
-  const current = sessions.value.find((s) => s.id === id)
-  if (title && title !== current?.title) void chat.renameSession(id, title)
-}
-function cancelRename() {
-  editingId.value = null
-}
-function onTitleClick(s: { id: string; title: string }) {
-  if (s.id === sessionId.value) startRename(s)
-  else void chat.switchSession(s.id)
-}
-
-/* ---- actions ---- */
-function onNewChat() {
-  void chat.newSession()
-}
-async function onDeleteSession(id: string) {
-  closeMenu()
-  if (!window.confirm('Delete this chat and its history?')) return
-  await chat.deleteSession(id)
-}
 </script>
 
 <template>
@@ -148,19 +76,7 @@ async function onDeleteSession(id: string) {
       />
     </header>
 
-    <div
-      class="right-stage__body"
-      :style="{ gridTemplateColumns: `minmax(0, 1fr) ${sessionWidth}px` }"
-    >
-    <div
-        class="resize-handle"
-        :class="{ 'is-dragging': sessionResize.isDragging.value }"
-        :style="{ right: `${sessionWidth}px` }"
-        title="Drag to resize"
-        @mousedown="sessionResize.startDrag"
-      ></div>
-
-      <!-- chat main -->
+    <div class="right-stage__body">
       <div ref="streamRef" class="right-stage__chat">
         <p v-if="messages.length === 0 && !streamingReply && !isStreaming" class="right-stage__empty">
           Ask in the composer below — the agent can guide, extract entities, and suggest structure.
@@ -230,67 +146,7 @@ async function onDeleteSession(id: string) {
         </div>
         <p v-if="error" class="right-stage__error">{{ error }}</p>
       </div>
-
-      <!-- session column -->
-      <div class="right-stage__sessions">
-        <div class="right-stage__sessions-head">
-          <span>Chats</span>
-          <button type="button" class="right-stage__new" title="New chat" @click="onNewChat">+</button>
-        </div>
-        <div class="right-stage__sessions-list">
-          <div
-            v-for="s in sessions"
-            :key="s.id"
-            class="right-stage__session"
-            :class="{ 'is-active': s.id === sessionId }"
-          >
-            <input
-              v-if="editingId === s.id"
-              ref="editInput"
-              v-model="editingTitle"
-              class="right-stage__session-edit"
-              @keyup.enter="commitRename"
-              @keyup.esc="cancelRename"
-              @blur="commitRename"
-            />
-            <button
-              v-else
-              type="button"
-              class="right-stage__session-title"
-              :title="s.id === sessionId ? 'Click to rename' : 'Open chat'"
-              @click="onTitleClick(s)"
-            >
-              {{ s.title || 'Untitled chat' }}
-            </button>
-            <button
-              type="button"
-              class="right-stage__session-more"
-              title="More"
-              @click.stop="toggleMenu(s.id, $event)"
-            >
-              ⋯
-            </button>
-          </div>
-        </div>
-      </div>
     </div>
-
-    <!-- ⋯ menu (fixed) -->
-    <template v-if="menuOpenId">
-      <div class="session-menu__backdrop" @click="closeMenu"></div>
-      <div
-        class="session-menu"
-        :style="{ top: menuPos.top + 'px', left: menuPos.left + 'px' }"
-      >
-        <button
-          type="button"
-          class="session-menu__item session-menu__item--danger"
-          @click.stop="onDeleteSession(menuOpenId)"
-        >
-          Delete
-        </button>
-      </div>
-    </template>
   </aside>
 </template>
 
@@ -317,47 +173,11 @@ async function onDeleteSession(id: string) {
   font-size: 14px;
 }
 
-/* body = chat | session column, with a draggable handle on the divider */
 .right-stage__body {
-  position: relative;
   flex: 1;
   min-height: 0;
-  display: grid;
-}
-.resize-handle {
-  position: absolute;
-  top: 0;
-  bottom: 0;
-  width: 6px;
-  z-index: 5;
-  cursor: col-resize;
-  transform: translateX(50%);
-  touch-action: none;
-}
-.resize-handle::after {
-  content: '';
-  position: absolute;
-  top: 50%;
-  left: 2px;
-  width: 2px;
-  height: 32px;
-  transform: translateY(-50%);
-  border-radius: 2px;
-  background: transparent;
-  transition: background 0.15s ease;
-}
-.resize-handle:hover::after,
-.resize-handle.is-dragging::after {
-  background: var(--accent, #8b5cf6);
-}
-.resize-handle:hover,
-.resize-handle.is-dragging {
-  background: linear-gradient(
-    to right,
-    transparent,
-    var(--accent-soft, rgba(139, 92, 246, 0.12)),
-    transparent
-  );
+  display: flex;
+  flex-direction: column;
 }
 
 .right-stage__chat {
@@ -367,130 +187,6 @@ async function onDeleteSession(id: string) {
   display: flex;
   flex-direction: column;
   gap: 10px;
-}
-
-/* session column */
-.right-stage__sessions {
-  min-height: 0;
-  display: flex;
-  flex-direction: column;
-  border-left: 1px solid var(--border, #e5e7eb);
-}
-.right-stage__sessions-head {
-  flex-shrink: 0;
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  padding: 8px 10px;
-  font-size: 12px;
-  font-weight: 600;
-  color: var(--muted, #888);
-  border-bottom: 1px solid var(--border, #e5e7eb);
-}
-.right-stage__new {
-  border: none;
-  background: transparent;
-  color: var(--accent);
-  font-size: 18px;
-  line-height: 1;
-  cursor: pointer;
-}
-.right-stage__sessions-list {
-  flex: 1;
-  min-height: 0;
-  overflow-y: auto;
-  padding: 6px;
-  display: flex;
-  flex-direction: column;
-  gap: 2px;
-}
-.right-stage__session {
-  display: flex;
-  align-items: center;
-  border-radius: 6px;
-}
-.right-stage__session:hover {
-  background: #f3f4f6;
-}
-.right-stage__session.is-active {
-  background: var(--accent);
-}
-.right-stage__session.is-active .right-stage__session-title {
-  color: #fff;
-}
-.right-stage__session-title {
-  flex: 1;
-  min-width: 0;
-  text-align: left;
-  padding: 6px 10px;
-  border: none;
-  background: transparent;
-  font-size: 13px;
-  color: var(--text, #111);
-  cursor: pointer;
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-}
-.right-stage__session-edit {
-  flex: 1;
-  min-width: 0;
-  margin: 3px 6px;
-  padding: 3px 6px;
-  border: 1px solid var(--accent);
-  border-radius: 5px;
-  font-size: 13px;
-}
-.right-stage__session-more {
-  border: none;
-  background: transparent;
-  color: var(--muted, #999);
-  padding: 4px 9px;
-  font-size: 15px;
-  line-height: 1;
-  cursor: pointer;
-  opacity: 0;
-}
-.right-stage__session:hover .right-stage__session-more {
-  opacity: 1;
-}
-.right-stage__session.is-active .right-stage__session-more {
-  color: rgba(255, 255, 255, 0.85);
-  opacity: 1;
-}
-
-/* ⋯ dropdown */
-.session-menu__backdrop {
-  position: fixed;
-  inset: 0;
-  z-index: 1000;
-}
-.session-menu {
-  position: fixed;
-  z-index: 1001;
-  min-width: 120px;
-  background: #fff;
-  border: 1px solid var(--border, #e5e7eb);
-  border-radius: 8px;
-  box-shadow: 0 6px 20px rgba(0, 0, 0, 0.12);
-  padding: 4px;
-  display: flex;
-  flex-direction: column;
-}
-.session-menu__item {
-  text-align: left;
-  padding: 7px 10px;
-  border: none;
-  background: transparent;
-  border-radius: 6px;
-  font-size: 13px;
-  cursor: pointer;
-}
-.session-menu__item:hover {
-  background: #f3f4f6;
-}
-.session-menu__item--danger {
-  color: #dc2626;
 }
 
 /* messages */

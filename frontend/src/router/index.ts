@@ -25,7 +25,9 @@ export const router = createRouter({
     },
     {
       path: '/chat/:projectId',
-      redirect: (to) => `/workspace/${String(to.params.projectId)}`,
+      name: 'chat-workspace',
+      component: () => import('../views/ChatWorkspace.vue'),
+      props: true,
     },
     {
       path: '/library',

@@ -15,6 +15,10 @@ const { isStreaming, progressLabel } = storeToRefs(chat)
 
 const isSending = ref(false)
 
+const hasContent = computed(
+  () => Boolean(input.value.trim()) || references.value.length > 0,
+)
+
 const webSearchTitle = computed(() => {
   if (webSearchMode.value === 'on') return '联网搜索：强制开启（点击切换）'
   if (webSearchMode.value === 'off') return '联网搜索：已关闭（点击切换）'
@@ -86,7 +90,7 @@ async function handleSend() {
         />
       </div>
 
-      <form class="composer__bar" @submit.prevent="handleSend">
+      <form class="chat-composer" @submit.prevent="handleSend">
         <button
           type="button"
           class="composer__web"
@@ -120,18 +124,29 @@ async function handleSend() {
         </button>
         <input
           v-model="input"
-          class="composer__input"
+          class="chat-composer__field"
           type="text"
           placeholder="Talk to the agent — quote nodes from the canvas with Ctrl+C…"
           :disabled="isStreaming"
         />
         <button
           type="submit"
-          class="composer__send"
+          class="chat-composer__send"
+          :class="{ 'is-ready': hasContent }"
           aria-label="Send"
           :disabled="isSending || isStreaming"
         >
-          {{ isSending || isStreaming ? '…' : '↵' }}
+          <span v-if="isSending || isStreaming" class="chat-composer__send-loading" aria-hidden="true">…</span>
+          <svg v-else viewBox="0 0 24 24" aria-hidden="true" class="chat-composer__send-icon">
+            <path
+              d="M12 19V5M12 5l-5.5 5.5M12 5l5.5 5.5"
+              fill="none"
+              stroke="currentColor"
+              stroke-width="2"
+              stroke-linecap="round"
+              stroke-linejoin="round"
+            />
+          </svg>
         </button>
       </form>
     </div>
@@ -142,18 +157,23 @@ async function handleSend() {
 .composer-wrap {
   position: relative;
   flex-shrink: 0;
-  border-top: 1px solid var(--border, #e5e7eb);
-  background: var(--app-bg, #fff);
-  padding: 12px 16px 12px;
+  border-top: 1px solid var(--border);
+  background: var(--app-bg);
+  padding: 12px 16px;
 }
 
 .composer-wrap.is-collapsed {
   padding: 0;
   height: 0;
-  border-top: 1px solid var(--border, #e5e7eb);
+  border-top: 1px solid var(--border);
+  overflow: visible;
 }
 
-/* Small chevron sitting on the top divider — no box, no extra row */
+.composer-wrap.is-collapsed .composer-handle {
+  top: -8px;
+}
+
+/* Small chevron on the top divider, centered */
 .composer-handle {
   position: absolute;
   top: 0;
@@ -167,8 +187,8 @@ async function handleSend() {
   height: 12px;
   padding: 0;
   border: none;
-  background: var(--app-bg, #fff);
-  color: var(--muted, #888);
+  background: var(--app-bg);
+  color: var(--muted);
   cursor: pointer;
   line-height: 0;
   transition: color 0.15s ease;
@@ -192,19 +212,13 @@ async function handleSend() {
 .composer__status {
   margin: 0;
   font-size: 11px;
-  color: var(--muted, #888);
+  color: var(--muted);
 }
 
 .composer__refs {
   display: flex;
   flex-wrap: wrap;
   gap: 6px;
-}
-
-.composer__bar {
-  display: flex;
-  gap: 8px;
-  align-items: center;
 }
 
 .composer__web {
@@ -215,29 +229,29 @@ async function handleSend() {
   width: 36px;
   height: 36px;
   padding: 0;
-  border-radius: 8px;
-  border: 1px solid var(--border, #ddd);
-  background: #fff;
-  color: var(--muted, #888);
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--border);
+  background: var(--panel);
+  color: var(--muted);
   cursor: pointer;
   transition: color 0.15s, border-color 0.15s, background 0.15s, box-shadow 0.15s;
 }
 
 .composer__web:hover:not(:disabled) {
   color: var(--accent);
-  border-color: #c7d2fe;
+  border-color: var(--accent-border);
 }
 
 .composer__web.is-on {
   color: #fff;
-  background: var(--accent, #6366f1);
-  border-color: var(--accent, #6366f1);
-  box-shadow: 0 0 0 2px rgba(99, 102, 241, 0.2);
+  background: var(--accent);
+  border-color: var(--accent);
+  box-shadow: 0 0 0 2px var(--accent-soft);
 }
 
 .composer__web.is-off {
-  color: #9ca3af;
-  background: #f9fafb;
+  color: var(--muted);
+  background: var(--app-bg);
   opacity: 0.85;
 }
 
@@ -249,35 +263,5 @@ async function handleSend() {
 .composer__web-icon {
   width: 18px;
   height: 18px;
-}
-
-.composer__input {
-  flex: 1;
-  padding: 8px 12px;
-  border: 1px solid var(--border, #ddd);
-  border-radius: 8px;
-  font: inherit;
-}
-
-.composer__input:disabled {
-  opacity: 0.7;
-}
-
-.composer__send {
-  flex-shrink: 0;
-  width: 36px;
-  padding: 0;
-  border-radius: 8px;
-  border: 1px solid var(--accent);
-  background: var(--accent);
-  color: #fff;
-  font-size: 18px;
-  line-height: 1;
-  cursor: pointer;
-}
-
-.composer__send:disabled {
-  opacity: 0.6;
-  cursor: wait;
 }
 </style>

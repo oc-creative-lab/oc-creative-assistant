@@ -1,12 +1,15 @@
 <script setup lang="ts">
-import { nextTick, onMounted, ref, watch } from 'vue'
+import { computed, nextTick, onMounted, ref, watch } from 'vue'
 import { marked } from 'marked'
 import { useRouter } from 'vue-router'
 import { storeToRefs } from 'pinia'
 import { useChatStore } from '../stores/useChatStore'
+import { useProjectStore } from '../stores/useProjectStore'
 import { rebuildProjectSeed } from '../api/projectApi'
+import ChatSessionSidebar from '../components/chat/ChatSessionSidebar.vue'
 import InlineEntityCard from '../components/chat/InlineEntityCard.vue'
 import StagingPanel from '../components/chat/StagingPanel.vue'
+import WebSourceCard from '../components/chat/WebSourceCard.vue'
 
 marked.use({ gfm: true, breaks: true })
 
@@ -15,24 +18,31 @@ function renderMarkdown(text: string): string {
 }
 
 /**
- * Full-screen chat workspace (first_revision stage 4, the core innovation).
- *
- * Left: the conversation stream (the user freely shares ideas, Chat Agent A
- * streams replies and naturally raises questions).
- * Right: StagingPanel (reused), showing in real time the pending entities that
- * the background structured_extractor pulls out.
- * Top: Exit back to home; bottom: the input box. Turning on extraction_enabled
- * lets the B-agent step in.
+ * Dedicated chat module: project-scoped sessions + main LangGraph agent.
+ * Background extraction/staging uses the same APIs as the workspace shell.
  */
 const props = defineProps<{ projectId: string }>()
 const router = useRouter()
 
 const chat = useChatStore()
-const { messages, streamingReply, isStreaming, progressLabel, stagingBatches, error } =
-  storeToRefs(chat)
+const projectStore = useProjectStore()
+const {
+  messages,
+  streamingReply,
+  streamingWebSources,
+  isStreaming,
+  progressLabel,
+  lastAgent,
+  stagingBatches,
+  error,
+} = storeToRefs(chat)
+const { detail } = storeToRefs(projectStore)
 
 const draft = ref('')
 const streamRef = ref<HTMLElement | null>(null)
+
+const projectName = computed(() => detail.value?.name ?? 'Chat')
+const hasContent = computed(() => Boolean(draft.value.trim()))
 
 const AGENT_LABELS: Record<string, string> = {
   inspiration: 'Inspiration',
@@ -43,8 +53,17 @@ const AGENT_LABELS: Record<string, string> = {
 }
 
 onMounted(() => {
+  void projectStore.loadProject(props.projectId)
   void chat.init(props.projectId)
 })
+
+watch(
+  () => props.projectId,
+  (id) => {
+    void projectStore.loadProject(id)
+    void chat.init(id)
+  },
+)
 
 async function scrollToBottom() {
   await nextTick()
@@ -54,12 +73,12 @@ async function scrollToBottom() {
 watch([messages, streamingReply], scrollToBottom, { deep: true })
 
 async function handleSend() {
-  const text = draft.value
+  const text = draft.value.trim()
+  if (!text || isStreaming.value) return
   draft.value = ''
   await chat.send(text)
 }
 
-/** Exiting chat = the session ends, triggering one seed rebuild (one of the first_revision stage 5 triggers). */
 async function handleExit() {
   try {
     await rebuildProjectSeed(props.projectId)
@@ -73,8 +92,11 @@ async function handleExit() {
 <template>
   <div class="chat-workspace">
     <header class="chat-workspace__top">
-      <button type="button" class="chat-workspace__exit" @click="handleExit">← Exit</button>
-      <span class="chat-workspace__title">Chat</span>
+      <button type="button" class="chat-workspace__exit" @click="handleExit">← Home</button>
+      <div class="chat-workspace__title-block">
+        <span class="chat-workspace__title">{{ projectName }}</span>
+        <span class="chat-workspace__subtitle">Main agent · background sync</span>
+      </div>
       <button
         type="button"
         class="chat-workspace__go-workspace"
@@ -85,8 +107,14 @@ async function handleExit() {
     </header>
 
     <main class="chat-workspace__body">
+      <ChatSessionSidebar />
+
       <section class="chat-workspace__chat">
         <div ref="streamRef" class="chat-workspace__stream">
+          <p v-if="messages.length === 0 && !streamingReply && !isStreaming" class="chat-workspace__empty">
+            Start a conversation — the main agent can guide, extract entities, and suggest structure in the background.
+          </p>
+
           <div
             v-for="message in messages"
             :key="message.id"
@@ -102,6 +130,13 @@ async function handleExit() {
               v-html="renderMarkdown(message.content)"
             ></div>
             <div v-else class="chat-msg__bubble">{{ message.content }}</div>
+            <div v-if="message.webSources?.length" class="chat-msg__sources">
+              <WebSourceCard
+                v-for="(source, index) in message.webSources"
+                :key="`${message.id}-src-${index}`"
+                :source="source"
+              />
+            </div>
             <div v-if="message.applied?.length" class="chat-msg__applied">
               <InlineEntityCard
                 v-for="item in message.applied"
@@ -115,20 +150,54 @@ async function handleExit() {
 
           <div v-if="streamingReply" class="chat-msg chat-msg--assistant">
             <div class="chat-msg__bubble chat-msg__bubble--md" v-html="renderMarkdown(streamingReply)"></div>
+            <div v-if="streamingWebSources.length" class="chat-msg__sources">
+              <WebSourceCard
+                v-for="(source, index) in streamingWebSources"
+                :key="`stream-src-${index}`"
+                :source="source"
+              />
+            </div>
           </div>
-          <p v-else-if="isStreaming" class="chat-workspace__progress">{{ progressLabel }}</p>
+          <div v-else-if="isStreaming" class="chat-workspace__thinking">
+            <span v-if="lastAgent" class="chat-workspace__thinking-agent">
+              {{ AGENT_LABELS[lastAgent] ?? lastAgent }}
+            </span>
+            <span>{{ progressLabel || 'Thinking' }}</span>
+            <span class="chat-workspace__dots" aria-hidden="true"><i></i><i></i><i></i></span>
+          </div>
           <p v-if="error" class="chat-workspace__error">{{ error }}</p>
         </div>
 
-        <form class="chat-workspace__input" @submit.prevent="handleSend">
-          <textarea
-            v-model="draft"
-            rows="2"
-            placeholder="Say what you're thinking — ideas get organised in the background…"
-            @keydown.enter.exact.prevent="handleSend"
-          ></textarea>
-          <button type="submit" :disabled="isStreaming || !draft.trim()">Send</button>
-        </form>
+        <div class="chat-composer--dock">
+          <form class="chat-composer" @submit.prevent="handleSend">
+            <input
+              v-model="draft"
+              class="chat-composer__field"
+              type="text"
+              placeholder="Say what you're thinking — ideas get organised in the background…"
+              :disabled="isStreaming"
+            />
+            <button
+              type="submit"
+              class="chat-composer__send"
+              :class="{ 'is-ready': hasContent }"
+              aria-label="Send"
+              :disabled="isStreaming"
+            >
+              <span v-if="isStreaming" class="chat-composer__send-loading" aria-hidden="true">…</span>
+              <svg v-else viewBox="0 0 24 24" aria-hidden="true" class="chat-composer__send-icon">
+                <path
+                  d="M12 19V5M12 5l-5.5 5.5M12 5l5.5 5.5"
+                  fill="none"
+                  stroke="currentColor"
+                  stroke-width="2"
+                  stroke-linecap="round"
+                  stroke-linejoin="round"
+                />
+              </svg>
+            </button>
+          </form>
+        </div>
       </section>
 
       <aside class="chat-workspace__staging">
@@ -150,20 +219,37 @@ async function handleExit() {
 .chat-workspace {
   height: 100vh;
   display: grid;
-  grid-template-rows: 52px minmax(0, 1fr);
+  grid-template-rows: 56px minmax(0, 1fr);
   background: var(--app-bg, #fff);
 }
+
 .chat-workspace__top {
   display: flex;
   align-items: center;
   gap: 12px;
   padding: 0 16px;
   border-bottom: 1px solid var(--border, #e5e7eb);
+  background: var(--panel, #fafafa);
 }
-.chat-workspace__title {
+
+.chat-workspace__title-block {
   flex: 1;
-  font-weight: 600;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
 }
+
+.chat-workspace__title {
+  font-weight: 700;
+  font-size: 15px;
+}
+
+.chat-workspace__subtitle {
+  font-size: 11px;
+  color: var(--muted, #888);
+}
+
 .chat-workspace__exit,
 .chat-workspace__go-workspace {
   padding: 6px 12px;
@@ -171,18 +257,28 @@ async function handleExit() {
   border: 1px solid var(--border, #ddd);
   background: var(--app-bg, #fff);
   cursor: pointer;
+  font-size: 13px;
 }
+
+.chat-workspace__go-workspace:hover,
+.chat-workspace__exit:hover {
+  border-color: var(--accent-border);
+  color: var(--accent-deep);
+}
+
 .chat-workspace__body {
   min-height: 0;
   display: grid;
-  grid-template-columns: minmax(0, 1fr) 360px;
+  grid-template-columns: 220px minmax(0, 1fr) 320px;
 }
+
 .chat-workspace__chat {
   min-height: 0;
   display: grid;
   grid-template-rows: minmax(0, 1fr) auto;
   border-right: 1px solid var(--border, #e5e7eb);
 }
+
 .chat-workspace__stream {
   overflow-y: auto;
   padding: 20px;
@@ -190,20 +286,37 @@ async function handleExit() {
   flex-direction: column;
   gap: 14px;
 }
+
+.chat-workspace__empty {
+  margin: 0;
+  color: var(--muted, #888);
+  font-size: 13px;
+  line-height: 1.6;
+}
+
 .chat-msg {
   display: flex;
   flex-direction: column;
   gap: 4px;
-  max-width: 80%;
+  max-width: 82%;
 }
+
 .chat-msg--user {
   align-self: flex-end;
   align-items: flex-end;
 }
+
 .chat-msg__agent {
+  display: inline-flex;
+  align-self: flex-start;
   font-size: 11px;
-  color: var(--accent);
+  font-weight: 700;
+  padding: 1px 8px;
+  border-radius: 999px;
+  background: var(--accent, #8b5cf6);
+  color: #fff;
 }
+
 .chat-msg__bubble {
   padding: 10px 14px;
   border-radius: 12px;
@@ -211,94 +324,124 @@ async function handleExit() {
   line-height: 1.6;
   font-size: 14px;
 }
+
 .chat-msg--assistant .chat-msg__bubble {
-  background: #f3f4f6;
+  background: var(--accent-soft, rgba(139, 92, 246, 0.08));
+  color: var(--text);
 }
+
 .chat-msg--user .chat-msg__bubble {
   background: var(--accent);
   color: #fff;
 }
+
 .chat-msg__bubble--md {
   white-space: normal;
 }
+
 .chat-msg__bubble--md :deep(p) {
   margin: 0 0 8px;
 }
+
 .chat-msg__bubble--md :deep(p:last-child) {
   margin-bottom: 0;
 }
+
 .chat-msg__bubble--md :deep(ul),
 .chat-msg__bubble--md :deep(ol) {
   margin: 4px 0 8px;
   padding-left: 18px;
 }
+
 .chat-msg__bubble--md :deep(strong) {
   font-weight: 600;
 }
+
 .chat-msg__bubble--md :deep(code) {
   background: rgba(0, 0, 0, 0.06);
   padding: 1px 5px;
   border-radius: 4px;
   font-size: 12px;
 }
+
 .chat-msg__bubble--md :deep(pre) {
   background: rgba(0, 0, 0, 0.06);
   padding: 8px 10px;
   border-radius: 8px;
   overflow-x: auto;
 }
-.chat-msg__bubble--md :deep(h1),
-.chat-msg__bubble--md :deep(h2),
-.chat-msg__bubble--md :deep(h3) {
-  font-size: 14px;
-  margin: 8px 0 4px;
-}
-.chat-msg__applied {
+
+.chat-msg__applied,
+.chat-msg__sources {
   width: 100%;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
 }
-.chat-workspace__progress {
-  color: var(--muted, #888);
-  font-size: 13px;
+
+.chat-workspace__thinking {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 5px 12px;
+  border-radius: 999px;
+  font-size: 12px;
+  color: var(--accent, #8b5cf6);
+  background: var(--accent-soft, rgba(139, 92, 246, 0.1));
 }
+
+.chat-workspace__thinking-agent {
+  font-weight: 700;
+  font-size: 11px;
+  padding: 1px 8px;
+  border-radius: 999px;
+  background: var(--accent, #8b5cf6);
+  color: #fff;
+}
+
+.chat-workspace__dots {
+  display: inline-flex;
+  gap: 3px;
+}
+
+.chat-workspace__dots i {
+  width: 4px;
+  height: 4px;
+  border-radius: 50%;
+  background: currentColor;
+  animation: thinking-bounce 1.2s ease-in-out infinite;
+}
+
+.chat-workspace__dots i:nth-child(2) {
+  animation-delay: 0.15s;
+}
+
+.chat-workspace__dots i:nth-child(3) {
+  animation-delay: 0.3s;
+}
+
+@keyframes thinking-bounce {
+  0%, 60%, 100% { transform: translateY(0); opacity: 0.4; }
+  30% { transform: translateY(-4px); opacity: 1; }
+}
+
 .chat-workspace__error {
   color: #dc2626;
   font-size: 13px;
 }
-.chat-workspace__input {
-  display: flex;
-  gap: 8px;
-  padding: 12px 16px;
-  border-top: 1px solid var(--border, #e5e7eb);
-}
-.chat-workspace__input textarea {
-  flex: 1;
-  padding: 8px 10px;
-  border: 1px solid var(--border, #ddd);
-  border-radius: 8px;
-  font: inherit;
-  resize: none;
-}
-.chat-workspace__input button {
-  padding: 0 20px;
-  border-radius: 8px;
-  border: 1px solid var(--accent);
-  background: var(--accent);
-  color: #fff;
-  cursor: pointer;
-}
-.chat-workspace__input button:disabled {
-  opacity: 0.5;
-  cursor: not-allowed;
-}
+
 .chat-workspace__staging {
   min-height: 0;
   overflow-y: auto;
   padding: 16px;
+  background: var(--panel, #fafafa);
 }
+
 .chat-workspace__staging-title {
   font-size: 14px;
-  margin-bottom: 10px;
+  margin: 0 0 10px;
 }
+
 .chat-workspace__staging-hint {
   color: var(--muted, #888);
   font-size: 13px;

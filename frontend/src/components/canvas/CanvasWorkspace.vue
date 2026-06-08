@@ -553,19 +553,19 @@ watch(
         <slot name="toolbar-leading" />
       </div>
 
-      <div class="toolbar-spacer" />
+      <div class="toolbar-group toolbar-group--end">
+        <div class="toolbar-group toolbar-group--status">
+          <slot name="toolbar-trailing" />
+        </div>
 
-      <div class="toolbar-group toolbar-group--status">
-        <slot name="toolbar-trailing" />
-      </div>
+        <div class="toolbar-sep" aria-hidden="true" />
 
-      <div class="toolbar-sep" aria-hidden="true" />
-
-      <div class="toolbar-group toolbar-group--view canvas-actions" aria-label="canvas view">
-        <button type="button" class="toolbar-btn toolbar-btn--icon" title="Zoom in" @click="handleZoomIn">+</button>
-        <button type="button" class="toolbar-btn toolbar-btn--icon" title="Zoom out" @click="handleZoomOut">−</button>
-        <button type="button" class="toolbar-btn" @click="handleFitView">Fit</button>
-        <button type="button" class="toolbar-btn toolbar-btn--danger" @click="handleClearCanvas">Clear</button>
+        <div class="toolbar-group toolbar-group--view canvas-actions" aria-label="canvas view">
+          <button type="button" class="toolbar-btn toolbar-btn--icon" title="Zoom in" @click="handleZoomIn">+</button>
+          <button type="button" class="toolbar-btn toolbar-btn--icon" title="Zoom out" @click="handleZoomOut">−</button>
+          <button type="button" class="toolbar-btn" @click="handleFitView">Fit</button>
+          <button type="button" class="toolbar-btn toolbar-btn--danger" @click="handleClearCanvas">Clear</button>
+        </div>
       </div>
     </header>
 

@@ -13,13 +13,14 @@
 .canvas-toolbar {
   display: flex;
   align-items: center;
-  flex-wrap: wrap;
-  gap: 10px;
-  row-gap: 8px;
+  flex-wrap: nowrap;
+  gap: 8px;
   padding: 7px 12px;
   border-bottom: 1px solid var(--border);
   background: var(--panel-strong);
   min-height: 44px;
+  min-width: 0;
+  overflow: hidden;
 }
 
 .toolbar-group {
@@ -28,6 +29,10 @@
   flex-wrap: nowrap;
   gap: 8px;
   flex-shrink: 0;
+}
+
+.toolbar-group--create {
+  min-width: 0;
 }
 
 .toolbar-group--create :deep(.toolbar-create-btn) {
@@ -67,9 +72,12 @@
   flex-shrink: 0;
 }
 
-.toolbar-spacer {
-  flex: 1;
-  min-width: 8px;
+.toolbar-group--end {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-shrink: 0;
+  margin-left: auto;
 }
 
 /* Penciled interaction hint anchored to the bottom-left corner of the canvas. */
@@ -376,12 +384,34 @@
 /* Container queries key off the canvas's own width, so the toolbar reflows when
    the side panels collapse/expand even though the viewport width is unchanged. */
 @container canvas (max-width: 720px) {
-  .toolbar-spacer {
-    display: none;
+  .canvas-toolbar {
+    gap: 6px;
+    padding: 6px 10px;
   }
 
   .toolbar-sep {
     display: none;
+  }
+
+  .toolbar-group--create :deep(.toolbar-create-btn) {
+    min-height: 26px;
+    padding: 0 8px;
+    font-size: 0.76rem;
+  }
+
+  .toolbar-group--status :deep(.toolbar-save-status) {
+    font-size: 0.72rem;
+  }
+
+  .toolbar-btn {
+    min-height: 26px;
+    padding: 0 8px;
+    font-size: 0.76rem;
+  }
+
+  .toolbar-btn--icon {
+    width: 26px;
+    font-size: 0.95rem;
   }
 }
 

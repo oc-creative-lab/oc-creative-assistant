@@ -1,4 +1,7 @@
 <script setup lang="ts">
+import { nextTick, onMounted, watch } from 'vue'
+import { autoResizeInput, autoResizeTextarea } from '../../composables/autoResizeField'
+
 /** Borderless key/value field blocks (shared by world notes and character attributes). */
 export interface DocFieldRow {
   key: string
@@ -9,13 +12,49 @@ const rows = defineModel<DocFieldRow[]>({ required: true })
 
 const emit = defineEmits<{ blur: [] }>()
 
+const valueEls = new Map<number, HTMLTextAreaElement>()
+const nameEls = new Map<number, HTMLInputElement>()
+
+function setValueRef(index: number, el: unknown) {
+  if (el instanceof HTMLTextAreaElement) valueEls.set(index, el)
+  else valueEls.delete(index)
+}
+
+function setNameRef(index: number, el: unknown) {
+  if (el instanceof HTMLInputElement) nameEls.set(index, el)
+  else nameEls.delete(index)
+}
+
+async function resizeAll() {
+  await nextTick()
+  nameEls.forEach(autoResizeInput)
+  valueEls.forEach(autoResizeTextarea)
+}
+
+function onNameInput(event: Event) {
+  autoResizeInput(event.target as HTMLInputElement)
+}
+
+function onValueInput(event: Event) {
+  autoResizeTextarea(event.target as HTMLTextAreaElement)
+}
+
 function addField() {
   rows.value.push({ key: '', value: '' })
+  void resizeAll()
 }
 
 function onBlur() {
   emit('blur')
 }
+
+onMounted(() => {
+  void resizeAll()
+})
+
+watch(rows, () => {
+  void resizeAll()
+}, { deep: true })
 </script>
 
 <template>
@@ -26,19 +65,23 @@ function onBlur() {
       class="doc-fields__block"
     >
       <input
+        :ref="(el) => setNameRef(index, el)"
         v-model="row.key"
         class="doc-fields__name"
         type="text"
         placeholder="Field name"
         spellcheck="false"
+        @input="onNameInput"
         @blur="onBlur"
       />
       <textarea
+        :ref="(el) => setValueRef(index, el)"
         v-model="row.value"
         class="doc-fields__value"
-        rows="3"
+        rows="1"
         placeholder="Write content…"
         spellcheck="true"
+        @input="onValueInput"
         @blur="onBlur"
       />
     </section>
@@ -54,15 +97,20 @@ function onBlur() {
   display: flex;
   flex-direction: column;
   gap: 28px;
+  width: 100%;
 }
 
 .doc-fields__block {
   display: flex;
   flex-direction: column;
+  align-items: flex-start;
   gap: 8px;
+  width: 100%;
 }
 
 .doc-fields__name {
+  width: auto;
+  max-width: 100%;
   border: none;
   background: transparent;
   font-family: var(--font-ui);
@@ -72,6 +120,7 @@ function onBlur() {
   text-transform: uppercase;
   color: var(--muted);
   padding: 0;
+  field-sizing: content;
 }
 
 .doc-fields__name:focus {
@@ -96,8 +145,9 @@ function onBlur() {
   font-size: 0.95rem;
   line-height: 1.65;
   color: var(--text-soft);
-  resize: vertical;
-  min-height: 4.5rem;
+  resize: none;
+  overflow: hidden;
+  min-height: 1.65em;
 }
 
 .doc-fields__value:focus {

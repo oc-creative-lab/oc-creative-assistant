@@ -5,6 +5,7 @@ import { useRoute } from 'vue-router'
 import { useProjectStore } from '../../stores/useProjectStore'
 import { useWorldViewStore } from '../../stores/useWorldViewStore'
 import PanelToggleButton from './PanelToggleButton.vue'
+import ProjectIoButtons from './ProjectIoButtons.vue'
 
 /**
  * Workspace left-hand navigation (first_revision phase 3).
@@ -113,7 +114,11 @@ function handleNavClick(item: NavItem, event: MouseEvent) {
       </router-link>
     </nav>
 
-    <div class="workspace-sidebar__seed">{{ seedLabel }}</div>
+    <div class="workspace-sidebar__footer">
+      <ProjectIoButtons variant="sidebar" />
+      <div class="workspace-sidebar__footer-divider" aria-hidden="true" />
+      <div class="workspace-sidebar__seed">{{ seedLabel }}</div>
+    </div>
   </aside>
 </template>
 
@@ -225,10 +230,27 @@ function handleNavClick(item: NavItem, event: MouseEvent) {
   background: rgba(233, 130, 74, 0.18);
   color: #c45c2a;
 }
-.workspace-sidebar__seed {
+.workspace-sidebar__footer {
   margin-top: auto;
-  font-size: 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding-top: 10px;
+  width: 100%;
+}
+
+.workspace-sidebar__footer-divider {
+  width: 100%;
+  height: 1px;
+  background: var(--border);
+}
+
+.workspace-sidebar__seed {
+  width: 100%;
+  font-size: 11px;
+  line-height: 1.45;
   color: var(--muted, #aaa);
-  padding: 8px 10px;
+  text-align: center;
+  padding: 0 4px 2px;
 }
 </style>

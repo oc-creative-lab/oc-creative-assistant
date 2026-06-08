@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { computed, onBeforeUnmount, ref, watch } from 'vue'
 import { getNodeFields, saveNodeFields } from '../../../api/projectApi'
+import { useNodeFieldsCache } from '../../../composables/useNodeFieldsCache'
 import DocFieldsEditor, { type DocFieldRow } from '../DocFieldsEditor.vue'
 import type { CreativeFlowNode } from '../../../types/node'
 
@@ -15,9 +16,11 @@ const emit = defineEmits<{
   update: [patch: { title?: string; content?: string }]
 }>()
 
+const fieldsCache = useNodeFieldsCache()
+
 const title = ref('')
 const fieldRows = ref<DocFieldRow[]>([])
-const isLoadingFields = ref(false)
+const isRefreshingFields = ref(false)
 const isHydrating = ref(false)
 const saveState = ref('')
 
@@ -26,6 +29,7 @@ const isEmpty = computed(() => !props.node)
 let saveTimer: ReturnType<typeof setTimeout> | null = null
 let isSaving = false
 let saveQueued = false
+let loadGeneration = 0
 
 function fieldsToContent(rows: DocFieldRow[]): string {
   const fields = rowsToFields(rows)
@@ -47,29 +51,49 @@ function rowsToFields(rows: DocFieldRow[]): Record<string, string> {
   return fields
 }
 
-async function loadFields(node: CreativeFlowNode) {
+function fallbackRows(node: CreativeFlowNode): DocFieldRow[] {
+  if (node.data.content.trim()) return [{ key: '', value: node.data.content }]
+  return [{ key: '', value: '' }]
+}
+
+function applyRows(rows: DocFieldRow[]) {
+  fieldRows.value = rows.map((row) => ({ ...row }))
+}
+
+async function loadFields(node: CreativeFlowNode, generation: number) {
   if (!props.projectId) {
-    fieldRows.value = [{ key: '', value: node.data.content ?? '' }]
+    applyRows(fallbackRows(node))
     return
   }
 
-  isLoadingFields.value = true
+  const cached = fieldsCache.get(props.projectId, node.id)
+  if (cached) {
+    applyRows(cached)
+    return
+  }
+
+  applyRows(fallbackRows(node))
+  isRefreshingFields.value = true
+
   try {
     const result = await getNodeFields(props.projectId, node.id)
+    if (generation !== loadGeneration) return
+
     const entries = Object.entries(result.fields)
-    if (entries.length > 0) {
-      fieldRows.value = entries.map(([key, value]) => ({ key, value }))
-    } else if (node.data.content.trim()) {
-      fieldRows.value = [{ key: '', value: node.data.content }]
-    } else {
-      fieldRows.value = [{ key: '', value: '' }]
-    }
+    const rows =
+      entries.length > 0
+        ? entries.map(([key, value]) => ({ key, value }))
+        : fallbackRows(node)
+
+    applyRows(rows)
+    fieldsCache.set(props.projectId, node.id, rows)
   } catch {
-    fieldRows.value = node.data.content.trim()
-      ? [{ key: '', value: node.data.content }]
-      : [{ key: '', value: '' }]
+    if (generation !== loadGeneration) return
+    applyRows(fallbackRows(node))
   } finally {
-    isLoadingFields.value = false
+    if (generation === loadGeneration) {
+      isRefreshingFields.value = false
+    }
   }
 }
 
@@ -77,22 +101,32 @@ watch(
   () => props.node?.id,
   async (nodeId) => {
     const node = props.node
+    const generation = ++loadGeneration
+
     if (saveTimer) {
       clearTimeout(saveTimer)
       saveTimer = null
     }
+
     isHydrating.value = true
     title.value = node?.data.title ?? ''
-    if (node && nodeId) await loadFields(node)
-    else fieldRows.value = []
-    isHydrating.value = false
-    saveState.value = ''
+
+    if (node && nodeId) {
+      await loadFields(node, generation)
+    } else {
+      fieldRows.value = []
+    }
+
+    if (generation === loadGeneration) {
+      isHydrating.value = false
+      saveState.value = ''
+    }
   },
   { immediate: true },
 )
 
 function scheduleSave() {
-  if (!props.node || !props.projectId || isLoadingFields.value || isHydrating.value) return
+  if (!props.node || !props.projectId || isHydrating.value) return
   if (saveTimer) clearTimeout(saveTimer)
   saveTimer = setTimeout(() => {
     saveTimer = null
@@ -109,7 +143,7 @@ function flushSave() {
 }
 
 async function persistAll() {
-  if (!props.node || !props.projectId || isLoadingFields.value || isHydrating.value) return
+  if (!props.node || !props.projectId || isHydrating.value) return
   if (isSaving) {
     saveQueued = true
     return
@@ -128,6 +162,7 @@ async function persistAll() {
   saveState.value = 'Saving…'
   try {
     await saveNodeFields(props.projectId, node.id, fields)
+    fieldsCache.set(props.projectId, node.id, fieldRows.value)
     const patch: { title?: string; content?: string } = {}
     if (titleChanged) patch.title = nextTitle
     if (contentChanged) patch.content = content
@@ -170,12 +205,12 @@ onBeforeUnmount(() => {
           @blur="flushSave"
           @keydown.enter="($event.target as HTMLInputElement).blur()"
         />
-        <span v-if="saveState" class="world-doc__save">{{ saveState }}</span>
+        <span v-if="saveState || isRefreshingFields" class="world-doc__save">
+          {{ saveState || 'Loading…' }}
+        </span>
       </div>
 
-      <div v-if="isLoadingFields" class="world-doc__loading">Loading…</div>
-
-      <DocFieldsEditor v-else v-model="fieldRows" @blur="flushSave" />
+      <DocFieldsEditor v-model="fieldRows" @blur="flushSave" />
     </div>
   </section>
 </template>
@@ -256,10 +291,5 @@ onBeforeUnmount(() => {
   margin-top: 6px;
   font-size: 11px;
   color: var(--muted);
-}
-
-.world-doc__loading {
-  color: var(--muted);
-  font-size: 13px;
 }
 </style>

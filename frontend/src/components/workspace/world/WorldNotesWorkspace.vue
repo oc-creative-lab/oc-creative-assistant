@@ -4,6 +4,7 @@ import { storeToRefs } from 'pinia'
 import { loadSubgraph, saveSubgraph } from '../../../api/graphApi'
 import { rebuildProjectSeed } from '../../../api/projectApi'
 import { useGraphPersistence } from '../../../composables/useGraphPersistence'
+import { useNodeFieldsCache } from '../../../composables/useNodeFieldsCache'
 import { useIndexingStatus } from '../../../composables/useIndexingStatus'
 import {
   injectWorkspaceGraphRefresh,
@@ -36,6 +37,7 @@ const worldViewStore = useWorldViewStore()
 const nodeNav = useNodeNavStore()
 const { mode: viewMode } = storeToRefs(worldViewStore)
 const graphRefresh = injectWorkspaceGraphRefresh()
+const fieldsCache = useNodeFieldsCache()
 const selectedId = ref('')
 let createCount = 0
 let seedTimer: ReturnType<typeof setTimeout> | null = null
@@ -164,6 +166,14 @@ async function reload() {
     selectedId.value = nodes.value[0]?.id ?? ''
   }
   tryFocusPending()
+
+  const projectId = projectStore.detail?.id
+  if (projectId && nodes.value.length > 0) {
+    void fieldsCache.prefetch(
+      projectId,
+      nodes.value.map((node) => node.id),
+    )
+  }
 }
 
 async function handleGraphRefreshNeeded() {

@@ -28,7 +28,7 @@ onMounted(async () => {
 
 function enterChat(): void {
   if (!selectedId.value) return
-  router.push(`/workspace/${selectedId.value}`)
+  router.push(`/chat/${selectedId.value}`)
 }
 
 async function handleCreate(): Promise<void> {
@@ -37,7 +37,7 @@ async function handleCreate(): Promise<void> {
   const detail = await library.createProject({ name })
   isCreating.value = false
   newName.value = ''
-  router.push(`/workspace/${detail.id}`)
+  router.push(`/chat/${detail.id}`)
 }
 </script>
 

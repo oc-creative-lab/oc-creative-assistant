@@ -8,7 +8,6 @@ import { provideWorkspaceChatContext } from '../composables/useWorkspaceChatCont
 import WorkspaceSidebar from '../components/workspace/WorkspaceSidebar.vue'
 import RightStageOutput from '../components/workspace/RightStageOutput.vue'
 import BottomComposer from '../components/workspace/BottomComposer.vue'
-import ProjectIoButtons from '../components/workspace/ProjectIoButtons.vue'
 import PanelToggleButton from '../components/workspace/PanelToggleButton.vue'
 
 /**
@@ -121,9 +120,6 @@ onBeforeUnmount(() => {
 
       <!-- Center -->
       <div class="workspace-shell__center">
-        <header class="workspace-topbar">
-          <ProjectIoButtons />
-        </header>
         <section class="workspace-shell__view">
           <router-view />
         </section>
@@ -186,18 +182,9 @@ onBeforeUnmount(() => {
   min-width: 0;
   min-height: 0;
   display: grid;
-  grid-template-rows: auto minmax(0, 1fr) auto;
+  grid-template-rows: minmax(0, 1fr) auto;
   border-left: 1px solid var(--border);
   border-right: 1px solid var(--border);
-}
-
-.workspace-topbar {
-  display: flex;
-  align-items: center;
-  justify-content: flex-end;
-  padding: 8px 12px;
-  border-bottom: 1px solid var(--border);
-  background: var(--panel);
 }
 
 .workspace-shell__view {

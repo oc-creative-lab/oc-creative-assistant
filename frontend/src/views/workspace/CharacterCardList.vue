@@ -1,12 +1,14 @@
 <script setup lang="ts">
-import { ref, watch } from 'vue'
+import { computed, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { storeToRefs } from 'pinia'
 import { loadSubgraph, saveSubgraph } from '../../api/graphApi'
+import { getNodeFields } from '../../api/projectApi'
 import { useProjectStore } from '../../stores/useProjectStore'
 import { useGraphStore } from '../../stores/useGraphStore'
 import { graphDtoToSnapshot, snapshotToSaveDto } from '../../utils/graphTransform'
 import { createCreativeNode } from '../../utils/nodeFactory'
+import { useCharacterAvatarCache } from '../../composables/useCharacterAvatarCache'
 
 /**
  * Characters list (first_revision decision 2, a user-approved deviation from the proposal).
@@ -22,11 +24,16 @@ const graphStore = useGraphStore()
 const { characterGraphId } = storeToRefs(projectStore)
 const { nodes, isLoading, error } = storeToRefs(graphStore)
 
+const avatarByCharacterId = ref<Record<string, string>>({})
+const avatarCache = useCharacterAvatarCache()
 const createOpen = ref(false)
 const createName = ref('')
 const createSummary = ref('')
 const isCreating = ref(false)
 const createError = ref('')
+
+const projectId = computed(() => String(route.params.projectId))
+const characterCount = computed(() => nodes.value.length)
 
 watch(
   characterGraphId,
@@ -36,8 +43,71 @@ watch(
   { immediate: true },
 )
 
+async function readAvatar(nodeId: string): Promise<string> {
+  try {
+    const result = await getNodeFields(projectId.value, nodeId)
+    return result.fields.avatar ?? ''
+  } catch {
+    return ''
+  }
+}
+
+function avatarFor(nodeId: string): string {
+  return avatarByCharacterId.value[nodeId] || avatarCache.get(projectId.value, nodeId)
+}
+
+async function loadAvatars(nodeIds: string[]) {
+  if (!nodeIds.length) {
+    avatarByCharacterId.value = avatarCache.snapshot(projectId.value)
+    return
+  }
+
+  const next = {
+    ...avatarCache.snapshot(projectId.value),
+    ...avatarByCharacterId.value,
+  }
+
+  const pairs = await Promise.all(
+    nodeIds.map(async (id) => [id, await readAvatar(id)] as const),
+  )
+
+  for (const [id, avatar] of pairs) {
+    const cached = avatarCache.get(projectId.value, id)
+    if (avatar) {
+      next[id] = avatar
+      avatarCache.set(projectId.value, id, avatar)
+    } else if (cached) {
+      next[id] = cached
+    } else if (!(id in next)) {
+      next[id] = ''
+    }
+  }
+
+  avatarByCharacterId.value = next
+}
+
+watch(
+  [nodes, () => route.fullPath],
+  ([list]) => {
+    void loadAvatars(list.map((node) => node.id))
+  },
+  { immediate: true },
+)
+
 function openCharacter(charId: string) {
-  router.push(`/workspace/${route.params.projectId}/characters/${charId}`)
+  router.push(`/workspace/${projectId.value}/characters/${charId}`)
+}
+
+function characterInitials(name: string): string {
+  const parts = name.trim().split(/\s+/).filter(Boolean)
+  if (parts.length === 0) return '?'
+  if (parts.length === 1) return parts[0].slice(0, 2).toUpperCase()
+  return `${parts[0][0] ?? ''}${parts[1][0] ?? ''}`.toUpperCase()
+}
+
+/** Node type tag is shown in the footer — only show extra tags in the body. */
+function extraTags(tags: string[] | undefined): string[] {
+  return (tags ?? []).filter((tag) => tag.toLowerCase() !== 'character')
 }
 
 function openCreate() {
@@ -54,7 +124,6 @@ function closeCreate() {
 
 async function handleCreate() {
   const graphId = characterGraphId.value
-  const projectId = String(route.params.projectId)
   const name = createName.value.trim()
   if (!graphId || !name || isCreating.value) return
 
@@ -75,7 +144,7 @@ async function handleCreate() {
     await saveSubgraph(graphId, snapshotToSaveDto(snapshot))
     await graphStore.load(graphId, true)
     createOpen.value = false
-    router.push(`/workspace/${projectId}/characters/${newNode.id}`)
+    router.push(`/workspace/${projectId.value}/characters/${newNode.id}`)
   } catch (e) {
     createError.value = e instanceof Error ? e.message : 'Failed to create character'
   } finally {
@@ -87,29 +156,61 @@ async function handleCreate() {
 <template>
   <section class="card-list">
     <header class="card-list__header">
-      <h2>Characters</h2>
-      <span class="card-list__hint">Relations show as tags · open a card to edit fields</span>
+      <div class="card-list__intro">
+        <h2>Characters</h2>
+        <p class="card-list__hint">
+          Build your cast — open a card to edit fields and upload a portrait.
+        </p>
+      </div>
+      <span v-if="!isLoading && !error" class="card-list__count">{{ characterCount }}</span>
     </header>
 
     <p v-if="error" class="card-list__error">{{ error }}</p>
-    <p v-else-if="isLoading" class="card-list__hint">Loading…</p>
+    <p v-else-if="isLoading" class="card-list__hint card-list__hint--block">Loading…</p>
 
     <div v-else class="card-list__grid">
       <article
-        v-for="node in nodes"
+        v-for="(node, index) in nodes"
         :key="node.id"
-        class="char-card"
+        class="id-card"
         @click="openCharacter(node.id)"
       >
-        <h3 class="char-card__name">{{ node.title }}</h3>
-        <p class="char-card__content">{{ node.content || 'No summary' }}</p>
-        <footer v-if="node.tags && node.tags.length" class="char-card__tags">
-          <span v-for="tag in node.tags" :key="tag" class="char-card__tag">{{ tag }}</span>
+        <header class="id-card__band">
+          <span class="id-card__code">CHR-{{ String(index + 1).padStart(3, '0') }}</span>
+          <span class="id-card__chip" aria-hidden="true"></span>
+        </header>
+
+        <div class="id-card__main">
+          <div class="id-card__photo" aria-hidden="true">
+            <img
+              v-if="avatarFor(node.id)"
+              :src="avatarFor(node.id)"
+              :alt="`${node.title} portrait`"
+            />
+            <span v-else class="id-card__initials">{{ characterInitials(node.title) }}</span>
+          </div>
+          <div class="id-card__id">
+            <span class="id-card__label">Name</span>
+            <h3 class="id-card__name">{{ node.title }}</h3>
+            <p
+              class="id-card__summary"
+              :class="{ 'id-card__summary--empty': !node.content }"
+            >{{ node.content || 'No summary yet' }}</p>
+            <div v-if="extraTags(node.tags).length" class="id-card__tags">
+              <span v-for="tag in extraTags(node.tags)" :key="tag" class="id-card__tag">{{ tag }}</span>
+            </div>
+          </div>
+        </div>
+
+        <footer class="id-card__footer">
+          <span class="id-card__role">Character</span>
         </footer>
       </article>
-      <button type="button" class="char-card char-card--create" @click="openCreate">
-        <span class="char-card__plus">+</span>
-        <span class="char-card__create-label">New character</span>
+
+      <button type="button" class="id-card id-card--create" @click="openCreate">
+        <span class="id-card__create-photo" aria-hidden="true">+</span>
+        <span class="id-card__create-label">New character</span>
+        <span class="id-card__create-sub">Add to cast</span>
       </button>
     </div>
 
@@ -138,21 +239,68 @@ async function handleCreate() {
 
 <style scoped>
 .card-list {
-  padding: 24px;
+  --mono: ui-monospace, 'SF Mono', SFMono-Regular, Menlo, Consolas, monospace;
+  min-height: 100%;
+  padding: 28px 28px 36px;
+  background: var(--canvas-bg);
 }
+
 .card-list__header {
   display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  margin-bottom: 28px;
+}
+
+.card-list__intro {
+  display: flex;
   flex-direction: column;
-  gap: 4px;
-  margin-bottom: 18px;
+  gap: 6px;
 }
+
+.card-list__intro h2 {
+  margin: 0;
+  font-size: 1.7rem;
+  font-weight: 700;
+  letter-spacing: -0.02em;
+  color: var(--text);
+}
+
 .card-list__hint {
-  color: var(--muted, #888);
+  margin: 0;
+  color: var(--muted);
   font-size: 13px;
+  line-height: 1.55;
+  max-width: 36rem;
 }
+
+.card-list__hint--block {
+  margin-bottom: 8px;
+}
+
+.card-list__count {
+  flex-shrink: 0;
+  min-width: 36px;
+  height: 36px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0 12px;
+  border-radius: 999px;
+  border: 1px solid var(--border-strong);
+  background: var(--panel);
+  color: var(--text-soft);
+  font-size: 13px;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+}
+
 .card-list__error {
   color: #dc2626;
+  font-size: 13px;
 }
+
 .card-list__modal {
   position: fixed;
   inset: 0;
@@ -162,22 +310,25 @@ async function handleCreate() {
   padding: 24px;
   background: rgba(28, 25, 23, 0.28);
 }
+
 .create-card {
   width: min(100%, 360px);
   padding: 20px;
   border-radius: 14px;
-  border: 1px solid var(--border, #e5e7eb);
-  background: var(--panel-strong, #fff);
+  border: 1px solid var(--border);
+  background: var(--panel);
   box-shadow: var(--shadow-lg);
   display: flex;
   flex-direction: column;
   gap: 14px;
 }
+
 .create-card__title {
   margin: 0;
   font-size: 18px;
   font-weight: 700;
 }
+
 .create-card__field {
   display: flex;
   flex-direction: column;
@@ -186,25 +337,29 @@ async function handleCreate() {
   font-weight: 600;
   color: var(--muted);
 }
+
 .create-card__field input,
 .create-card__field textarea {
   padding: 8px 10px;
-  border: 1px solid var(--border, #ddd);
+  border: 1px solid var(--border);
   border-radius: 8px;
   font: inherit;
   color: var(--text);
   resize: vertical;
 }
+
 .create-card__error {
   margin: 0;
   font-size: 12px;
   color: #dc2626;
 }
+
 .create-card__actions {
   display: flex;
   justify-content: flex-end;
   gap: 8px;
 }
+
 .create-card__cancel,
 .create-card__save {
   padding: 8px 14px;
@@ -213,84 +368,322 @@ async function handleCreate() {
   font-weight: 600;
   cursor: pointer;
 }
+
 .create-card__cancel {
-  border: 1px solid var(--border, #ddd);
+  border: 1px solid var(--border);
   background: transparent;
   color: var(--text-soft);
 }
+
 .create-card__save {
   border: 1px solid var(--accent);
   background: var(--accent);
   color: #fff;
 }
+
 .create-card__save:disabled {
   opacity: 0.55;
   cursor: wait;
 }
+
 .card-list__grid {
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
+  grid-template-columns: repeat(auto-fill, minmax(272px, 1fr));
   gap: 16px;
 }
-.char-card {
-  border: 1px solid var(--border, #e5e7eb);
-  border-radius: 12px;
-  padding: 16px;
-  cursor: pointer;
+
+/* ---------- ID card ---------- */
+.id-card {
+  position: relative;
+  overflow: hidden;
   display: flex;
   flex-direction: column;
-  gap: 8px;
-  min-height: 120px;
-  transition: border-color 0.15s, box-shadow 0.15s;
+  min-height: 208px;
+  border: 1px solid var(--border);
+  border-radius: 14px;
+  background: var(--panel);
+  box-shadow: var(--shadow-sm);
+  cursor: pointer;
+  transition:
+    border-color 0.2s ease,
+    box-shadow 0.2s ease,
+    transform 0.2s ease;
 }
-.char-card:hover {
-  border-color: var(--accent);
-  box-shadow: 0 2px 12px rgba(99, 102, 241, 0.12);
+
+.id-card:hover {
+  border-color: var(--border-strong);
+  box-shadow: var(--shadow-md);
+  transform: translateY(-3px);
 }
-.char-card--create {
+
+/* registration / crop marks in opposite corners */
+.id-card::before,
+.id-card::after {
+  content: '';
+  position: absolute;
+  width: 11px;
+  height: 11px;
+  z-index: 2;
+  pointer-events: none;
+  transition: border-color 0.2s ease;
+}
+
+.id-card::before {
+  top: 9px;
+  left: 9px;
+  border-top: 1.5px solid var(--border-strong);
+  border-left: 1.5px solid var(--border-strong);
+}
+
+.id-card::after {
+  bottom: 9px;
+  right: 9px;
+  border-bottom: 1.5px solid var(--border-strong);
+  border-right: 1.5px solid var(--border-strong);
+}
+
+.id-card:hover::before,
+.id-card:hover::after {
+  border-color: var(--text-soft);
+}
+
+/* header band: dot-grid texture + mono serial + chip */
+.id-card__band {
+  display: flex;
   align-items: center;
-  justify-content: center;
-  gap: 10px;
-  border-style: dashed;
-  background: transparent;
+  justify-content: space-between;
+  height: 40px;
+  padding: 0 14px 0 26px;
+  border-bottom: 1px solid var(--border);
+  background:
+    radial-gradient(rgba(28, 25, 23, 0.08) 1px, transparent 1.4px) 0 0 / 9px 9px,
+    linear-gradient(90deg, rgba(28, 25, 23, 0.03), rgba(28, 25, 23, 0.01));
+}
+
+.id-card__code {
+  font-family: var(--mono);
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.14em;
+  color: var(--text-soft);
+}
+
+.id-card__chip {
+  position: relative;
+  width: 27px;
+  height: 19px;
+  border-radius: 4px;
+  background: linear-gradient(135deg, rgba(28, 25, 23, 0.12), rgba(28, 25, 23, 0.04));
+  box-shadow: inset 0 0 0 1px var(--border-strong);
+}
+
+.id-card__chip::before {
+  content: '';
+  position: absolute;
+  inset: 4px;
+  background-image:
+    linear-gradient(var(--border-strong), var(--border-strong)),
+    linear-gradient(var(--border-strong), var(--border-strong));
+  background-size: 100% 1px, 1px 100%;
+  background-position: center, center;
+  background-repeat: no-repeat;
+  opacity: 0.65;
+}
+
+/* main row: portrait + identity block */
+.id-card__main {
+  flex: 1;
+  display: flex;
+  gap: 14px;
+  padding: 16px 16px 12px;
+}
+
+.id-card__photo {
+  position: relative;
+  flex-shrink: 0;
+  width: 66px;
+  height: 82px;
+  border-radius: 8px;
+  overflow: hidden;
+  display: grid;
+  place-items: center;
+  background:
+    radial-gradient(circle at 30% 22%, rgba(28, 25, 23, 0.06), transparent 60%),
+    var(--paper);
+  box-shadow:
+    inset 0 0 0 1px var(--border),
+    0 3px 8px rgba(28, 25, 23, 0.08);
+  transition: box-shadow 0.2s ease;
+}
+
+.id-card:hover .id-card__photo {
+  box-shadow:
+    inset 0 0 0 1px var(--border-strong),
+    0 5px 14px rgba(28, 25, 23, 0.12);
+}
+
+.id-card__photo img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.id-card__initials {
+  font-size: 19px;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  color: var(--text-soft);
+}
+
+.id-card__id {
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  padding-top: 1px;
+}
+
+.id-card__label {
+  font-family: var(--mono);
+  font-size: 9px;
+  font-weight: 700;
+  letter-spacing: 0.2em;
+  text-transform: uppercase;
   color: var(--muted);
 }
-.char-card--create:hover {
-  color: var(--accent);
-  background: var(--accent-soft);
+
+.id-card__name {
+  margin: 0;
+  font-size: 18px;
+  font-weight: 700;
+  line-height: 1.2;
+  letter-spacing: -0.01em;
+  color: var(--text);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
-.char-card__plus {
-  font-size: 28px;
-  line-height: 1;
-}
-.char-card__create-label {
-  font-size: 13px;
-  font-weight: 600;
-}
-.char-card__name {
-  font-size: 16px;
-  font-weight: 600;
-}
-.char-card__content {
-  flex: 1;
-  color: #666;
-  font-size: 13px;
+
+.id-card__summary {
+  margin: 3px 0 0;
+  font-size: 12.5px;
   line-height: 1.5;
+  color: var(--text-soft);
   overflow: hidden;
   display: -webkit-box;
-  -webkit-line-clamp: 3;
+  -webkit-line-clamp: 2;
   -webkit-box-orient: vertical;
 }
-.char-card__tags {
+
+.id-card__summary--empty {
+  color: var(--muted);
+  font-style: italic;
+}
+
+.id-card__tags {
   display: flex;
   flex-wrap: wrap;
-  gap: 6px;
+  gap: 5px;
+  margin-top: 7px;
 }
-.char-card__tag {
-  font-size: 11px;
-  padding: 2px 8px;
-  border-radius: 999px;
-  background: var(--accent-soft);
-  color: var(--accent-deep);
+
+.id-card__tag {
+  font-family: var(--mono);
+  font-size: 9.5px;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  padding: 3px 7px;
+  border-radius: 5px;
+  background: rgba(28, 25, 23, 0.05);
+  color: var(--muted);
+}
+
+/* footer: role stamp */
+.id-card__footer {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  padding: 11px 16px 13px 26px;
+  border-top: 1px dashed var(--border);
+}
+
+.id-card__role {
+  flex-shrink: 0;
+  font-family: var(--mono);
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  padding: 4px 10px;
+  border-radius: 6px;
+  background: rgba(28, 25, 23, 0.04);
+  color: var(--text-soft);
+  box-shadow: inset 0 0 0 1px var(--border);
+}
+
+/* ---------- create card ---------- */
+.id-card--create {
+  align-items: center;
+  justify-content: center;
+  gap: 11px;
+  border-style: dashed;
+  border-color: var(--border-strong);
+  box-shadow: none;
+  color: var(--muted);
+  background:
+    radial-gradient(rgba(28, 25, 23, 0.06) 1px, transparent 1.4px) 0 0 / 14px 14px,
+    var(--panel);
+}
+
+.id-card--create:hover {
+  color: var(--text);
+  border-color: var(--text-soft);
+  transform: translateY(-3px);
+}
+
+.id-card__create-photo {
+  width: 66px;
+  height: 82px;
+  border-radius: 8px;
+  border: 1.5px dashed var(--border-strong);
+  display: grid;
+  place-items: center;
+  font-size: 30px;
+  font-weight: 300;
+  line-height: 1;
+  color: var(--muted);
+  transition:
+    border-color 0.2s ease,
+    background 0.2s ease,
+    color 0.2s ease,
+    transform 0.2s ease;
+}
+
+.id-card--create:hover .id-card__create-photo {
+  border-style: solid;
+  border-color: var(--text-soft);
+  background: var(--panel);
+  color: var(--text);
+  transform: scale(1.04);
+}
+
+.id-card__create-label {
+  font-size: 14px;
+  font-weight: 700;
+  color: var(--text-soft);
+}
+
+.id-card--create:hover .id-card__create-label {
+  color: var(--text);
+}
+
+.id-card__create-sub {
+  font-family: var(--mono);
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--muted);
 }
 </style>

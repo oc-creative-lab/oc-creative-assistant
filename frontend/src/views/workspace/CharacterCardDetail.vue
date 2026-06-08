@@ -14,6 +14,8 @@ import {
 } from '../../api/projectApi'
 import { fileToScaledDataUrl } from '../../utils/imageDataUrl'
 import DocFieldsEditor, { type DocFieldRow } from '../../components/workspace/DocFieldsEditor.vue'
+import { autoResizeTextarea } from '../../composables/autoResizeField'
+import { useCharacterAvatarCache } from '../../composables/useCharacterAvatarCache'
 
 const SAVE_DEBOUNCE_MS = 500
 
@@ -35,12 +37,22 @@ const { characterGraphId } = storeToRefs(projectStore)
 
 const projectId = computed(() => String(route.params.projectId))
 const node = computed(() => graphStore.getNode(props.charId))
+const avatarCache = useCharacterAvatarCache()
 
 const fieldRows = ref<DocFieldRow[]>([])
 const title = ref('')
 const content = ref('')
 const avatar = ref('')
 const avatarInput = ref<HTMLInputElement | null>(null)
+const summaryEl = ref<HTMLTextAreaElement | null>(null)
+
+function onSummaryInput(event: Event) {
+  autoResizeTextarea(event.target as HTMLTextAreaElement)
+}
+
+function resizeSummary() {
+  autoResizeTextarea(summaryEl.value)
+}
 const saveState = ref('')
 const isHydrating = ref(true)
 const isDeleting = ref(false)
@@ -48,6 +60,8 @@ const isDeleting = ref(false)
 let saveTimer: ReturnType<typeof setTimeout> | null = null
 let isSaving = false
 let saveQueued = false
+let hydrateGeneration = 0
+let pendingFlush: Promise<void> | null = null
 
 // Cross sub-graph back-references (stage 6): where this character appears in the story / which worldbuilding it belongs to, etc.
 const crossRefs = ref<CrossReferenceItem[]>([])
@@ -76,16 +90,107 @@ const relations = computed(() =>
   })),
 )
 
-async function loadFields() {
+function fieldsFromState(
+  rows: DocFieldRow[],
+  avatarValue: string,
+): Record<string, string> {
+  const fields: Record<string, string> = {}
+  if (avatarValue) fields.avatar = avatarValue
+  for (const row of rows) {
+    const key = row.key.trim()
+    if (key) fields[key] = row.value
+  }
+  return fields
+}
+
+function fieldsFromRows(): Record<string, string> {
+  return fieldsFromState(fieldRows.value, avatar.value)
+}
+
+async function saveFieldsForCharacter(charId: string, fields: Record<string, string>) {
+  const saved = await saveNodeFields(projectId.value, charId, fields)
+  const savedAvatar = saved.fields.avatar ?? fields.avatar ?? ''
+  avatarCache.set(projectId.value, charId, savedAvatar)
+  return saved
+}
+
+async function flushSaveForCharacter(charId: string) {
+  if (!projectId.value || !charId) return
+
+  if (saveTimer) {
+    clearTimeout(saveTimer)
+    saveTimer = null
+  }
+
+  const waitStart = Date.now()
+  while (isSaving && Date.now() - waitStart < 8000) {
+    await new Promise((resolve) => setTimeout(resolve, 30))
+  }
+  if (isSaving) return
+
+  const snapshotTitle = title.value.trim() || 'Untitled Character'
+  const snapshotContent = content.value
+  const snapshotAvatar = avatar.value
+  const snapshotRows = fieldRows.value.map((row) => ({ ...row }))
+  const nodeSnapshot = graphStore.getNode(charId)
+  const titleChanged = snapshotTitle !== (nodeSnapshot?.title ?? '')
+  const contentChanged = snapshotContent !== (nodeSnapshot?.content ?? '')
+
+  isSaving = true
   try {
-    const result = await getNodeFields(projectId.value, props.charId)
-    avatar.value = result.fields.avatar ?? ''
+    if (titleChanged || contentChanged) {
+      await updateNode(projectId.value, charId, {
+        title: snapshotTitle,
+        content: snapshotContent,
+      })
+    }
+    await saveFieldsForCharacter(
+      charId,
+      fieldsFromState(snapshotRows, snapshotAvatar),
+    )
+    if ((titleChanged || contentChanged) && characterGraphId.value) {
+      await graphStore.load(characterGraphId.value, true)
+    }
+  } finally {
+    isSaving = false
+    if (saveQueued) {
+      saveQueued = false
+    }
+  }
+}
+
+async function loadFields(charId: string, generation: number) {
+  const cachedAvatar = avatarCache.get(projectId.value, charId)
+  if (cachedAvatar) {
+    avatar.value = cachedAvatar
+  }
+
+  try {
+    const result = await getNodeFields(projectId.value, charId)
+    if (generation !== hydrateGeneration) return
+
+    const fetchedAvatar = result.fields.avatar ?? ''
+    if (fetchedAvatar) {
+      avatar.value = fetchedAvatar
+      avatarCache.set(projectId.value, charId, fetchedAvatar)
+    } else if (!cachedAvatar) {
+      avatar.value = ''
+      avatarCache.set(projectId.value, charId, '')
+    }
+
     fieldRows.value = Object.entries(result.fields)
       .filter(([key]) => key !== 'avatar')
       .map(([key, value]) => ({ key, value }))
   } catch {
-    avatar.value = ''
-    fieldRows.value = []
+    if (generation !== hydrateGeneration) return
+    if (!avatar.value && cachedAvatar) {
+      avatar.value = cachedAvatar
+    } else if (!avatar.value) {
+      avatar.value = ''
+    }
+    if (!fieldRows.value.length) {
+      fieldRows.value = []
+    }
   }
 }
 
@@ -103,47 +208,100 @@ async function handleAvatarChange(event: Event) {
     return
   }
   try {
-    avatar.value = await fileToScaledDataUrl(file, 640, 0.85)
-    scheduleSave()
+    const charId = props.charId
+    const dataUrl = await fileToScaledDataUrl(file, 640, 0.85)
+    avatarCache.set(projectId.value, charId, dataUrl)
+
+    if (charId === props.charId) {
+      avatar.value = dataUrl
+    }
+
+    if (saveTimer) {
+      clearTimeout(saveTimer)
+      saveTimer = null
+    }
+
+    await persistAvatarFor(charId, dataUrl)
   } catch (error) {
     saveState.value = error instanceof Error ? error.message : 'Failed to load image'
   }
-}
-
-function fieldsFromRows(): Record<string, string> {
-  const fields: Record<string, string> = {}
-  if (avatar.value) fields.avatar = avatar.value
-  for (const row of fieldRows.value) {
-    const key = row.key.trim()
-    if (key) fields[key] = row.value
-  }
-  return fields
 }
 
 function scheduleSave() {
   if (isHydrating.value) return
   if (saveTimer) clearTimeout(saveTimer)
   saveTimer = setTimeout(() => {
+    saveTimer = null
     void persistAll()
   }, SAVE_DEBOUNCE_MS)
 }
 
-async function persistAll() {
+async function persistAvatarFor(charId: string, dataUrl: string) {
+  if (!projectId.value || !charId) return
   if (isSaving) {
     saveQueued = true
     return
   }
 
   isSaving = true
+  if (charId === props.charId) {
+    saveState.value = 'Saving…'
+  }
+  try {
+    let fields: Record<string, string> = {}
+    try {
+      const result = await getNodeFields(projectId.value, charId)
+      fields = { ...result.fields }
+    } catch {
+      fields = {}
+    }
+    fields.avatar = dataUrl
+    await saveFieldsForCharacter(charId, fields)
+    if (charId === props.charId) {
+      saveState.value = 'Saved'
+    }
+  } catch (error) {
+    if (charId === props.charId) {
+      saveState.value = error instanceof Error ? `Save failed: ${error.message}` : 'Save failed'
+    }
+  } finally {
+    isSaving = false
+    if (saveQueued && charId === props.charId) {
+      saveQueued = false
+      void persistAll()
+    } else if (saveQueued) {
+      saveQueued = false
+    }
+  }
+}
+
+async function persistAll() {
+  const charId = props.charId
+  if (!charId) return
+  if (isSaving) {
+    saveQueued = true
+    return
+  }
+
+  const nextTitle = title.value.trim() || 'Untitled Character'
+  const nextContent = content.value
+  const titleChanged = nextTitle !== (node.value?.title ?? '')
+  const contentChanged = nextContent !== (node.value?.content ?? '')
+
+  isSaving = true
   saveState.value = 'Saving…'
   try {
-    await updateNode(projectId.value, props.charId, {
-      title: title.value.trim() || 'Untitled Character',
-      content: content.value,
-    })
-    await saveNodeFields(projectId.value, props.charId, fieldsFromRows())
-    if (characterGraphId.value) {
-      await graphStore.load(characterGraphId.value, true)
+    if (titleChanged || contentChanged) {
+      await updateNode(projectId.value, charId, {
+        title: nextTitle,
+        content: nextContent,
+      })
+    }
+    await saveFieldsForCharacter(charId, fieldsFromRows())
+    if (titleChanged || contentChanged) {
+      if (characterGraphId.value) {
+        await graphStore.load(characterGraphId.value, true)
+      }
     }
     saveState.value = 'Saved'
   } catch (error) {
@@ -158,12 +316,17 @@ async function persistAll() {
 }
 
 async function hydrate() {
-  if (!node.value) return
+  const charId = props.charId
+  if (!node.value || node.value.id !== charId) return
+
+  const generation = ++hydrateGeneration
   isHydrating.value = true
   title.value = node.value.title
   content.value = node.value.content ?? ''
-  await loadFields()
-  isHydrating.value = false
+  await loadFields(charId, generation)
+  if (generation === hydrateGeneration) {
+    isHydrating.value = false
+  }
 }
 
 async function handleDelete() {
@@ -202,12 +365,21 @@ watch(
 
 onMounted(() => {
   void loadCrossRefs()
-  void hydrate()
+  void hydrate().then(() => resizeSummary())
+})
+
+watch(content, () => {
+  resizeSummary()
 })
 
 watch(
   () => props.charId,
-  () => {
+  async (newId, oldId) => {
+    if (oldId && oldId !== newId) {
+      pendingFlush = flushSaveForCharacter(oldId)
+      await pendingFlush
+      pendingFlush = null
+    }
     void hydrate()
     void loadCrossRefs()
   },
@@ -217,8 +389,16 @@ watch([title, content, fieldRows], () => {
   scheduleSave()
 }, { deep: true })
 
-onBeforeUnmount(() => {
-  if (saveTimer) clearTimeout(saveTimer)
+onBeforeUnmount(async () => {
+  const charId = props.charId
+  if (saveTimer) {
+    clearTimeout(saveTimer)
+    saveTimer = null
+  }
+  if (pendingFlush) {
+    await pendingFlush
+  }
+  await flushSaveForCharacter(charId)
 })
 </script>
 
@@ -244,9 +424,9 @@ onBeforeUnmount(() => {
         class="char-detail__avatar"
         role="button"
         tabindex="0"
-        :aria-label="avatar ? 'Double-click to change avatar' : 'Double-click to upload avatar'"
-        title="Double-click to change avatar"
-        @dblclick.stop="openAvatarPicker"
+        :aria-label="avatar ? 'Click to change avatar' : 'Click to upload avatar'"
+        title="Click to change avatar"
+        @click.stop="openAvatarPicker"
         @keydown.enter="openAvatarPicker"
       >
         <img v-if="avatar" :src="avatar" :alt="title || 'Character avatar'" />
@@ -261,11 +441,13 @@ onBeforeUnmount(() => {
           spellcheck="false"
         />
         <textarea
+          ref="summaryEl"
           v-model="content"
           class="char-detail__summary"
-          rows="2"
+          rows="1"
           placeholder="Add a summary…"
           spellcheck="true"
+          @input="onSummaryInput"
         />
       </div>
     </header>
@@ -400,12 +582,13 @@ onBeforeUnmount(() => {
   padding: 0;
   border: none;
   background: transparent;
-  resize: vertical;
+  resize: none;
+  overflow: hidden;
   font-size: 14px;
   line-height: 1.6;
   color: var(--text-soft, #666);
   cursor: text;
-  min-height: 3.2em;
+  min-height: 1.6em;
 }
 .char-detail__summary:focus {
   outline: none;
