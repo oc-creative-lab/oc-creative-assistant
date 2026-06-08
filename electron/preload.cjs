@@ -1,4 +1,6 @@
-const { contextBridge } = require('electron')
+const { contextBridge, ipcRenderer } = require('electron')
+
+const PDF_EXPORT_CHANNEL = 'oc:export-project-pdf'
 
 // Read a single argument passed in by the main process via additionalArguments.
 function readAdditionalArgument(name) {
@@ -26,4 +28,5 @@ contextBridge.exposeInMainWorld('ocDesktop', {
       node: process.versions.node,
     },
   },
+  exportProjectPdf: (payload) => ipcRenderer.invoke(PDF_EXPORT_CHANNEL, payload),
 })

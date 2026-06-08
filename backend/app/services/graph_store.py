@@ -54,6 +54,7 @@ from app.services.graph_repository import (
 from app.services.graph_seed import (
     DEFAULT_EDGES,
     DEFAULT_NODES,
+    DEFAULT_PROJECT_DESCRIPTION,
     DEFAULT_PROJECT_ID,
     DEFAULT_PROJECT_NAME,
 )
@@ -65,6 +66,21 @@ _LEGACY_DEFAULT_PROJECT_NAMES = frozenset(
     {
         "《咒术回战》涉谷站线",
         "咒术回战：涉谷站线",
+        "Jujutsu Kaisen: The Shibuya Station Line",
+        "Jujutsu Kaisen - Shibuya Station Line",
+    }
+)
+_LEGACY_DEMO_NODE_IDS = frozenset(
+    {
+        "char-yuji-ticket",
+        "char-gojo-stationmaster",
+        "char-nobara-lostfound",
+        "world-cursed-station",
+        "world-ticket-curse",
+        "world-announcement",
+        "plot-last-train",
+        "plot-ticket-awakening",
+        "plot-final-transfer",
     }
 )
 _DEFAULT_SEED_NODE_IDS = frozenset(node.id for node in DEFAULT_NODES)
@@ -114,6 +130,7 @@ def _patch_legacy_seed_content(session, project_id: str) -> bool:
         project.name in _LEGACY_DEFAULT_PROJECT_NAMES or _contains_han(project.name)
     ):
         project.name = DEFAULT_PROJECT_NAME
+        project.description = DEFAULT_PROJECT_DESCRIPTION
         changed = True
 
     for node in read_ordered_nodes(session, project_id):
@@ -180,7 +197,11 @@ def ensure_default_project() -> ProjectPayload:
         project = session.get(ProjectORM, DEFAULT_PROJECT_ID)
 
         if project is None:
-            project = ProjectORM(id=DEFAULT_PROJECT_ID, name=DEFAULT_PROJECT_NAME)
+            project = ProjectORM(
+                id=DEFAULT_PROJECT_ID,
+                name=DEFAULT_PROJECT_NAME,
+                description=DEFAULT_PROJECT_DESCRIPTION,
+            )
             session.add(project)
             session.flush()
             replace_graph(session, DEFAULT_PROJECT_ID, DEFAULT_NODES, DEFAULT_EDGES)
@@ -188,12 +209,15 @@ def ensure_default_project() -> ProjectPayload:
         else:
             has_nodes = read_ordered_nodes(session, DEFAULT_PROJECT_ID)
             node_ids = {node.id for node in has_nodes}
-            if not has_nodes:
+            if not has_nodes or node_ids == _LEGACY_DEMO_NODE_IDS:
+                project.name = DEFAULT_PROJECT_NAME
+                project.description = DEFAULT_PROJECT_DESCRIPTION
                 replace_graph(session, DEFAULT_PROJECT_ID, DEFAULT_NODES, DEFAULT_EDGES)
             elif node_ids == _DEFAULT_SEED_NODE_IDS and _should_resync_default_locale(
                 session, DEFAULT_PROJECT_ID
             ):
                 project.name = DEFAULT_PROJECT_NAME
+                project.description = DEFAULT_PROJECT_DESCRIPTION
                 replace_graph(session, DEFAULT_PROJECT_ID, DEFAULT_NODES, DEFAULT_EDGES)
             elif _patch_legacy_seed_content(session, DEFAULT_PROJECT_ID):
                 pass

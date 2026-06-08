@@ -145,9 +145,14 @@ const CSS = `
   @media print { body { padding: 0; } }
 `
 
+type BuildProjectHtmlOptions = {
+  autoPrint?: boolean
+}
+
 /** Build a printable HTML document from the project snapshot. */
-export function buildProjectHtml(data: OcExport): string {
+export function buildProjectHtml(data: OcExport, options: BuildProjectHtmlOptions = {}): string {
   const { project, nodes, edges } = data
+  const autoPrint = options.autoPrint ?? true
   const body = [
     `<header class="doc-head"><h1>${esc(project.name)}</h1>${
       project.description ? `<p>${esc(project.description)}</p>` : ''
@@ -158,11 +163,21 @@ export function buildProjectHtml(data: OcExport): string {
   ].join('')
   return `<!DOCTYPE html><html lang="en"><head><meta charset="utf-8"><title>${esc(
     project.name,
-  )}</title><style>${CSS}</style></head><body>${body}<script>window.onload=function(){setTimeout(function(){window.print()},300)}<\/script></body></html>`
+  )}</title><style>${CSS}</style></head><body>${body}${
+    autoPrint ? '<script>window.onload=function(){setTimeout(function(){window.print()},300)}<\/script>' : ''
+  }</body></html>`
 }
 
-/** Open a print window (user chooses "Save as PDF"). */
-export function openProjectPdf(data: OcExport): void {
+/** Export a project as PDF, using Electron's native PDF writer when available. */
+export async function openProjectPdf(data: OcExport): Promise<void> {
+  if (window.ocDesktop?.exportProjectPdf) {
+    await window.ocDesktop.exportProjectPdf({
+      html: buildProjectHtml(data, { autoPrint: false }),
+      defaultFileName: `${data.project.name || 'project'}.pdf`,
+    })
+    return
+  }
+
   const win = window.open('', '_blank')
   if (!win) {
     window.alert('Please allow pop-ups to export PDF')

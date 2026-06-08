@@ -3,7 +3,7 @@ import type { AgentMode, AgentSuggestion, ProjectGroup, WorkspaceStatus } from '
 import { buildProjectGroupsFromNodes } from '../utils/nodeFactory'
 
 /** PoC default project name, aligned with the backend default project name; used for standalone frontend demos and the legacy entry view. */
-export const mockProjectName = 'Jujutsu Kaisen — Shibuya Station Line'
+export const mockProjectName = 'Hogwarts: The Final Siege'
 
 /** Legacy left-sidebar group data; the real graph now loads from the backend. */
 export const mockProjectGroups: ProjectGroup[] = buildProjectGroupsFromNodes(mockGraphNodes)
@@ -12,50 +12,50 @@ export const mockProjectGroups: ProjectGroup[] = buildProjectGroupsFromNodes(moc
 export const mockAgentSuggestions: Record<AgentMode, AgentSuggestion[]> = {
   inspiration: [
     {
-      id: 'idea-ticket-cost',
-      title: 'Add a price to the half-fare monthly pass',
-      body: 'You could introduce a strange price: half-fare pass holders can ride endlessly, but every time they transfer, they forget the name of one real station.',
+      id: 'idea-memory-cost',
+      title: 'Sharpen the memory cost',
+      body: 'You could make the Memory Offering tempting but morally dangerous: the castle survives only if the defenders refuse to let one student carry the whole cost alone.',
     },
     {
-      id: 'idea-station-visual',
-      title: 'Strengthen the station-horror visuals',
-      body: 'You could unify the cursed-energy traces into moldy station signs, electronic boards scrolling in reverse, transfer corridors with no exit numbers, and turnstile lamps that bleed on their own.',
+      id: 'idea-shield-visual',
+      title: 'Make the shield visible',
+      body: 'The Ancient Shield could show the defenders\' emotional state: silver cracks when distrust spreads, warmer light when former enemies choose the same people to protect.',
     },
     {
-      id: 'idea-announcement-choice',
-      title: 'Create pressure through the announcement choice',
-      body: 'Make Itadori the ticket inspector choose between cutting off the midnight announcement and saving a named passenger: once the announcement stops, Platform Zero permanently moves one level deeper.',
+      id: 'idea-draco-vow',
+      title: 'Turn Draco\'s vow into a hinge',
+      body: 'Let Draco\'s spoken vow decide both the Astronomy Passage and the Ancient Shield, so trust becomes a battlefield action rather than only a theme.',
     },
   ],
   research: [
     {
-      id: 'research-zero-platform',
-      title: 'Flesh out the Platform Zero rules',
-      body: 'You could give underground Shibuya Platform Zero three layers of rules: what ordinary passengers can see, what sorcerers can see, and what people swallowed by the station become.',
+      id: 'research-siege-lines',
+      title: 'Clarify the siege layers',
+      body: 'Separate the outer Siege Lines, middle defense, and Great Hall Inner Defense so each plot decision has a clear tactical consequence.',
     },
     {
-      id: 'research-cursed-facilities',
-      title: 'Organize the in-station cursed facilities',
-      body: 'The current setting is ready for an added list of station facilities — e.g. turnstiles, ticket machines, lost-and-found, transfer elevators, and arrival boards, each hosting a different type of cursed spirit.',
+      id: 'research-passage-rules',
+      title: 'Define the passage rules',
+      body: 'The Astronomy Passage can have strict rules around vows, tracking curses, and who counts as protected, giving Hermione and Draco concrete constraints to solve.',
     },
   ],
   structure: [
     {
-      id: 'structure-last-train-chain',
-      title: 'Organize the last-train chain',
-      body: 'Recommend stringing the anomalous last train, Platform Zero manifesting, the half-fare pass awakening, the midnight announcement roll call, and the terminus transfer ritual into a continuous chain of plot nodes.',
+      id: 'structure-siege-chain',
+      title: 'Organize the siege chain',
+      body: 'A clean plot chain could run from the first assault, to the shield cracking, to Draco\'s warning, to the passage vow, then to Voldemort exploiting renewed distrust.',
     },
     {
-      id: 'structure-character-relation',
-      title: 'Build the station-staff relationship web',
-      body: 'The relationships among Itadori the ticket inspector, Gojo the stationmaster, and Nobara the lost-and-found clerk can start from "station coworkers" and gradually become a makeshift sorcerer squad fighting Platform Zero together.',
+      id: 'structure-character-pressure',
+      title: 'Build the trust web',
+      body: 'Harry, Hermione, Draco, McGonagall, Snape, and Voldemort can each pressure the same core question: whether the defenders can trust under direct attack.',
     },
   ],
 }
 
 /** Workspace status placeholder; the save state is overridden by the real backend state in AppShell. */
 export const mockWorkspaceStatus: WorkspaceStatus = {
-  saveState: 'Platform Zero draft saved',
-  indexState: 'Cursed-object reference index pending build',
-  modelState: 'Model: local cursed-energy placeholder',
+  saveState: 'Hogwarts siege draft saved',
+  indexState: 'Shield and passage memory index pending build',
+  modelState: 'Model: local story placeholder',
 }

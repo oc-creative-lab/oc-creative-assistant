@@ -2,10 +2,11 @@ const fs = require('node:fs')
 const net = require('node:net')
 const path = require('node:path')
 const { spawn } = require('node:child_process')
-const { app, BrowserWindow, shell } = require('electron')
+const { app, BrowserWindow, dialog, ipcMain, shell } = require('electron')
 
 // In packaged mode the Electron main process hosts the backend process; in dev mode it usually reuses an external uvicorn.
 let backendProcess = null
+const PDF_EXPORT_CHANNEL = 'oc:export-project-pdf'
 
 // Normalize the port input, falling back to the default value when it is invalid.
 function resolvePort(rawPort, fallback) {
@@ -112,6 +113,71 @@ function getAppIconPath() {
   }
 
   return path.join(__dirname, 'assets', 'logo.png')
+}
+
+// Keep desktop PDF exports independent from renderer pop-up permissions.
+function sanitizePdfFileName(value) {
+  const rawName = String(value || 'project').trim() || 'project'
+  const safeName = rawName
+    .replace(/[<>:"/\\|?*\x00-\x1F]/g, '-')
+    .replace(/\s+/g, ' ')
+    .replace(/[. ]+$/g, '')
+    .slice(0, 120) || 'project'
+
+  return safeName.toLowerCase().endsWith('.pdf') ? safeName : `${safeName}.pdf`
+}
+
+async function exportHtmlToPdf(parentWindow, payload) {
+  if (!payload || typeof payload.html !== 'string') {
+    throw new Error('Invalid PDF export payload.')
+  }
+
+  const defaultPath = sanitizePdfFileName(payload.defaultFileName)
+  const saveDialogOptions = {
+    title: 'Export PDF',
+    defaultPath,
+    filters: [{ name: 'PDF', extensions: ['pdf'] }],
+  }
+  const saveResult = parentWindow
+    ? await dialog.showSaveDialog(parentWindow, saveDialogOptions)
+    : await dialog.showSaveDialog(saveDialogOptions)
+
+  if (saveResult.canceled || !saveResult.filePath) {
+    return { canceled: true }
+  }
+
+  const pdfWindow = new BrowserWindow({
+    show: false,
+    parent: parentWindow ?? undefined,
+    webPreferences: {
+      contextIsolation: true,
+      nodeIntegration: false,
+      sandbox: true,
+    },
+  })
+
+  try {
+    const htmlUrl = `data:text/html;charset=UTF-8,${encodeURIComponent(payload.html)}`
+    await pdfWindow.loadURL(htmlUrl)
+
+    await pdfWindow.webContents.executeJavaScript(
+      'document.fonts && document.fonts.ready ? document.fonts.ready.then(() => true) : true',
+      true,
+    ).catch(() => true)
+
+    const pdf = await pdfWindow.webContents.printToPDF({
+      printBackground: true,
+      preferCSSPageSize: true,
+    })
+
+    await fs.promises.writeFile(saveResult.filePath, pdf)
+
+    return { canceled: false, filePath: saveResult.filePath }
+  } finally {
+    if (!pdfWindow.isDestroyed()) {
+      pdfWindow.close()
+    }
+  }
 }
 
 // Resolve the packaged backend data directory; portable follows the exe, the installed version follows the current user.
@@ -340,6 +406,11 @@ async function createWindow(runtimeConfig) {
 app.on('before-quit', () => {
   app.isQuitting = true
   stopBundledBackend()
+})
+
+ipcMain.handle(PDF_EXPORT_CHANNEL, async (event, payload) => {
+  const parentWindow = BrowserWindow.fromWebContents(event.sender)
+  return exportHtmlToPdf(parentWindow, payload)
 })
 
 // Once the app is ready, initialize the runtime config and open the first window.

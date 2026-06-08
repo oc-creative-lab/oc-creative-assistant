@@ -14,5 +14,12 @@ interface Window {
         node: string
       }
     }
+    exportProjectPdf?: (payload: {
+      html: string
+      defaultFileName: string
+    }) => Promise<{
+      canceled: boolean
+      filePath?: string
+    }>
   }
 }

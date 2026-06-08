@@ -34,7 +34,7 @@ async function onExportPdf() {
   const projectId = currentProjectId()
   if (!projectId) return
   const data = await getProjectExport(projectId)
-  openProjectPdf(data)
+  await openProjectPdf(data)
 }
 
 function choose(format: 'oc' | 'pdf') {
