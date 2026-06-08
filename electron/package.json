@@ -24,7 +24,8 @@
     },
     "files": [
       "main.cjs",
-      "preload.cjs"
+      "preload.cjs",
+      "assets/**/*"
     ],
     "extraResources": [
       {
@@ -37,6 +38,7 @@
       }
     ],
     "win": {
+      "icon": "assets/icon.png",
       "target": [
         "nsis",
         "portable"

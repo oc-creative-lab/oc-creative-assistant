@@ -103,6 +103,17 @@ function getBundledBackendExecutable() {
   return path.join(process.resourcesPath, 'backend', executableName)
 }
 
+// Resolve the desktop app icon in development and packaged builds.
+function getAppIconPath() {
+  const iconPath = path.join(__dirname, 'assets', 'icon.png')
+
+  if (fs.existsSync(iconPath)) {
+    return iconPath
+  }
+
+  return path.join(__dirname, 'assets', 'logo.png')
+}
+
 // Resolve the packaged backend data directory; portable follows the exe, the installed version follows the current user.
 function resolveBundledBackendDataDir() {
   const portableExecutableDir = process.env.PORTABLE_EXECUTABLE_DIR
@@ -298,6 +309,7 @@ async function createWindow(runtimeConfig) {
     height: 920,
     minWidth: 1120,
     minHeight: 720,
+    icon: getAppIconPath(),
     backgroundColor: '#f6efe6',
     autoHideMenuBar: true,
     webPreferences: {

@@ -1,4 +1,6 @@
 <script setup lang="ts">
+import logoUrl from '../../assets/logo.png'
+
 /**
  * Top toolbar.
  *
@@ -39,7 +41,7 @@ function handleActionClick(actionId: string) {
   <header class="top-toolbar">
     <div class="title-block">
       <div class="brand">
-        <span class="logo-icon">✨</span>
+        <img class="logo-icon" :src="logoUrl" alt="" aria-hidden="true" />
         <strong>OC Creative Assistant</strong>
       </div>
       <span class="divider">/</span>
@@ -84,7 +86,10 @@ function handleActionClick(actionId: string) {
 }
 
 .logo-icon {
-  font-size: 1.1rem;
+  width: 24px;
+  height: 24px;
+  flex: 0 0 24px;
+  object-fit: contain;
 }
 
 .brand strong {
